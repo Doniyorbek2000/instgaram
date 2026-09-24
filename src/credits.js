@@ -64,6 +64,7 @@ export function currentPlan(user) {
 
 /** Bot ishlashi mumkinmi: pullik/sinov yoki bepul tarif yoqilgan bo'lsa. */
 export function botEnabled(user) {
+  if (user?.meta?.blocked) return false; // admin bloklagan
   return isActive(user) || Boolean(platformSettings().freePlan);
 }
 

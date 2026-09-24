@@ -297,6 +297,23 @@ export async function createOrder({ userId, plan, days, amount }) {
   return order;
 }
 
+/** Oxirgi to'lov buyurtmalari (admin panel). */
+export async function listOrders({ limit = 500 } = {}) {
+  if (pg.isPgReady()) return pg.listOrders({ limit });
+  return Object.values(db.orders).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0)).slice(0, limit);
+}
+
+/** Biznesni butunlay o'chiradi (sessiyalar va buyurtmalar bilan). */
+export async function deleteUser(id) {
+  if (pg.isPgReady()) return pg.deleteUser(id);
+  const before = db.users.length;
+  db.users = db.users.filter((u) => u.id !== id);
+  for (const [t, sess] of Object.entries(db.sessions)) if (sess.userId === id) delete db.sessions[t];
+  for (const [oid, o] of Object.entries(db.orders)) if (o.userId === id) delete db.orders[oid];
+  save();
+  return db.users.length !== before;
+}
+
 export async function findOrder(id) {
   if (pg.isPgReady()) return pg.findOrder(id);
   return db.orders[String(id || "")] || null;

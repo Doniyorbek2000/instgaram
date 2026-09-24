@@ -20,6 +20,7 @@ import { sequencesRouter } from "./web/sequences_ui.js";
 import { shopRouter } from "./web/shop_ui.js";
 import { growthToolsRouter } from "./web/growth_tools_ui.js";
 import { pushRouter } from "./web/push_ui.js";
+import { adminRouter } from "./admin/routes.js";
 import { teamRouter } from "./web/team_ui.js";
 import { analyticsRouter } from "./web/analytics_ui.js";
 import { gameRouter } from "./web/game_ui.js";
@@ -69,6 +70,8 @@ app.use(
   })
 );
 app.use(express.urlencoded({ extended: false, limit: "1mb" }));
+// Admin panel — alohida kirish tizimi (biznes sessiyasi va jamoa rollaridan mustaqil)
+app.use(adminRouter);
 app.use(attachUser);
 // Jamoa a'zosi egasining ish maydonida bo'lsa — req.user almashtiriladi va roli tekshiriladi
 app.use(teamContext);

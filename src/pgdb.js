@@ -445,6 +445,18 @@ export async function createOrder({ userId, plan, days, amount }) {
   return { id, userId, plan, days, amount, status: "pending", createdAt: now };
 }
 
+export async function listOrders({ limit = 500 } = {}) {
+  if (!pgReady) return [];
+  const { rows } = await pgPool.query("SELECT * FROM orders ORDER BY created_at DESC LIMIT $1", [Math.min(5000, Number(limit) || 500)]);
+  return rows.map((r) => ({ id: r.id, userId: r.user_id, plan: r.plan, days: r.days, amount: Number(r.amount), status: r.status, createdAt: Number(r.created_at) }));
+}
+
+export async function deleteUser(id) {
+  if (!pgReady) return false;
+  const { rowCount } = await pgPool.query("DELETE FROM users WHERE id=$1", [String(id)]);
+  return rowCount > 0;
+}
+
 export async function findOrder(id) {
   if (!pgReady) return null;
   const { rows } = await pgPool.query("SELECT * FROM orders WHERE id=$1", [String(id || "")]);
