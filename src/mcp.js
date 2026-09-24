@@ -16,6 +16,7 @@ import { allTags, displayName, windowStatus, getContactMeta } from "./contacts.j
 import { allContacts, sanitizeBroadcast, createBroadcast, runBroadcast, resolveAudience } from "./broadcasts.js";
 import { splitKey } from "./outbound.js";
 import { isActive } from "./subscription.js";
+import { aiStatusLabel, setAiEnabled } from "./aiControl.js";
 
 export const PROTOCOL_VERSIONS = ["2025-06-18", "2025-03-26", "2024-11-05"];
 const SERVER_INFO = { name: "adm-ai", title: "ADM AI — Instagram/Telegram avtomatlashtirish", version: "1.0.0" };
@@ -112,6 +113,7 @@ export const TOOLS = [
       name: t.businessName,
       knowledgeBase: String(t.businessInfo || "").slice(0, 6000),
       toneOfVoice: t.settings?.aiStyle || "",
+      aiAutoReply: aiStatusLabel(t).label,
       channels: {
         instagram: Boolean(t.meta?.igAccessToken || t.meta?.pageAccessToken),
         telegram: Boolean(t.settings?.telegramBotToken),
@@ -204,6 +206,13 @@ export const TOOLS = [
       persist(t);
       return { deleted: a.flowId };
     },
+  },
+  {
+    name: "set_ai_reply",
+    description: "Turn the AI auto-reply on or off for the whole business (flows and keyword rules keep working either way).",
+    inputSchema: { type: "object", properties: { enabled: { type: "boolean" } }, required: ["enabled"], additionalProperties: false },
+    write: true,
+    run: (t, a) => ({ enabled: setAiEnabled(t, a.enabled), status: aiStatusLabel(t).label }),
   },
   {
     name: "list_tags",

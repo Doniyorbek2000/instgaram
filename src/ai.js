@@ -1,6 +1,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { persist, getPlatformGeminiKey } from "./db.js";
 import { canUseAi, consumeAi, warnCreditsOut } from "./credits.js";
+import { aiSettings } from "./aiControl.js";
 
 // Global (zaxira) kalitlar — foydalanuvchi o'z kalitini kiritmagan bo'lsa ishlatiladi
 const globalGeminiKey = process.env.GEMINI_API_KEY || "";
@@ -352,7 +353,7 @@ export async function classifyIntent(tenant, text, rules) {
   if (!candidates.length || !message) return null;
 
   const geminiKey = await resolveGeminiKey(tenant);
-  if (!geminiKey || !canUseAi(tenant)) return null; // kredit tugagan — faqat kalit so'z qoidalari
+  if (!geminiKey || !canUseAi(tenant) || !aiSettings(tenant).enabled) return null; // kredit tugagan yoki AI o'chiq — faqat kalit so'z qoidalari
 
   const list = candidates
     .map((r, i) => `${i + 1}. ${(r.aiIntent || r.name || r.keyword || "").replace(/\s+/g, " ").slice(0, 300)}`)

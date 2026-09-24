@@ -27,6 +27,7 @@ import { googleAuthAvailable, googleAuthUrl, fetchGoogleProfile } from "../googl
 import { updateUser, listUsers, findUserById, persist, createOrder, setPlanPrices, getPlatformGeminiKey, setPlatformGeminiKey } from "../db.js";
 import { config, paymeReady } from "../config.js";
 import { getPlans, PLAN_DEFS, statusInfo, activate, deactivate, creditReferral } from "../subscription.js";
+import { aiStatusLabel, aiSettings } from "../aiControl.js";
 import { aiQuota, getCreditPacks, CREDIT_PACKS, CREDIT_ORDER_PREFIX, platformSettings, savePlatformSettings, addCredits, AI_QUOTA } from "../credits.js";
 import { paymeCheckoutUrl } from "../payme.js";
 import {
@@ -237,6 +238,23 @@ web.get("/dashboard", requireAuth, (req, res) => {
       ${saved ? `<div class="ok">O'zgarishlar muvaffaqiyatli saqlandi! ✅</div>` : ""}
       ${req.query.connected ? `<div class="ok">Instagram/Facebook muvaffaqiyatli ulandi 🎉 Endi bot mijozlaringizga avtomatik javob beradi.</div>` : ""}
       ${subBanner}
+      ${(() => {
+        const st = aiStatusLabel(u);
+        return `<div class="card" style="display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap; border:1px solid ${st.on ? "rgba(16,185,129,0.45)" : "rgba(100,116,139,0.6)"}">
+          <div style="display:flex; gap:12px; align-items:center">
+            <span style="width:12px; height:12px; border-radius:50%; background:${st.on ? (st.active ? "#10b981" : "#fbbf24") : "#64748b"}; box-shadow:0 0 0 4px ${st.on ? "rgba(16,185,129,0.15)" : "rgba(100,116,139,0.15)"}"></span>
+            <div><b style="font-size:16px">🧠 AI avtomatik javob</b><div class="hint" style="font-size:13px">${esc(st.label)}</div></div>
+          </div>
+          <div style="display:flex; gap:8px">
+            <a class="btn secondary" href="/ai-settings" style="margin:0">⚙️ Sozlash</a>
+            <form method="post" action="/ai/toggle" style="margin:0">
+              <input type="hidden" name="enabled" value="${aiSettings(u).enabled ? "0" : "1"}">
+              <input type="hidden" name="back" value="/dashboard">
+              <button class="${aiSettings(u).enabled ? "secondary" : ""}" style="margin:0; ${aiSettings(u).enabled ? "color:#f87171" : ""}">${aiSettings(u).enabled ? "⏸️ O'chirish" : "▶️ Yoqish"}</button>
+            </form>
+          </div>
+        </div>`;
+      })()}
 
       <!-- Welcome Hero Banner -->
       <div class="card" style="background: linear-gradient(135deg, rgba(139,92,246,0.15) 0%, rgba(217,70,239,0.15) 100%); border: 1px solid rgba(139,92,246,0.3)">

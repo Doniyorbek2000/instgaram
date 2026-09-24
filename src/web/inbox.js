@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { allTags, normTag, windowStatus, getContactMeta } from "../contacts.js";
+import { aiAllowed, aiSettings } from "../aiControl.js";
 import { requireAuth } from "../auth.js";
 import { page, esc } from "./layout.js";
 import { persist } from "../db.js";
@@ -254,6 +255,14 @@ inboxRouter.get("/inbox", requireAuth, (req, res) => {
 
         <div style="display:flex; align-items:center; gap:8px; flex:none">
           <button type="button" class="secondary inbox-crm-toggle" onclick="document.querySelector('.inbox-crm').classList.add('show-mobile')" style="padding:8px 12px; font-size:13px; margin:0">👤</button>
+          <!-- Shu chat uchun AI -->
+          ${/^(ig|fb|wa|tg):/.test(activeKey) ? `<form method="post" action="/clients/c/${encodeURIComponent(activeKey)}/ai" style="margin:0">
+            <input type="hidden" name="on" value="${user.contactMeta?.[activeKey]?.aiOff ? "1" : "0"}">
+            <input type="hidden" name="back" value="/inbox?chat=${esc(encodeURIComponent(activeKey))}">
+            <button class="secondary" title="${esc(aiAllowed(user, activeKey.split(":")[0], activeKey).allowed ? "AI shu chatda javob beradi" : "AI shu chatda javob bermaydi")}" style="padding:8px 12px; font-size:13px; margin:0; white-space:nowrap; ${user.contactMeta?.[activeKey]?.aiOff || !aiSettings(user).enabled ? "color:#f87171" : "color:#34d399"}">
+              ${user.contactMeta?.[activeKey]?.aiOff ? "🧠 AI: o'chiq" : aiSettings(user).enabled ? "🧠 AI: yoqilgan" : "🧠 AI: umumiy o'chiq"}
+            </button>
+          </form>` : ""}
           <!-- Operator Mode Switch -->
           <form method="post" action="/inbox/toggle-handoff" style="margin:0">
             <input type="hidden" name="chatKey" value="${esc(activeKey)}">

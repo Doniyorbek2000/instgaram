@@ -307,6 +307,7 @@ const NAV = [
     ["/scheduler", "scheduler", "calendar", "Scheduler"],
   ]],
   ["Sozlamalar", [
+    ["/ai-settings", "ai-settings", "spark", "AI javob sozlamalari"],
     ["/integrations", "integrations", "plug", "Integratsiyalar"],
     ["/team", "team", "team", "Jamoa"],
     ["/billing", "billing", "card", "Obuna & Tariflar"],

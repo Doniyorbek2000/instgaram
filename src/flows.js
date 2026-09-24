@@ -656,6 +656,12 @@ export async function runFrom(tenant, key, flow, nodeId, ctx = {}, depth = 0) {
     }
 
     if (node.type === "ai") {
+      // AI javob o'chirilgan bo'lsa (umumiy/kanal/jadval/chat) — blok o'tkazib yuboriladi
+      const { aiAllowed } = await import("./aiControl.js");
+      if (!aiAllowed(tenant, splitKey(key).chan, key).allowed) {
+        current = node.next;
+        continue;
+      }
       const { generateReply } = await import("./ai.js");
       const question = [node.prompt ? renderTemplate(node.prompt, tenant, key) : "", ctx.text || ""].filter(Boolean).join("\n\n");
       const reply = question ? await generateReply(tenant, key, { text: question }) : "";

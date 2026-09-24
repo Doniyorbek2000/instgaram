@@ -24,6 +24,7 @@ import { integrationsRouter } from "./web/integrations_ui.js";
 import { contentRouter } from "./web/content_ui.js";
 import { mediaRouter } from "./web/media_ui.js";
 import { aiLearnRouter } from "./web/ai_learn_ui.js";
+import { aiSettingsRouter } from "./web/ai_settings_ui.js";
 import { mcpHandler } from "./mcp.js";
 import { loadPlatformSettings } from "./credits.js";
 import { teamContext } from "./team.js";
@@ -132,6 +133,7 @@ app.use(integrationsRouter);
 app.use(contentRouter);
 app.use(mediaRouter);
 app.use(aiLearnRouter);
+app.use(aiSettingsRouter);
 app.use(telegramRouter);
 app.use(reportsBotRouter);
 

@@ -15,6 +15,7 @@ import { getContactMeta, addTags, removeTag, setFields, displayName, allTags, wi
 import { ensureFlows, startFlow, activeFlowSession, findFlow } from "../flows.js";
 import { splitKey } from "../outbound.js";
 import * as game from "../gamification.js";
+import { aiAllowed } from "../aiControl.js";
 
 export const contactsRouter = Router();
 
@@ -275,7 +276,13 @@ contactsRouter.get("/clients/c/:key", requireAuth, (req, res) => {
               </div>
               <div style="margin-top:6px">${winBadge(win)} ${manual ? `<span style="color:#f87171; font-weight:700; font-size:12px">· 👤 Operator rejimi</span>` : ""}</div>
             </div>
-            <a class="btn" href="/inbox?chat=${encodeURIComponent(key)}" style="margin:0">💬 Suhbatni ochish</a>
+            <div style="display:flex; gap:8px; flex-wrap:wrap">
+              <form method="post" action="${cardUrl(key)}/ai" style="margin:0">
+                <input type="hidden" name="on" value="${meta.aiOff ? "1" : "0"}">
+                <button class="secondary" style="margin:0; ${meta.aiOff ? "color:#f87171" : "color:#34d399"}">${meta.aiOff ? "🧠 AI shu chatda o'chiq — yoqish" : "🧠 AI yoqilgan — o'chirish"}</button>
+              </form>
+              <a class="btn" href="/inbox?chat=${encodeURIComponent(key)}" style="margin:0">💬 Suhbatni ochish</a>
+            </div>
           </div>
 
           <div class="card">
