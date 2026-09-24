@@ -9,7 +9,8 @@
  */
 import crypto from "node:crypto";
 import { persist, listUsers } from "./db.js";
-import { sendReply, splitKey } from "./outbound.js";
+import { sendReply, sendMedia, splitKey } from "./outbound.js";
+import { sanitizeMedia } from "./mediaStore.js";
 import { renderTemplate } from "./templating.js";
 import { getContactMeta } from "./contacts.js";
 import { isActive } from "./subscription.js";
@@ -86,6 +87,7 @@ export function sanitizeBroadcast(body = {}) {
     name: String(body.name || "").trim().slice(0, 120),
     message: String(body.message || "").trim().slice(0, 2000),
     flowId: String(body.flowId || "").trim(),
+    media: sanitizeMedia(body.media),
     buttons,
     filter: {
       channel: ["ig", "fb", "wa", "tg"].includes(body.channel) ? body.channel : "all",
@@ -124,7 +126,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
  * alohida o'zgaruvchilar bilan tayyorlanadi. Natija (yuborildi/yetmadi) halol saqlanadi.
  * send — testlarda almashtiriladi.
  */
-export async function runBroadcast(tenant, broadcastId, { send = sendReply, delayMs = SEND_DELAY_MS } = {}) {
+export async function runBroadcast(tenant, broadcastId, { send = sendReply, sendMediaFn = sendMedia, delayMs = SEND_DELAY_MS } = {}) {
   const b = (tenant.broadcasts || []).find((x) => x.id === broadcastId);
   if (!b || running.has(b.id) || b.status === "sending" || b.status === "completed") return b || null;
   running.add(b.id);
@@ -150,7 +152,8 @@ export async function runBroadcast(tenant, broadcastId, { send = sendReply, dela
           const r = await startFlow(tenant, key, flow, send === sendReply ? {} : { send: async (m) => send(tenant, chan, id, m.text, m.options) });
           ok = r.status !== "empty";
         } else {
-          ok = await send(tenant, chan, id, renderTemplate(b.message, tenant, key), b.buttons || []);
+          if (b.media) await sendMediaFn(tenant, chan, id, b.media);
+          ok = b.message ? await send(tenant, chan, id, renderTemplate(b.message, tenant, key), b.buttons || []) : Boolean(b.media);
         }
         if (ok) b.sentCount++;
         else b.failedCount++;

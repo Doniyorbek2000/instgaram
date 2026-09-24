@@ -25,6 +25,7 @@
   flow.nodes = flow.nodes || {};
   flow.triggers = flow.triggers || [];
 
+  var MEDIA_LABEL = { image: "🖼️ Rasm", video: "🎬 Video", audio: "🎧 Audio", file: "📎 Fayl", post: "📸 Instagram post" };
   var ICONS = { message: "💬", input: "📝", condition: "🔀", action: "⚡", delay: "⏱️", ai: "🧠", redirect: "↪️" };
 
   // ---------- yordamchilar ----------
@@ -65,7 +66,7 @@
 
   function snippet(n) {
     switch (n.type) {
-      case "message": return n.text || "(bo'sh xabar)";
+      case "message": return (n.media ? MEDIA_LABEL[n.media.type] + (n.media.name ? ": " + n.media.name : "") + "\n" : "") + (n.text || (n.media ? "" : "(bo'sh xabar)"));
       case "input": return (n.text || "(savol)") + "\n→ {" + (n.varName || "javob") + "}";
       case "condition":
         return (n.conditions || []).map(condLabel).join(n.match === "any" ? "\nYOKI " : "\nVA ") || "(shart yo'q — doim Ha)";
@@ -538,6 +539,7 @@
     ]));
 
     if (n.type === "message") {
+      side.appendChild(mediaEditor(n));
       side.appendChild(field("Xabar matni", textArea(n, "text", 5, "Salom, {name|do'stim}! 👋"), "O'zgaruvchilar: {name|zaxira}, {first_name}, {username}, {phone}, {points}, {business} va yig'ilgan maydonlar."));
       side.appendChild(h("label", { text: "Tugmalar" }));
       (n.buttons = n.buttons || []).forEach(function (b, i) {
@@ -598,6 +600,74 @@
     if (n.type === "redirect") {
       side.appendChild(field("Qaysi flow'ga o'tilsin", select([["", "— tanlang —"]].concat(meta.otherFlows.map(function (f) { return [f.id, f.name]; })), n.flowId, function (v) { n.flowId = v; changed(); })));
     }
+  }
+
+  /** Xabar blokiga media biriktirish: yuklash, kutubxona, havola yoki Instagram posti. */
+  function mediaEditor(n) {
+    var box = h("div", { class: "fb-item" });
+    box.appendChild(h("b", { text: "📎 Media (ixtiyoriy)", style: "font-size:12.5px" }));
+    if (n.media) {
+      var preview = n.media.type === "image" && n.media.url
+        ? h("img", { src: n.media.url, style: "display:block; max-width:100%; max-height:140px; border-radius:8px; margin-top:8px" })
+        : h("div", { style: "margin-top:8px; font-size:13px", text: MEDIA_LABEL[n.media.type] + (n.media.name ? ": " + n.media.name : "") });
+      box.appendChild(preview);
+      box.appendChild(h("button", { type: "button", class: "secondary", style: "margin:8px 0 0; padding:4px 10px; font-size:12px; color:#f87171", text: "✕ Olib tashlash", onclick: function () { n.media = null; changed(true); } }));
+      return box;
+    }
+    var status = h("p", { class: "fb-hint" });
+    var file = h("input", { type: "file", accept: "image/*,video/mp4,video/quicktime,audio/*,.pdf,.doc,.docx,.xls,.xlsx,.pptx,.zip", style: "display:none" });
+    file.addEventListener("change", function () {
+      if (!file.files[0]) return;
+      var fd = new FormData();
+      fd.append("file", file.files[0]);
+      status.textContent = "Yuklanmoqda…";
+      fetch("/media/upload", { method: "POST", body: fd }).then(function (r) { return r.json(); }).then(function (d) {
+        if (!d.ok) { status.textContent = "⚠️ " + d.error; return; }
+        n.media = { type: d.item.type, url: d.item.url, name: d.item.name };
+        if (d.warning) alert(d.warning);
+        changed(true);
+      }).catch(function () { status.textContent = "⚠️ Tarmoq xatosi"; });
+    });
+    var list = h("div", { style: "display:grid; grid-template-columns:repeat(3,1fr); gap:6px; margin-top:8px" });
+    function pickFrom(url, render) {
+      list.innerHTML = "";
+      status.textContent = "Yuklanmoqda…";
+      fetch(url).then(function (r) { return r.json(); }).then(function (d) {
+        status.textContent = d.ok ? (d.items.length ? "" : "Bo'sh") : "⚠️ " + (d.error || "xato");
+        (d.items || []).forEach(function (it) { list.appendChild(render(it)); });
+      }).catch(function () { status.textContent = "⚠️ Tarmoq xatosi"; });
+    }
+    var tile = function (label, img, onPick) {
+      var t = h("button", { type: "button", class: "secondary", style: "margin:0; padding:4px; height:70px; font-size:11px; overflow:hidden", title: label, onclick: onPick });
+      if (img) t.appendChild(h("img", { src: img, style: "width:100%; height:100%; object-fit:cover; border-radius:6px" }));
+      else t.textContent = label;
+      return t;
+    };
+    box.appendChild(h("div", { style: "display:flex; gap:4px; flex-wrap:wrap; margin-top:8px" }, [
+      h("button", { type: "button", class: "secondary", style: "margin:0; padding:5px 10px; font-size:12px", text: "📤 Yuklash", onclick: function () { file.click(); } }),
+      h("button", { type: "button", class: "secondary", style: "margin:0; padding:5px 10px; font-size:12px", text: "🗂️ Kutubxona", onclick: function () {
+        pickFrom("/media/library", function (it) {
+          return tile((MEDIA_LABEL[it.type] || "") + " " + it.name, it.type === "image" ? it.url : "", function () { n.media = { type: it.type, url: it.url, name: it.name }; changed(true); });
+        });
+      } }),
+      h("button", { type: "button", class: "secondary", style: "margin:0; padding:5px 10px; font-size:12px", text: "📸 IG post", onclick: function () {
+        pickFrom("/media/ig-posts", function (it) {
+          return tile(it.caption || it.id, it.thumb, function () { n.media = { type: "post", postId: it.id, permalink: it.permalink, name: (it.caption || "Post").slice(0, 60) }; changed(true); });
+        });
+      } }),
+      h("button", { type: "button", class: "secondary", style: "margin:0; padding:5px 10px; font-size:12px", text: "🔗 Havola", onclick: function () {
+        var url = prompt("Fayl havolasi (https://...)");
+        if (!url || !/^https?:\/\//i.test(url)) return;
+        var ext = url.split("?")[0].split(".").pop().toLowerCase();
+        var type = /^(jpe?g|png|gif|webp)$/.test(ext) ? "image" : /^(mp4|mov)$/.test(ext) ? "video" : /^(mp3|m4a|aac|ogg)$/.test(ext) ? "audio" : "file";
+        n.media = { type: type, url: url, name: url.split("/").pop().split("?")[0] };
+        changed(true);
+      } }),
+      file,
+    ]));
+    box.appendChild(list);
+    box.appendChild(status);
+    return box;
   }
 
   function conditionEditor(n, c, i) {

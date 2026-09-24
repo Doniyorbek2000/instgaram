@@ -19,7 +19,8 @@
  */
 import crypto from "node:crypto";
 import { persist } from "./db.js";
-import { sendReply, splitKey, optionsAsText } from "./outbound.js";
+import { sendReply, sendMedia, splitKey, optionsAsText } from "./outbound.js";
+import { sanitizeMedia, absoluteMediaUrl } from "./mediaStore.js";
 import { renderTemplate, zonedParts } from "./templating.js";
 import { addTags, removeTag, setFields, getContactMeta } from "./contacts.js";
 import { matchesRule, normalizeText } from "./rules.js";
@@ -147,6 +148,7 @@ function sanitizeNode(n, ids) {
             next: ref(b?.next),
           }))
           .filter((b) => b.title),
+        media: sanitizeMedia(n.media),
         next: ref(n.next),
       };
     case "input":
@@ -464,6 +466,17 @@ async function deliver(tenant, key, ctx, text, options = []) {
   return ok;
 }
 
+async function deliverMedia(tenant, key, ctx, media) {
+  const label = { image: "🖼️ Rasm", video: "🎬 Video", audio: "🎧 Audio", file: "📎 Fayl", post: "📸 Post" }[media.type] || "📎";
+  if (ctx.send) {
+    await ctx.send({ key, media });
+  } else {
+    const { chan, id } = splitKey(key);
+    await sendMedia(tenant, chan, id, media);
+  }
+  logToInbox(tenant, key, ctx, `${label}${media.name ? `: ${media.name}` : ""}`);
+}
+
 // ============================================================
 // Bajarish
 // ============================================================
@@ -501,7 +514,17 @@ export async function runFrom(tenant, key, flow, nodeId, ctx = {}, depth = 0) {
       const options = buttons.map((b) =>
         b.url ? { title: b.title, url: b.url } : { title: b.title, payload: `FLOW:${flow.id}:${b.next || "_end"}` }
       );
-      await deliver(tenant, key, ctx, renderTemplate(node.text, tenant, key), options);
+      let text = renderTemplate(node.text, tenant, key);
+      if (node.media) {
+        if (ctx.commentId && !ctx.commentUsed) {
+          // Komment egasiga birinchi xabar faqat matnli private reply bo'la oladi — media havolasini qo'shamiz
+          const link = node.media.type === "post" ? node.media.permalink : absoluteMediaUrl(node.media.url || "");
+          if (link) text = `${text}\n\n${link}`.trim();
+        } else {
+          await deliverMedia(tenant, key, ctx, node.media);
+        }
+      }
+      await deliver(tenant, key, ctx, text, options);
       // "Keyingi qadam" tugmalari bo'lsa — mijoz bosishini kutamiz
       if (buttons.some((b) => !b.url)) {
         setSession(tenant, key, { flowId: flow.id, nodeId: node.id, wait: "buttons" });

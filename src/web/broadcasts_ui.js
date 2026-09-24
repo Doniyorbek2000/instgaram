@@ -45,7 +45,7 @@ function historyCard(b, flows) {
           ${b.status !== "sending" ? `<form method="post" action="/broadcasts/delete" style="margin:0"><input type="hidden" name="id" value="${esc(b.id)}"><button class="secondary" style="padding:5px 10px; font-size:12px; margin:0; color:#f87171">🗑️</button></form>` : ""}
         </div>
       </div>
-      <p style="margin:10px 0 6px; color:#cbd5e1; white-space:pre-wrap; font-size:14px">${flow ? `🧩 Flow: <b>${esc(flow.name)}</b>` : esc(b.message)}</p>
+      <p style="margin:10px 0 6px; color:#cbd5e1; white-space:pre-wrap; font-size:14px">${flow ? `🧩 Flow: <b>${esc(flow.name)}</b>` : `${b.media ? `📎 <b>${esc(b.media.name || b.media.type)}</b>\n` : ""}${esc(b.message)}`}</p>
       ${b.status === "sending" || b.status === "completed"
         ? `<div style="height:6px; background:rgba(255,255,255,0.06); border-radius:99px; overflow:hidden"><div style="height:100%; width:${pct}%; background:var(--grad-primary)"></div></div>
            <div class="hint" style="font-size:12.5px; margin-top:6px">✅ ${b.sentCount || 0} yuborildi · ⚠️ ${b.failedCount || 0} yetmadi · jami ${b.total || 0}</div>`
@@ -113,6 +113,12 @@ broadcastsRouter.get("/broadcasts", requireAuth, async (req, res) => {
               <textarea name="message" id="bcText" rows="5" maxlength="2000" placeholder="Salom, {name|do'stim}! 🎉 Bugun barcha mahsulotlarga −20%"></textarea>
               ${hasAi ? `<div style="display:flex; gap:4px; flex-wrap:wrap">${[["improve", "✨ Yaxshilash"], ["sell", "Sotuvchi"], ["shorter", "Qisqa"], ["ru", "RU"]].map(([m, l]) => `<button type="button" class="secondary" data-ai="${m}" style="font-size:11.5px; padding:3px 9px; margin:4px 0 0">${l}</button>`).join("")}</div>` : ""}
               <p class="hint" style="font-size:12px; margin:6px 0 0">O'zgaruvchilar: {name|do'stim}, {first_name}, {username}, {points}, {phone} va boshqa maydonlar.</p>
+              <label>Media (ixtiyoriy)</label>
+              <select name="mediaId">
+                <option value="">— Mediasiz —</option>
+                ${(user.mediaLibrary || []).map((m) => `<option value="${esc(m.id)}">${{ image: "🖼️", video: "🎬", audio: "🎧", file: "📎" }[m.type] || "📎"} ${esc(m.name)}</option>`).join("")}
+              </select>
+              <p class="hint" style="font-size:12px; margin:4px 0 0">Fayllarni <a href="/media">Media kutubxona</a>ga yuklang.</p>
               <label>Havola tugmalari (har qatorda: Nomi | https://..., max 3)</label>
               <textarea name="buttons" rows="2" placeholder="Katalog | https://example.uz"></textarea>
             </div>
@@ -145,8 +151,8 @@ broadcastsRouter.get("/broadcasts", requireAuth, async (req, res) => {
         }
         form.addEventListener("input", refresh);
         form.addEventListener("change", refresh);
-        flowSel.addEventListener("change", function () { msgBox.style.display = flowSel.value ? "none" : ""; text.required = !flowSel.value; });
-        text.required = true;
+        flowSel.addEventListener("change", function () { msgBox.style.display = flowSel.value ? "none" : ""; });
+        text.required = false;
         form.addEventListener("submit", function () {
           var v = document.getElementById("bcWhen").value;
           document.getElementById("bcWhenIso").value = v ? new Date(v).toISOString() : "";
@@ -183,11 +189,16 @@ broadcastsRouter.get("/broadcasts/audience", requireAuth, (req, res) => {
 broadcastsRouter.post("/broadcasts/create", requireAuth, (req, res) => {
   const user = req.user;
   // Checkbox belgilanganda ikkala qiymat keladi: ["true", "false"] — birinchisi ustun
-  const body = { ...req.body, only24h: [].concat(req.body?.only24h || "false")[0] };
+  const libItem = (user.mediaLibrary || []).find((m) => m.id === req.body?.mediaId);
+  const body = {
+    ...req.body,
+    only24h: [].concat(req.body?.only24h || "false")[0],
+    media: libItem ? { type: libItem.type, url: libItem.url, name: libItem.name } : null,
+  };
   const data = sanitizeBroadcast(body);
   if (!data.name) return res.redirect("/broadcasts?error=" + encodeURIComponent("Nomini kiriting"));
   if (data.flowId && !ensureFlows(user).list.some((f) => f.id === data.flowId)) data.flowId = "";
-  if (!data.flowId && !data.message) return res.redirect("/broadcasts?error=" + encodeURIComponent("Xabar matnini yozing yoki flow tanlang"));
+  if (!data.flowId && !data.message && !data.media) return res.redirect("/broadcasts?error=" + encodeURIComponent("Xabar matnini yozing, media tanlang yoki flow tanlang"));
 
   const b = createBroadcast(user, data);
   if (!data.scheduledAt) {

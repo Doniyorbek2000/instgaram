@@ -7,7 +7,8 @@
  *  - WhatsApp: raqamlangan ro'yxat matnga qo'shiladi, mijoz raqam yozadi —
  *    automation.js oxirgi yuborilgan variantlarni eslab, raqamni payload'ga aylantiradi.
  */
-import { graphPost } from "./graph.js";
+import { graphPost, igGraphPost } from "./graph.js";
+import { sanitizeMedia, absoluteMediaUrl } from "./mediaStore.js";
 import { sendDirectMessage, sendDirectQuickReplies, sendDirectButtons } from "./services/instagram.js";
 import { sendMessengerMessage } from "./services/messenger.js";
 import { sendWhatsAppMessage } from "./services/whatsapp.js";
@@ -69,6 +70,84 @@ function telegramToken(tenant) {
 }
 
 /**
+ * Telegram Business: mijoz egasining shaxsiy akkauntiga yozgan bo'lsa, javob
+ * bot nomidan emas, egasining akkauntidan (business_connection_id orqali) ketadi.
+ */
+export function telegramBusinessExtra(tenant, chatId) {
+  const conn = tenant.tgBusiness?.chats?.[String(chatId)];
+  return conn ? { business_connection_id: conn } : {};
+}
+
+const TG_MEDIA = { image: ["sendPhoto", "photo"], video: ["sendVideo", "video"], audio: ["sendAudio", "audio"], file: ["sendDocument", "document"] };
+const WA_MEDIA = { image: "image", video: "video", audio: "audio", file: "document" };
+
+/**
+ * Kanal uchun media so'rov tanasini quradi (sof funksiya — testlanadi).
+ * media: { type: image|video|audio|file|post, url, name, postId, permalink }
+ * Qaytaradi: { kind: "ig"|"fb"|"wa"|"tg", method?, body } yoki { fallbackText }.
+ */
+export function buildMediaPayload(chan, recipientId, media, caption = "") {
+  const url = media.url ? absoluteMediaUrl(media.url) : "";
+  if (media.type === "post") {
+    if (chan === "ig") return { kind: "ig", body: { recipient: { id: recipientId }, message: { attachment: { type: "MEDIA_SHARE", payload: { id: media.postId } } } } };
+    return { fallbackText: media.permalink || "" };
+  }
+  if (!url) return { fallbackText: "" };
+  if (chan === "tg") {
+    const [method, field] = TG_MEDIA[media.type] || TG_MEDIA.file;
+    return { kind: "tg", method, body: { chat_id: recipientId, [field]: url, ...(caption ? { caption: String(caption).slice(0, 1024) } : {}) } };
+  }
+  if (chan === "wa") {
+    const t = WA_MEDIA[media.type] || "document";
+    const obj = { link: url };
+    if (caption && t !== "audio") obj.caption = String(caption).slice(0, 1024);
+    if (t === "document") obj.filename = media.name || url.split("/").pop();
+    return { kind: "wa", body: { messaging_product: "whatsapp", to: recipientId, type: t, [t]: obj } };
+  }
+  const type = media.type === "file" ? "file" : media.type;
+  const body = { recipient: { id: recipientId }, message: { attachment: { type, payload: { url, is_reusable: true } } } };
+  if (chan === "fb") body.messaging_type = "RESPONSE";
+  return { kind: chan === "fb" ? "fb" : "ig", body };
+}
+
+/**
+ * Bitta mijozga media yuboradi. caption — faqat Telegram/WhatsApp'da media bilan birga
+ * ketadi (Instagram/Messenger'da matn alohida xabar bo'lib yuboriladi).
+ * Media yuborilmasa, havola matn sifatida yuboriladi — mijoz baribir oladi.
+ */
+export async function sendMedia(tenant, channel, recipientId, media, caption = "") {
+  const chan = chanShort(channel);
+  const m = sanitizeMedia(media);
+  if (!m) return false;
+  const built = buildMediaPayload(chan, recipientId, m, caption);
+  try {
+    let r = null;
+    if (built.kind === "tg") {
+      const token = telegramToken(tenant);
+      r = token ? await callTelegramApi(token, built.method, { ...built.body, ...telegramBusinessExtra(tenant, recipientId) }) : null;
+      if (r?.ok) return true;
+    } else if (built.kind === "wa") {
+      r = await graphPost(`${tenant.meta.whatsappPhoneNumberId}/messages`, built.body, tenant.meta.whatsappToken);
+      if (r && !r.error) return true;
+    } else if (built.kind === "fb") {
+      r = await graphPost("me/messages", built.body, tenant.meta.pageAccessToken);
+      if (r && !r.error) return true;
+    } else if (built.kind === "ig") {
+      r = await igGraphPost("me/messages", built.body, tenant.meta?.igAccessToken || tenant.meta?.pageAccessToken || "");
+      if (r && !r.error) return true;
+    }
+    // Media o'tmadi — havolani matn qilib yuboramiz
+    const link = built.fallbackText || (m.url ? absoluteMediaUrl(m.url) : "");
+    if (!link) return false;
+    const icon = { image: "🖼️", video: "🎬", audio: "🎧", file: "📎", post: "📸" }[m.type] || "📎";
+    return sendReply(tenant, chan, recipientId, `${icon} ${m.name ? m.name + "\n" : ""}${link}`);
+  } catch (err) {
+    console.error(`[Outbound] media ${chan}:${recipientId}:`, err.message);
+    return false;
+  }
+}
+
+/**
  * Bitta mijozga javob yuboradi. channel — "ig"/"instagram" va h.k.
  * Natija: true (yuborildi) / false.
  */
@@ -81,7 +160,7 @@ export async function sendReply(tenant, channel, recipientId, text, options = []
     if (chan === "tg") {
       const token = telegramToken(tenant);
       if (!token) return false;
-      const payload = { chat_id: recipientId, text: String(text || "👇") };
+      const payload = { chat_id: recipientId, text: String(text || "👇"), ...telegramBusinessExtra(tenant, recipientId) };
       if (opts.length) {
         payload.reply_markup = {
           inline_keyboard: opts.map((o) => [

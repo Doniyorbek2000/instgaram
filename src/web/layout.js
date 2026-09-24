@@ -296,6 +296,7 @@ const NAV = [
     ["/flows", "flows", "flow", "Flow Builder"],
     ["/triggers", "triggers", "bolt", "Tezkor qoidalar"],
     ["/forms", "forms", "form", "Lid formalari"],
+    ["/media", "media", "camera", "Media kutubxona"],
     ["/templates", "templates", "layout", "Shablonlar Hubi"],
   ]],
   ["O'sish", [

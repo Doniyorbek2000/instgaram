@@ -67,6 +67,10 @@ function normalizeUser(u) {
   u.flows ||= {}; // Flow builder: {list, sessions}
   u.team ||= []; // Jamoa a'zolari: [{email, role, invitedAt}]
   u.content ||= {}; // AI kontent studiya: saqlangan g'oyalar
+  u.mediaLibrary ||= []; // Yuklangan media fayllar (rasm/video/audio/hujjat)
+  u.tgBusiness ||= {}; // Telegram Business ulanishi: {connectionId, ownerId, enabled, chats}
+  u.apiTokens ||= []; // MCP/API tokenlari (sha256 xesh)
+  u.aiUsage ||= {}; // AI kreditlari: {month, used, bonus}
   return u;
 }
 

@@ -29,7 +29,7 @@ const MAX_MEMBERS = 50;
 const OWNER_ONLY = ["/team", "/account/password", "/settings/password", "/billing/pay", "/admin", "/connect/instagram", "/account/delete"];
 const ALWAYS = ["/workspace", "/logout", "/assets/", "/team/join/"];
 const OPERATOR = ["/dashboard", "/inbox", "/clients", "/contacts", "/handoff", "/analytics"];
-const VIEWER_GET = ["/dashboard", "/inbox", "/clients", "/contacts", "/analytics", "/flows", "/triggers", "/forms", "/game", "/broadcasts", "/content", "/growth", "/scheduler", "/templates", "/integrations"];
+const VIEWER_GET = ["/media", "/dashboard", "/inbox", "/clients", "/contacts", "/analytics", "/flows", "/triggers", "/forms", "/game", "/broadcasts", "/content", "/growth", "/scheduler", "/templates", "/integrations"];
 
 const als = new AsyncLocalStorage();
 

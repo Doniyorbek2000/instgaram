@@ -98,6 +98,10 @@ async function runMigrations() {
     ALTER TABLE users ADD COLUMN IF NOT EXISTS flows JSONB DEFAULT '{}';
     ALTER TABLE users ADD COLUMN IF NOT EXISTS team JSONB DEFAULT '[]';
     ALTER TABLE users ADD COLUMN IF NOT EXISTS content JSONB DEFAULT '{}';
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS media_library JSONB DEFAULT '[]';
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS tg_business JSONB DEFAULT '{}';
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS api_tokens JSONB DEFAULT '[]';
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS ai_usage JSONB DEFAULT '{}';
 
     CREATE TABLE IF NOT EXISTS sessions (
       token TEXT PRIMARY KEY,
@@ -176,6 +180,10 @@ function normalizeUser(row) {
     flows: row.flows || {},
     team: row.team || [],
     content: row.content || {},
+    mediaLibrary: row.media_library || [],
+    tgBusiness: row.tg_business || {},
+    apiTokens: row.api_tokens || [],
+    aiUsage: row.ai_usage || {},
     createdAt: row.created_at,
   };
 }
@@ -266,6 +274,10 @@ export async function updateUser(id, patch) {
     flows: "flows",
     team: "team",
     content: "content",
+    mediaLibrary: "media_library",
+    tgBusiness: "tg_business",
+    apiTokens: "api_tokens",
+    aiUsage: "ai_usage",
   };
 
   for (const [key, col] of Object.entries(colMap)) {
