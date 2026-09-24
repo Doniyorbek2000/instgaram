@@ -843,6 +843,23 @@ export function validateFlow(flow, allFlows = []) {
     [n.next, n.yes, n.no, ...(n.buttons || []).map((b) => b.next)].filter(Boolean).forEach((x) => stack.push(x));
   }
 
+  // START noto'g'ri blokka qo'yilgan bo'lsa (unga boshqa bloklardan kirish bor, flow'ning
+  // haqiqiy boshi esa boshqa blok) — aniq maslahat va bir tugmali tuzatish
+  const incoming = new Set();
+  for (const n of Object.values(nodes)) {
+    [n.next, n.yes, n.no, ...(n.buttons || []).map((b) => b.next)].filter((x) => x && x !== n.id).forEach((x) => incoming.add(x));
+  }
+  if (flow.start && nodes[flow.start] && incoming.has(flow.start)) {
+    const roots = ids.filter((id) => id !== flow.start && nodes[id].type !== "note" && !incoming.has(id));
+    if (roots.length === 1 && !reach.has(roots[0])) {
+      warnings.unshift({
+        nodeId: roots[0],
+        msg: `START ${label(nodes[flow.start])} blokida turibdi, lekin flow ${label(nodes[roots[0]])} dan boshlanishi kerak — START'ni o'sha blokka o'tkazing`,
+        fix: { start: roots[0] },
+      });
+    }
+  }
+
   for (const n of Object.values(nodes)) {
     if (n.type === "note") continue;
     if (!reach.has(n.id)) warnings.push({ nodeId: n.id, msg: `${label(n)}: START'dan bu blokka yo'l yo'q — hech qachon ishlamaydi` });

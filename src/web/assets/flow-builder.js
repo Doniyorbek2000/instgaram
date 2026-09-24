@@ -931,7 +931,16 @@
         ? null
         : flow.start === n.id
         ? h("span", { class: "status-tag", text: "▶ Boshlanish bloki" })
-        : h("button", { type: "button", class: "secondary", style: "margin:0; padding:5px 10px; font-size:12px", text: "▶ Start qilish", onclick: function () { flow.start = n.id; markDirty(); renderAll(); } }),
+        : h("button", { type: "button", class: "secondary", style: "margin:0; padding:5px 10px; font-size:12px", text: "🏁 Birinchi blok qilish", title: "Trigger ishlaganda flow shu blokdan boshlanadi", onclick: function () {
+            var hasIncoming = Object.keys(flow.nodes).some(function (k) {
+              var x = flow.nodes[k];
+              return k !== n.id && (x.next === n.id || x.yes === n.id || x.no === n.id || (x.buttons || []).some(function (b) { return b.next === n.id; }));
+            });
+            if (hasIncoming && !confirm("Bu blokka boshqa bloklardan ulanish bor. Flow shu blokdan boshlansinmi?\n\nOldingi bloklar ishlamay qoladi (Ctrl+Z bilan qaytarish mumkin).")) return;
+            flow.start = n.id;
+            markDirty();
+            renderAll();
+          } }),
       h("button", { type: "button", class: "secondary", style: "margin:0; padding:5px 10px; font-size:12px", text: "⧉ Nusxa", onclick: function () { duplicateNode(n.id); } }),
       h("button", { type: "button", class: "secondary", style: "margin:0; padding:5px 10px; font-size:12px", text: "📋 Nusxalash", title: "Ctrl+C — boshqa flow'ga ham qo'yish mumkin", onclick: function () { copyNode(n.id); } }),
       h("button", { type: "button", class: "secondary", style: "margin:0; padding:5px 10px; font-size:12px; color:#f87171", text: "🗑️ O'chirish", onclick: function () { deleteNode(n.id); setStatus("🗑️ Blok o'chirildi — Ctrl+Z / ↶ bilan qaytarish mumkin", "#fbbf24"); } }),
@@ -1265,6 +1274,13 @@
         text: (it.bad ? "⛔ " : "⚠️ ") + it.x.msg,
         onclick: function () { if (it.x.nodeId) focusNode(it.x.nodeId); else { panel = null; renderAll(); } },
       }));
+      if (it.x.fix && it.x.fix.start && flow.nodes[it.x.fix.start]) {
+        side.appendChild(h("button", {
+          type: "button", class: "btn", style: "margin:4px 0 0; padding:6px 12px; font-size:12.5px; width:100%",
+          text: "✓ Tuzatish: START'ni #" + it.x.fix.start + " ga o'tkazish",
+          onclick: function () { flow.start = it.x.fix.start; markDirty(); renderAll(); runValidate(); },
+        }));
+      }
     });
   }
 

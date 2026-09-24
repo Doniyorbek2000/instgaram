@@ -193,3 +193,13 @@ test("MCP: xatoli flow yoqilmaydi, get_flow versiyasiz", async () => {
   await tool("set_flow_enabled").run(tenant, { flowId: id, enabled: true });
   assert.strictEqual(findFlow(tenant, id).enabled, true);
 });
+
+test("validateFlow: START noto'g'ri blokda bo'lsa — tuzatish taklifi", async () => {
+  const { buildTemplate } = await import("../src/flowTemplates.js");
+  const f = buildTemplate("plus_gate");
+  assert.deepStrictEqual(validateFlow(f, []).warnings, []);
+  f.start = "m2";
+  const w = validateFlow(f, []).warnings;
+  assert.deepStrictEqual(w[0].fix, { start: "m1" });
+  assert.match(w[0].msg, /START .*#m2.*#m1/);
+});
