@@ -13,7 +13,7 @@ setInterval(() => {
       rateLimitMap.delete(key);
     }
   }
-}, 10 * 60 * 1000);
+}, 10 * 60 * 1000).unref(); // jarayonni (testlar, skriptlar) tirik ushlab turmasin
 
 export function createRateLimiter({
   windowMs = 15 * 60 * 1000, // 15 daqiqa

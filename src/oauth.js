@@ -76,9 +76,10 @@ async function toLongLived(shortToken) {
     const res = await fetch(`https://graph.instagram.com/access_token?${qs}`);
     const data = await res.json().catch(() => ({}));
     // Almashtira olmasak ham qisqa token bilan davom etamiz — hech yo'qdan yaxshi
-    return data.access_token || shortToken;
+    if (!data.access_token) return { token: shortToken, expiresIn: 3600 };
+    return { token: data.access_token, expiresIn: Number(data.expires_in) || 60 * 86400 };
   } catch {
-    return shortToken;
+    return { token: shortToken, expiresIn: 3600 };
   }
 }
 
@@ -111,7 +112,7 @@ export async function connectInstagram(code) {
   const shortToken = await exchangeCode(code);
   if (!shortToken) return { error: "Instagram tokenini olishda xatolik yuz berdi." };
 
-  const token = await toLongLived(shortToken);
+  const { token, expiresIn } = await toLongLived(shortToken);
   const profile = await fetchProfile(token);
   if (!profile) {
     return {
@@ -136,6 +137,7 @@ export async function connectInstagram(code) {
     igUserId: String(profile.user_id),
     igUsername: profile.username || "",
     igAccessToken: token,
+    igTokenExpiresAt: new Date(Date.now() + expiresIn * 1000).toISOString(),
     accountType: profile.account_type || "",
   };
 }

@@ -740,14 +740,18 @@ site.get("/faq", (req, res) => {
 // ==================== AUTH (premium, ko'p tilli) ====================
 // routes.js login/register handlerlaridan chaqiriladi.
 
-export function authPage(lang, kind, { error = "", values = {}, refCode = "" } = {}) {
+export function authPage(lang, kind, { error = "", notice = "", values = {}, refCode = "", token = "" } = {}) {
   const tr = t(lang);
   const a = tr.auth;
   const isReg = kind === "register";
-  const path = isReg ? "/register" : "/login";
-  const title = isReg ? a.registerTitle : a.loginTitle;
-  const sub = isReg ? a.registerSub : a.loginSub;
-  const btn = isReg ? a.registerBtn : a.loginBtn;
+  const isForgot = kind === "forgot";
+  const isReset = kind === "reset";
+  const isLogin = !isReg && !isForgot && !isReset;
+  const path = isReg ? "/register" : isForgot ? "/forgot-password" : isReset ? "/reset-password" : "/login";
+  const title = isReg ? a.registerTitle : isForgot ? a.forgotTitle : isReset ? a.resetTitle : a.loginTitle;
+  const sub = isReg ? a.registerSub : isForgot ? a.forgotSub : isReset ? a.resetSub : a.loginSub;
+  const btn = isReg ? a.registerBtn : isForgot ? a.forgotBtn : isReset ? a.resetBtn : a.loginBtn;
+  const support = siteSettings();
   const globe = `<svg viewBox="0 0 24 24" fill="none" width="17" height="17" stroke="currentColor" stroke-width="1.7"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.5 2.5 3.8 5.7 3.8 9s-1.3 6.5-3.8 9c-2.5-2.5-3.8-5.7-3.8-9S9.5 5.5 12 3z"/></svg>`;
   const langDd = `<details class="lang-dd">
     <summary>${globe}<span>${LANG_SHORT[lang]}</span></summary>
@@ -795,6 +799,7 @@ export function authPage(lang, kind, { error = "", values = {}, refCode = "" } =
   .hint { color:var(--muted); font-size:12.5px; margin-top:5px; }
   .btn { width:100%; margin-top:22px; padding:13px; border:0; border-radius:12px; background:var(--grad); color:#fff; font-size:16px; font-weight:700; cursor:pointer; box-shadow:0 10px 22px -10px rgba(124,58,237,.7); transition:.15s; }
   .btn:hover { filter:brightness(1.06); }
+  .ok-note { background:#ecfdf5; color:#065f46; border:1px solid #a7f3d0; border-radius:11px; padding:11px 14px; font-size:14px; margin-bottom:8px; }
   .err { background:#fef2f2; color:#b42318; border:1px solid #fecaca; border-radius:11px; padding:11px 14px; font-size:14px; margin-bottom:8px; }
   .switch { text-align:center; margin-top:22px; color:var(--muted); font-size:14.5px; }
   .google-btn { width:100%; display:flex; align-items:center; justify-content:center; gap:10px; padding:12px; border:1px solid var(--line); border-radius:12px; background:#fff; color:var(--ink); font-size:15px; font-weight:600; cursor:pointer; text-decoration:none; transition:.15s; }
@@ -832,6 +837,12 @@ export function authPage(lang, kind, { error = "", values = {}, refCode = "" } =
       <h1>${esc(title)}</h1>
       <p class="lead">${esc(sub)}</p>
       ${error ? `<div class="err">${esc(error)}</div>` : ""}
+      ${notice ? `<div class="ok-note">${esc(notice)}${isForgot ? `<br><span style="font-size:13px">${esc(a.forgotHelp)} ${support.telegram ? `<a href="https://t.me/${esc(support.telegram)}">@${esc(support.telegram)}</a> · ` : ""}${support.email ? `<a href="mailto:${esc(support.email)}">${esc(support.email)}</a>` : ""}</span>` : ""}</div>` : ""}
+      ${(isForgot || isReset) ? `<form method="post" action="${path}">
+        ${isReset ? `<input type="hidden" name="token" value="${esc(token)}"><label>${esc(a.newPassword)}</label><input name="password" type="password" required minlength="6" autocomplete="new-password" placeholder="••••••••"><div class="hint">${esc(a.passwordHint)}</div>` : `<label>${esc(a.email)}</label><input name="email" type="email" required value="${esc(values.email || "")}" placeholder="you@email.com" autocomplete="email">`}
+        <button class="btn">${esc(btn)}</button>
+      </form>
+      <p class="switch"><a href="/login?lang=${lang}">← ${esc(a.toLogin)}</a></p>` : `
       ${googleAuthAvailable ? `
       <a class="google-btn" href="/auth/google${refCode ? `?ref=${encodeURIComponent(refCode)}` : ""}">
         <svg width="18" height="18" viewBox="0 0 48 48"><path fill="#FFC107" d="M43.6 20.5H42V20H24v8h11.3c-1.6 4.7-6.1 8-11.3 8-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.8 1.1 8 3l5.7-5.7C34.6 6 29.6 4 24 4 12.9 4 4 12.9 4 24s8.9 20 20 20 20-8.9 20-20c0-1.3-.1-2.7-.4-3.5z"/><path fill="#FF3D00" d="M6.3 14.7l6.6 4.8C14.7 15.1 19 12 24 12c3.1 0 5.8 1.1 8 3l5.7-5.7C34.6 6 29.6 4 24 4 16.3 4 9.7 8.3 6.3 14.7z"/><path fill="#4CAF50" d="M24 44c5.5 0 10.4-1.9 14.3-5.1l-6.6-5.6C29.6 35.1 26.9 36 24 36c-5.2 0-9.6-3.3-11.3-8l-6.6 5.1C9.6 39.7 16.3 44 24 44z"/><path fill="#1976D2" d="M43.6 20.5H42V20H24v8h11.3c-.8 2.3-2.2 4.2-4 5.6l6.6 5.6C41.5 36 44 30.5 44 24c0-1.3-.1-2.7-.4-3.5z"/></svg>
@@ -847,9 +858,10 @@ export function authPage(lang, kind, { error = "", values = {}, refCode = "" } =
         <label>${esc(a.password)}</label>
         <input name="password" type="password" required ${isReg ? 'minlength="6"' : ""} placeholder="••••••••">
         ${isReg ? `<div class="hint">${esc(a.passwordHint)}</div>` : ""}
+        ${isLogin ? `<div style="text-align:right; margin-top:8px; font-size:13.5px"><a href="/forgot-password?lang=${lang}">${esc(a.forgotLink)}</a></div>` : ""}
         <button class="btn">${esc(btn)}</button>
       </form>
-      <p class="switch">${isReg ? `${esc(a.haveAccount)} <a href="/login?lang=${lang}">${esc(a.toLogin)}</a>` : `${esc(a.noAccount)} <a href="/register?lang=${lang}">${esc(a.toRegister)}</a>`}</p>
+      <p class="switch">${isReg ? `${esc(a.haveAccount)} <a href="/login?lang=${lang}">${esc(a.toLogin)}</a>` : `${esc(a.noAccount)} <a href="/register?lang=${lang}">${esc(a.toRegister)}</a>`}</p>`}
     </div>
   </div>
 </div>
@@ -860,7 +872,7 @@ export function authPage(lang, kind, { error = "", values = {}, refCode = "" } =
 // ==== Huquqiy sahifalar (Meta App Review va Publish uchun majburiy) ====
 
 const legalEmail = () => siteSettings().email || SITE_DEFAULTS.email;
-const LEGAL_UPDATED = "2026-07-18";
+const LEGAL_UPDATED = "2026-09-24";
 
 // Yuridik rekvizitlar — to'lov tizimlari (Visa/MasterCard) talabi bo'yicha
 // maxfiylik siyosati va ofertada ko'rsatilishi shart.
@@ -940,18 +952,27 @@ site.get("/privacy-policy", (req, res) => {
       h: "3. Ma'lumotlardan qanday foydalanamiz",
       body: `Yig'ilgan ma'lumot faqat quyidagilar uchun ishlatiladi: mijoz xabariga mazmunan javob
         yozish, suhbat kontekstini saqlash, xizmat statistikasini ko'rsatish va obunani boshqarish.
-        Biz ma'lumotlaringizni sotmaymiz, reklama uchun ishlatmaymiz va uchinchi shaxslarga
-        bermaymiz.`,
+        Biz ma'lumotlaringizni sotmaymiz va reklama uchun ishlatmaymiz. Uchinchi tomonlarga faqat
+        xizmatni ko'rsatish uchun zarur hajmda va quyidagi 4-bo'limda sanalgan hollarda uzatiladi.`,
     },
     {
       h: "4. Uchinchi tomon xizmatlari",
-      body: `Javob matnini yaratish uchun xabar mazmuni <b>Obunext</b> tomonidan qayta ishlanadi.
-        Xabarlarni qabul qilish va yuborish <b>Meta Platforms</b> API'lari orqali amalga oshiriladi.
+      body: `Xizmat quyidagi tashqi provayderlardan foydalanadi (ma'lumot faqat shu vazifa uchun uzatiladi):<br>
+        • <b>Google (Gemini API)</b> — AI javob matnini yaratish: mijoz xabari, suhbatning oxirgi qismi va
+        biznes ma'lumoti yuboriladi. Ovozli javob yoqilgan bo'lsa, javob matni <b>Google Cloud Text-to-Speech</b>
+        orqali ovozga aylantiriladi.<br>
+        • <b>Meta Platforms</b> (Instagram, Facebook Messenger, WhatsApp) va <b>Telegram</b> — xabarlarni qabul
+        qilish va yuborish.<br>
+        • <b>Payme</b> (va biznes o'z do'konida ulasa — <b>Click</b>) — to'lovlarni qabul qilish; karta
+        ma'lumotlari faqat to'lov tizimida kiritiladi, bizga kelmaydi.<br>
+        • <b>Faqat biznes o'zi yoqqan integratsiyalar:</b> amoCRM, Bitrix24, Google Sheets yoki biznes
+        ko'rsatgan webhook manzili (lid va buyurtma ma'lumotlari), Eskiz (SMS) va biznesning SMTP pochtasi
+        (email xabarlar). Bu integratsiyalarni biznes istalgan payt o'chirishi mumkin.<br>
         Boshqa uchinchi tomonlarga ma'lumot uzatilmaydi.`,
     },
     {
       h: "5. Saqlash muddati va xavfsizlik",
-      body: `Ma'lumotlar Yevropada joylashgan serverda saqlanadi. Suhbatlar tarixi biznes o'z panelida
+      body: `Ma'lumotlar saqlanadigan server joylashuvi: <b>${esc(siteSettings().dataLocation || SITE_DEFAULTS.dataLocation)}</b>. Suhbatlar tarixi biznes o'z panelida
         ko'rishi uchun akkaunt faol bo'lgan davrda saqlanadi; biznes mijoz kartasini yoki akkauntini
         o'chirsa — tegishli yozishmalar butunlay o'chiriladi. Ulanish HTTPS orqali shifrlanadi,
         parollar scrypt algoritmi bilan hash qilinadi, Meta webhook so'rovlari kriptografik imzo
@@ -974,8 +995,10 @@ site.get("/privacy-policy", (req, res) => {
       body: `This service lets businesses auto-reply to their Instagram, Messenger and WhatsApp
         customers using AI. We collect the business owner's email and business description, Meta
         access tokens, and incoming customer messages (text, voice, images) with Meta-provided user
-        IDs. Message content is processed by Obunext to generate a reply. We do not sell or share
-        your data. Data is stored on servers in Europe, encrypted in transit. To request access or
+        IDs. To generate replies, message content is sent to Google (Gemini API); messages are
+        delivered via Meta and Telegram APIs; payments are handled by Payme/Click. CRM, Google Sheets,
+        webhook, SMS and email integrations receive data only if the business enables them. We do not
+        sell your data or use it for advertising. Server location: ${esc(siteSettings().dataLocation || SITE_DEFAULTS.dataLocation)}; data is encrypted in transit. To request access or
         deletion of your data, see <a href="/data-deletion">/data-deletion</a> or email
         <a href="mailto:${esc(legalEmail())}">${esc(legalEmail())}</a>.`,
     },
@@ -1052,8 +1075,8 @@ site.get("/offer", async (req, res) => {
         ${Object.values(plans).map((pl) => `<b>${esc(pl.name)}</b> — ${esc(pl.price.toLocaleString("ru-RU"))} so'm/oy<br>`).join("")}<br>
         Yangi Buyurtmachilarga <b>3 kunlik bepul sinov muddati</b> beriladi, karta
         ma'lumotlari talab qilinmaydi. To'lov oldindan, tanlangan tarif uchun bir oylik
-        davrga amalga oshiriladi. To'lov Payme, Click yoki bank kartasi (Visa/MasterCard,
-        UzCard/Humo) orqali qabul qilinadi. Amaldagi narxlar
+        davrga amalga oshiriladi. To'lov Payme orqali (UzCard, Humo, Visa, MasterCard
+        kartalari bilan) qabul qilinadi; to'lov uchun fiskal chek beriladi. Amaldagi narxlar
         <a href="/pricing">narxlar sahifasida</a> ko'rsatiladi; Ijrochi narxlarni
         o'zgartirish huquqini saqlaydi, o'zgarish to'langan davrga taalluqli emas.`,
     },

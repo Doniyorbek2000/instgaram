@@ -43,6 +43,20 @@ import { refreshTelegramWebhooks } from "./telegram.js";
 import { listUsers, dbReady, dbStatus } from "./db.js";
 import { loadSeenEvents, flushSeenEvents } from "./dedup.js";
 import { securityHeaders } from "./securityHeaders.js";
+import { installProcessHandlers, expressErrorHandler, alertAdmin } from "./monitor.js";
+import { runIgTokenRefresh } from "./igToken.js";
+import { runSubscriptionReminders } from "./lifecycle.js";
+import { runDueBackup } from "./backup.js";
+
+installProcessHandlers();
+
+// Qayta ishlanayotgan webhook hodisalari — server to'xtatilganda (deploy) ular tugashini kutamiz
+const inflight = new Set();
+function track(promise) {
+  inflight.add(promise);
+  promise.finally(() => inflight.delete(promise));
+  return promise;
+}
 import { page } from "./web/layout.js";
 import { findUserByPlatformId, persist } from "./db.js";
 import { purgeInternalKeys } from "./outbound.js";
@@ -84,21 +98,28 @@ app.use(teamContext);
 // SEO: Robots.txt & XML Sitemap for Google Search Indexing
 app.get("/robots.txt", (_req, res) => {
   res.type("text/plain");
-  res.send("User-agent: *\nAllow: /\nSitemap: https://obunext.uz/sitemap.xml\n");
+  const base = (config.baseUrl || "https://obunext.uz").replace(/\/$/, "");
+  // Shaxsiy kabinet, admin va texnik yo'llar indekslanmasin
+  res.send(`User-agent: *\nAllow: /\nDisallow: /admin\nDisallow: /dashboard\nDisallow: /inbox\nDisallow: /reset-password\nDisallow: /l/\nDisallow: /g/\nSitemap: ${base}/sitemap.xml\n`);
 });
 
 app.get("/sitemap.xml", (_req, res) => {
+  const base = (config.baseUrl || "https://obunext.uz").replace(/\/$/, "");
+  const pages = [
+    ["/", "1.0", "daily"], ["/features", "0.9", "weekly"], ["/pricing", "0.9", "weekly"], ["/faq", "0.8", "monthly"],
+    ["/contact", "0.7", "monthly"], ["/register", "0.6", "monthly"], ["/login", "0.4", "monthly"],
+    ["/offer", "0.3", "yearly"], ["/privacy-policy", "0.3", "yearly"], ["/terms", "0.3", "yearly"], ["/data-deletion", "0.2", "yearly"],
+  ];
+  const langs = ["uz", "ru", "en"];
+  // Har bir til alohida URL (?lang=) + hreflang muqobillari — Google ru/en versiyalarni ham indekslasin
+  const urls = pages.flatMap(([p, prio, freq]) => langs.map((l) => {
+    // Sahifalardagi <link hreflang> bilan bir xil format (?lang=uz|ru|en)
+    const loc = (lang) => `${base}${p}?lang=${lang}`;
+    const alts = langs.map((a) => `<xhtml:link rel="alternate" hreflang="${a}" href="${loc(a)}"/>`).join("") + `<xhtml:link rel="alternate" hreflang="x-default" href="${base}${p}"/>`;
+    return `  <url><loc>${loc(l)}</loc>${alts}<priority>${l === "uz" ? prio : (Number(prio) * 0.9).toFixed(1)}</priority><changefreq>${freq}</changefreq></url>`;
+  }));
   res.type("application/xml");
-  res.send(`<?xml version="1.0" encoding="UTF-8"?>
-<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
-  <url><loc>https://obunext.uz/</loc><priority>1.0</priority><changefreq>daily</changefreq></url>
-  <url><loc>https://obunext.uz/features</loc><priority>0.9</priority><changefreq>weekly</changefreq></url>
-  <url><loc>https://obunext.uz/pricing</loc><priority>0.9</priority><changefreq>weekly</changefreq></url>
-  <url><loc>https://obunext.uz/faq</loc><priority>0.8</priority><changefreq>monthly</changefreq></url>
-  <url><loc>https://obunext.uz/contact</loc><priority>0.8</priority><changefreq>monthly</changefreq></url>
-  <url><loc>https://obunext.uz/login</loc><priority>0.6</priority><changefreq>monthly</changefreq></url>
-  <url><loc>https://obunext.uz/register</loc><priority>0.6</priority><changefreq>monthly</changefreq></url>
-</urlset>`);
+  res.send(`<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9" xmlns:xhtml="http://www.w3.org/1999/xhtml">\n${urls.join("\n")}\n</urlset>`);
 });
 
 // Google Search Console Site Verification
@@ -329,7 +350,10 @@ app.post("/webhook", async (req, res) => {
           ? handleFacebookEntry(tenant, item)
           : handleWhatsAppEntry(tenant, item);
 
-    p.catch((err) => console.error("Hodisani qayta ishlashda xato:", err));
+    track(p.catch((err) => {
+      console.error("Hodisani qayta ishlashda xato:", err);
+      alertAdmin("webhook", `${object}: ${err?.message || err}`);
+    }));
   }
 });
 
@@ -353,6 +377,8 @@ app.use((req, res) => {
   res.sendStatus(404);
 });
 
+app.use(expressErrorHandler);
+
 // Ishga tushishdan oldin muhim sozlamalarni tekshiramiz
 function checkConfig() {
   const warn = [];
@@ -370,6 +396,7 @@ function checkConfig() {
 // ilk webhooklar noto'g'ri bazaga yozilib qolardi.
 await dbReady;
 await loadSeenEvents();
+if (dbStatus().fallback) alertAdmin("database", `PostgreSQL'ga ulanib bo'lmadi — JSON faylga yozilmoqda: ${dbStatus().error}`);
 
 const server = app.listen(config.port, () => {
   checkConfig();
@@ -414,22 +441,41 @@ const server = app.listen(config.port, () => {
     runDueShop().catch((err) => console.error("[Do'kon] xato:", err.message));
   }, 60 * 1000);
 
+  // Instagram tokenlarini yangilash (60 kunlik) — har 6 soatda, birinchisi 1 daqiqadan so'ng
+  const igRefresh = () => runIgTokenRefresh().catch((err) => console.error("[IG token] xato:", err.message));
+  setTimeout(igRefresh, 60 * 1000);
+  setInterval(igRefresh, 6 * 60 * 60 * 1000);
+
+  // Obuna tugashi eslatmalari va kunlik zaxira nusxa — har soatda tekshiriladi
+  const hourly = () => {
+    runSubscriptionReminders().catch((err) => console.error("[Obuna eslatma] xato:", err.message));
+    runDueBackup().catch((err) => console.error("[Zaxira] xato:", err.message));
+  };
+  setTimeout(hourly, 5 * 60 * 1000);
+  setInterval(hourly, 60 * 60 * 1000);
+
   setInterval(() => {
     checkAndPublishScheduledPosts().catch((err) => console.error("[PostPublisher] xato:", err.message));
   }, 5 * 60 * 1000);
 });
 
 // Server to'xtatilganda bazani saqlab, tozalab chiqamiz
-function shutdown(signal) {
-  console.log(`\n${signal} — bazani saqlab, to'xtatilmoqda...`);
+async function shutdown(signal) {
+  console.log(`\n${signal} — yangi so'rovlar qabul qilinmaydi, jarayondagi xabarlar tugatilmoqda...`);
+  server.close();
+  // Deploy paytida qayta ishlanayotgan mijoz xabarlari yo'qolmasin (ko'pi bilan 15 soniya)
+  const drain = Promise.allSettled([...inflight]);
+  await Promise.race([drain, new Promise((r) => setTimeout(r, 15000))]);
+  if (inflight.size) console.warn(`[Shutdown] ${inflight.size} ta hodisa tugatilmay qoldi`);
   try {
-    persist();
+    await persist();
     flushSeenEvents();
+    const { flushArchive } = await import("./chatStore.js");
+    await flushArchive();
   } catch (err) {
     console.error("Saqlashda xato:", err.message);
   }
-  server.close(() => process.exit(0));
-  setTimeout(() => process.exit(0), 5000).unref();
+  setTimeout(() => process.exit(0), 300);
 }
 process.on("SIGTERM", () => shutdown("SIGTERM"));
 process.on("SIGINT", () => shutdown("SIGINT"));

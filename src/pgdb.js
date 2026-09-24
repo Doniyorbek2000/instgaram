@@ -740,6 +740,60 @@ export async function recentSeen(ttlMs) {
 }
 
 // ============================================================
+// ZAXIRA NUSXA (eksport / import)
+// ============================================================
+
+export const BACKUP_TABLES = [
+  { name: "users", key: "id" },
+  { name: "sessions", key: "token" },
+  { name: "orders", key: "id" },
+  { name: "payme_tx", key: "id" },
+  { name: "platform", key: "key" },
+  { name: "messages", key: "id" },
+];
+
+/** Jadval qatorlarini bo'laklab o'qiydi (katta jadvallar xotirani to'ldirmasin). */
+export async function dumpTable(table, onRows, batch = 2000) {
+  const t = BACKUP_TABLES.find((x) => x.name === table);
+  if (!pgReady || !t) return 0;
+  let last = null;
+  let total = 0;
+  for (;;) {
+    const { rows } = last === null
+      ? await pgPool.query(`SELECT * FROM ${t.name} ORDER BY ${t.key} LIMIT $1`, [batch])
+      : await pgPool.query(`SELECT * FROM ${t.name} WHERE ${t.key} > $2 ORDER BY ${t.key} LIMIT $1`, [batch, last]);
+    if (!rows.length) break;
+    await onRows(rows);
+    total += rows.length;
+    last = rows[rows.length - 1][t.key];
+    if (rows.length < batch) break;
+  }
+  return total;
+}
+
+/** Zaxiradan qatorlarni tiklaydi (mavjudlari o'zgarmaydi — ON CONFLICT DO NOTHING). */
+export async function restoreRows(table, rows) {
+  const t = BACKUP_TABLES.find((x) => x.name === table);
+  if (!pgReady || !t || !rows.length) return 0;
+  let n = 0;
+  for (const r of rows) {
+    const cols = Object.keys(r);
+    const vals = cols.map((c) => (r[c] !== null && typeof r[c] === "object" && !(r[c] instanceof Date) ? JSON.stringify(r[c]) : r[c]));
+    const { rowCount } = await pgPool.query(
+      `INSERT INTO ${t.name}(${cols.map((c) => `"${c.replace(/"/g, "")}"`).join(",")}) VALUES(${cols.map((_, i) => `$${i + 1}`).join(",")}) ${
+        // platform jadvalini migratsiya standart qiymatlar bilan to'ldiradi — zaxiradagisi ustun
+        table === "platform" ? "ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value" : "ON CONFLICT DO NOTHING"
+      }`,
+      vals
+    );
+    n += rowCount;
+  }
+  if (table === "messages") await pgPool.query("SELECT setval(pg_get_serial_sequence('messages','id'), GREATEST(1, (SELECT COALESCE(MAX(id),1) FROM messages)))");
+  if (table === "users") await loadAllUsers();
+  return n;
+}
+
+// ============================================================
 // pg ready check
 // ============================================================
 export function isPgReady() { return pgReady; }

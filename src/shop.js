@@ -72,6 +72,8 @@ export function sanitizeProduct(input = {}, existing = {}) {
     image: /^https?:\/\/\S+$/i.test(image) || image.startsWith("/u/") ? image.slice(0, 1000) : "",
     url: /^https?:\/\/\S+$/i.test(url) ? url.slice(0, 1000) : "",
     category: String(input.category || "").trim().slice(0, 40),
+    ikpu: String(input.ikpu ?? existing.ikpu ?? "").replace(/\D/g, "").slice(0, 20), // MXIK — fiskal chek uchun
+    packageCode: String(input.packageCode ?? existing.packageCode ?? "").replace(/\D/g, "").slice(0, 20),
     active: input.active === undefined ? existing.active ?? true : input.active === true || input.active === "on",
     createdAt: existing.createdAt || new Date().toISOString(),
   };

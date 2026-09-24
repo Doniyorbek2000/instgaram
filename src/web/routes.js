@@ -22,6 +22,10 @@ import {
   isAdmin,
   changePassword,
   loginOrRegisterWithGoogle,
+  requestPasswordReset,
+  resetPasswordWithToken,
+  sendEmailVerification,
+  verifyEmailToken,
 } from "../auth.js";
 import { googleAuthAvailable, googleAuthUrl, fetchGoogleProfile } from "../googleAuth.js";
 import { updateUser, listUsers, findUserById, persist, createOrder, setPlanPrices, getPlatformGeminiKey, setPlatformGeminiKey } from "../db.js";
@@ -43,7 +47,8 @@ import { page, esc } from "./layout.js";
 import { brandIcon } from "./icons.js";
 import { getBusinessDiscovery } from "../services/instagram.js";
 import { authPage } from "./site.js";
-import { pickLang } from "./i18n.js";
+import { pickLang, t } from "./i18n.js";
+import { mailReady } from "../mailer.js";
 import { createRateLimiter } from "../rateLimit.js";
 
 const authRateLimiter = createRateLimiter({
@@ -113,6 +118,7 @@ web.post("/register", authRateLimiter, async (req, res) => {
 
   // Referal: taklif qiluvchini ID prefiksi bo'yicha topib, sinov/obuna muddatini uzaytiradi
   await creditReferral(ref, result.user);
+  sendEmailVerification(result.user, siteBase(req)).catch((err) => console.error("[Email tasdiq]", err.message));
 
   res.setHeader("Set-Cookie", `sid=${result.token}; ${cookieOpts}`);
   res.redirect("/dashboard");
@@ -131,6 +137,49 @@ web.post("/login", authRateLimiter, async (req, res) => {
   res.redirect("/dashboard");
 });
 
+
+// ==== Parolni tiklash va email tasdiqlash ====
+
+const siteBase = (req) => (config.baseUrl || `${req.protocol}://${req.get("host")}`).replace(/\/$/, "");
+
+web.get("/forgot-password", (req, res) => res.send(authPage(pickLang(req), "forgot")));
+
+web.post("/forgot-password", authRateLimiter, async (req, res) => {
+  const lang = pickLang(req);
+  const email = String(req.body?.email || "").trim().slice(0, 200);
+  const r = await requestPasswordReset(email, siteBase(req)).catch((err) => {
+    console.error("[Parol tiklash]", err.message);
+    return { channels: [] };
+  });
+  if (r.channels?.length) console.log(`[Parol tiklash] ${email}: ${r.channels.join(", ")} orqali yuborildi`);
+  // Email mavjud-yo'qligini oshkor qilmaymiz — javob doim bir xil
+  res.send(authPage(lang, "forgot", { notice: t(lang).auth.forgotSent, values: { email } }));
+});
+
+web.get("/reset-password", (req, res) => {
+  const lang = pickLang(req);
+  const token = String(req.query.token || "");
+  res.send(authPage(lang, "reset", { token, error: token ? "" : t(lang).auth.resetInvalid }));
+});
+
+web.post("/reset-password", authRateLimiter, async (req, res) => {
+  const lang = pickLang(req);
+  const token = String(req.body?.token || "");
+  const r = await resetPasswordWithToken(token, req.body?.password);
+  if (!r.ok) return res.send(authPage(lang, r.error === "invalid" ? "forgot" : "reset", { token, error: r.error === "invalid" ? t(lang).auth.resetInvalid : r.error }));
+  res.setHeader("Set-Cookie", `sid=${r.token}; ${cookieOpts}`);
+  res.redirect("/dashboard?pw=1");
+});
+
+web.get("/verify-email", async (req, res) => {
+  const user = await verifyEmailToken(String(req.query.token || ""));
+  res.redirect(user ? (req.user ? "/dashboard?verified=1" : "/login?verified=1") : "/dashboard?verified=0");
+});
+
+web.post("/verify-email/resend", requireAuth, async (req, res) => {
+  const sent = await sendEmailVerification(req.user, siteBase(req));
+  res.redirect(`/dashboard?verify=${sent ? "sent" : "fail"}`);
+});
 
 web.get("/logout", async (req, res) => {
   await logout(parseSid(req));
@@ -197,6 +246,21 @@ web.get("/dashboard", requireAuth, (req, res) => {
     : aiLeft.left <= Math.max(10, aiLeft.quota * 0.1)
       ? `<div class="info">⚠️ AI javoblar deyarli tugadi: ${aiLeft.left} ta qoldi. <a href="/billing#credits">Kredit olish</a></div>`
       : "";
+  const daysLeft = sub.active && sub.until ? Math.ceil((new Date(sub.until).getTime() - Date.now()) / 86400000) : null;
+  const notices = [
+    daysLeft !== null && daysLeft <= 3
+      ? `<div class="info">⏳ ${sub.kind === "trial" ? "Sinov muddati" : "Obunangiz"} ${daysLeft <= 0 ? "bugun" : `${daysLeft} kundan so'ng`} tugaydi. Bot to'xtab qolmasligi uchun <a href="/billing">hozir uzaytiring</a>.</div>`
+      : "",
+    u.meta?.igTokenError && u.meta?.igAccessToken
+      ? `<div class="error">⚠️ Instagram ulanishini yangilab bo'lmadi — bot Instagram'da javob bermay qolishi mumkin. <a href="/connect/instagram">Instagram'ni qayta ulang</a>.</div>`
+      : "",
+    u.meta?.emailVerified === false && mailReady()
+      ? `<div class="info">✉️ Emailingizni tasdiqlang (${esc(u.email)}) — parolni unutsangiz, tiklash havolasi shu manzilga keladi. <form method="post" action="/verify-email/resend" style="display:inline; margin:0"><button class="secondary" style="margin:0 0 0 6px; padding:3px 10px; font-size:12px">Qayta yuborish</button></form></div>`
+      : "",
+    req.query.verified === "1" ? `<div class="ok">✅ Email tasdiqlandi.</div>` : req.query.verified === "0" ? `<div class="error">Tasdiqlash havolasi eskirgan yoki noto'g'ri.</div>` : "",
+    req.query.verify === "sent" ? `<div class="ok">✉️ Tasdiqlash xati yuborildi.</div>` : "",
+    req.query.pw === "1" ? `<div class="ok">🔑 Yangi parol saqlandi. Boshqa qurilmalardagi sessiyalar yopildi.</div>` : "",
+  ].join("");
 
   // 7-kunlik grafik
   const maxDay = Math.max(1, ...stats.last7.map((d) => d.count));
@@ -238,7 +302,7 @@ web.get("/dashboard", requireAuth, (req, res) => {
       `
       ${saved ? `<div class="ok">O'zgarishlar muvaffaqiyatli saqlandi! ✅</div>` : ""}
       ${req.query.connected ? `<div class="ok">Instagram/Facebook muvaffaqiyatli ulandi 🎉 Endi bot mijozlaringizga avtomatik javob beradi.</div>` : ""}
-      ${subBanner}
+      ${subBanner}${notices}
       ${(() => {
         const st = aiStatusLabel(u);
         return `<div class="card" style="display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap; border:1px solid ${st.on ? "rgba(16,185,129,0.45)" : "rgba(100,116,139,0.6)"}">
@@ -643,6 +707,9 @@ web.get("/connect/instagram/callback", requireAuth, async (req, res) => {
       igAccessToken: result.igAccessToken,
       igUserId: result.igUserId,
       igUsername: result.igUsername,
+      igTokenExpiresAt: result.igTokenExpiresAt,
+      igTokenRefreshedAt: new Date().toISOString(),
+      igTokenError: "",
     },
   });
 
