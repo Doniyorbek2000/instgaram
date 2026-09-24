@@ -11,6 +11,7 @@ import { ensureRules } from "./rules.js";
 import { isTelegramChannelMember, telegramChannelUrl } from "./telegram.js";
 import { checkFollowerStatus } from "./services/instagram.js";
 import { splitKey } from "./outbound.js";
+import { ruleReplyOptions, onRuleDelivered, onGateBlocked } from "./ruleActions.js";
 
 // Oxirgi yuborilgan variantlar — WhatsApp kabi tugmasiz kanallarda mijoz "2" deb
 // yozsa, uni 2-variant payload'iga aylantirish uchun. Xotirada (qayta ishga
@@ -119,12 +120,13 @@ export async function runAutomations(tenant, key, ctx) {
         const ok = await passesGate(tenant, chan, recipientId);
         if (ok === false) {
           const gm = gateMessage(tenant, chan, rule);
+          onGateBlocked(tenant, rule, key, gm.options.filter((o) => o.payload));
           return { reply: "Siz hali kanalimizga obuna bo'lmabsiz 🥺 Obuna bo'ling va tugmani qayta bosing:", options: gm.options };
         }
         bumpRule(tenant, rule, "gatePassed");
         bumpRule(tenant, rule, "sent");
-        persist(tenant);
-        return { reply: rule.privateReply || "Obunangiz tasdiqlandi! 🎉" };
+        onRuleDelivered(tenant, rule, key);
+        return { reply: rule.privateReply || "Obunangiz tasdiqlandi! 🎉", options: ruleReplyOptions(rule) };
       }
     }
     if (g.enabled) {

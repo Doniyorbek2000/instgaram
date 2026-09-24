@@ -325,3 +325,39 @@ export async function generateReply(tenant, chatKey, { text = "", media = [] } =
     return smartFallbackReply(tenant, text);
   }
 }
+
+/**
+ * "AI trigger" (ChatPlace smart trigger): kalit so'zsiz, MA'NO bo'yicha qoida tanlash.
+ * Masalan qoida tavsifi "narx yoki to'lov haqida so'rash" bo'lsa, "qancha turadi?",
+ * "сколько стоит" yoki "price?" kommentlari ham shu qoidani ishga tushiradi.
+ *
+ * Bitta AI so'rovi bilan barcha nomzod qoidalar orasidan tanlaydi.
+ * Qaytaradi: mos qoida yoki null (AI yo'q / xato / hech biri mos emas).
+ */
+export async function classifyIntent(tenant, text, rules) {
+  const candidates = (rules || []).filter(Boolean);
+  const message = String(text || "").trim();
+  if (!candidates.length || !message) return null;
+
+  const platformKey = await getPlatformGeminiKey();
+  const geminiKey = tenant.geminiApiKey || platformKey || globalGeminiKey;
+  if (!geminiKey) return null;
+
+  const list = candidates
+    .map((r, i) => `${i + 1}. ${(r.aiIntent || r.name || r.keyword || "").replace(/\s+/g, " ").slice(0, 300)}`)
+    .join("\n");
+  const systemPrompt =
+    "You route customer messages to automation rules. You receive a numbered list of rule " +
+    "descriptions and one customer message (any language: Uzbek, Russian, English). " +
+    "Answer with ONLY the number of the single best matching rule, or 0 if none clearly matches. " +
+    "No words, no punctuation — just the number.";
+
+  try {
+    const answer = await askGemini(geminiKey, systemPrompt, [], `Rules:\n${list}\n\nMessage: ${message.slice(0, 1000)}`, []);
+    const idx = Number.parseInt(String(answer).match(/\d+/)?.[0] ?? "0", 10);
+    return idx >= 1 && idx <= candidates.length ? candidates[idx - 1] : null;
+  } catch (err) {
+    console.error("[AI Trigger] klassifikatsiya xatosi:", err.message);
+    return null;
+  }
+}

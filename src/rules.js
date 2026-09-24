@@ -91,31 +91,74 @@ export function pickPublicReply(rule) {
   return list[randomIndex];
 }
 
+/**
+ * Matnni solishtirish uchun normallashtiradi: kichik harf, o'zbekcha apostrof
+ * variantlari (o' o‘ o’ o`) bitta ko'rinishga, ortiqcha bo'shliqlar olib tashlanadi.
+ * Shunda mijoz "sovg‘a" yoki "sovg`a" deb yozsa ham "sovg'a" qoidasi ishlaydi.
+ */
+export function normalizeText(text) {
+  return String(text || "")
+    .toLowerCase()
+    .replace(/[\u2018\u2019\u02BB\u02BC`´]/g, "'")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/** Qoidaning kalit so'zlari ro'yxati ("narx, price, цена" → 3 ta variant). */
+export function ruleKeywords(rule) {
+  return String(rule?.keyword || "")
+    .split(/[,\n]/)
+    .map(normalizeText)
+    .filter(Boolean);
+}
+
+/** Qoida har qanday matnga ishlaydimi (kalit so'z "*" yoki bo'sh, yoki moslik "any"). */
+export function isCatchAll(rule) {
+  if (rule.matchType === "any") return true;
+  const kws = ruleKeywords(rule);
+  return !kws.length || kws.includes("*");
+}
+
+/**
+ * Matn qoidaning kalit so'zlaridan biriga mos keladimi.
+ * matchType: contains | exact | regex | any. "ai" qoidalari bu yerda false —
+ * ular alohida (asinxron) AI klassifikatsiya orqali tekshiriladi.
+ */
+export function matchesRule(rule, text) {
+  if (rule.matchType === "ai") return false;
+  if (isCatchAll(rule)) return true;
+  const t = normalizeText(text);
+  if (!t) return false;
+  for (const kw of ruleKeywords(rule)) {
+    if (rule.matchType === "exact" && t === kw) return true;
+    if (rule.matchType === "regex") {
+      try {
+        if (new RegExp(kw, "i").test(t)) return true;
+      } catch {
+        // Noto'g'ri regex — bu variantni o'tkazib yuboramiz
+      }
+      continue;
+    }
+    if ((rule.matchType === "contains" || !rule.matchType) && t.includes(kw)) return true;
+  }
+  return false;
+}
+
+function targetsMedia(rule, mediaId) {
+  return !rule.targetMediaId || rule.targetMediaId === "*" || !mediaId || rule.targetMediaId === mediaId;
+}
+
 /** Komment yozilganda mos keluvchi qoidani topadi (post ID va kalit so'z bo'yicha) */
 export function findCommentRule(user, commentText, mediaId = "") {
-  const rules = ensureRules(user);
-  const text = (commentText || "").toLowerCase().trim();
-
-  // 1. Avval aniq post ID va aniq kalit so'z mosligini tekshiramiz
-  for (const rule of rules) {
-    if (rule.type !== "comment_to_dm" || !rule.enabled) continue;
-    if (rule.targetMediaId && rule.targetMediaId !== "*" && mediaId && rule.targetMediaId !== mediaId) continue;
-    if (rule.keyword === "*" || !rule.keyword) continue;
-
-    const kw = rule.keyword.toLowerCase().trim();
-    if (rule.matchType === "exact" && text === kw) return rule;
-    if (rule.matchType === "contains" && text.includes(kw)) return rule;
-  }
-
-  // 2. Aniq moslik topilmasa, hamma kommentga javob beruvchi "*" qoidani izlaymiz
-  for (const rule of rules) {
-    if (rule.type === "comment_to_dm" && rule.enabled) {
-      if (rule.targetMediaId && rule.targetMediaId !== "*" && mediaId && rule.targetMediaId !== mediaId) continue;
-      if (rule.keyword === "*" || !rule.keyword) return rule;
-    }
-  }
-
-  return null;
+  const candidates = ensureRules(user).filter(
+    (r) => r.type === "comment_to_dm" && r.enabled && targetsMedia(r, mediaId)
+  );
+  // 1. Aniq kalit so'z mosligi (aniq post uchun yozilgan qoida umumiysidan ustun)
+  const specific = candidates.filter((r) => r.matchType !== "ai" && !isCatchAll(r) && matchesRule(r, commentText));
+  const exactPost = specific.find((r) => r.targetMediaId && r.targetMediaId !== "*");
+  if (exactPost || specific[0]) return exactPost || specific[0];
+  // 2. Hamma kommentga javob beruvchi "*" qoida
+  return candidates.find((r) => r.matchType !== "ai" && isCatchAll(r)) || null;
 }
 
 /** Story mention bo'lganda mos qoidani topadi */
@@ -126,40 +169,77 @@ export function findStoryMentionRule(user) {
 
 /** Story reply (story'ga javob/reaksiya) bo'lganda mos qoidani topadi */
 export function findStoryReplyRule(user, messageText = "") {
-  const rules = ensureRules(user);
-  const text = (messageText || "").toLowerCase().trim();
-
-  for (const rule of rules) {
-    if (rule.type !== "story_reply" || !rule.enabled) continue;
-    if (rule.keyword === "*" || !rule.keyword) return rule;
-    const kw = rule.keyword.toLowerCase().trim();
-    if (rule.matchType === "exact" && text === kw) return rule;
-    if (rule.matchType === "contains" && text.includes(kw)) return rule;
-  }
-  return null;
+  const rules = ensureRules(user).filter((r) => r.type === "story_reply" && r.enabled && r.matchType !== "ai");
+  return rules.find((r) => !isCatchAll(r) && matchesRule(r, messageText)) || rules.find(isCatchAll) || null;
 }
 
 /** Direct Message kelganda kalit so'z bo'yicha mos qoidani topadi */
 export function findKeywordRule(user, messageText) {
-  const rules = ensureRules(user);
-  const text = (messageText || "").toLowerCase().trim();
-  if (!text) return null;
+  if (!normalizeText(messageText)) return null;
+  return (
+    ensureRules(user).find(
+      (r) => r.type === "keyword_dm" && r.enabled && r.matchType !== "ai" && !isCatchAll(r) && matchesRule(r, messageText)
+    ) || null
+  );
+}
 
-  for (const rule of rules) {
-    if (rule.type !== "keyword_dm" || !rule.enabled) continue;
-    const kw = (rule.keyword || "").toLowerCase().trim();
-    if (!kw) continue;
+/** Berilgan turdagi yoqilgan "AI trigger" qoidalari (kalit so'zsiz, ma'no bo'yicha). */
+export function aiRules(user, type, mediaId = "") {
+  return ensureRules(user).filter(
+    (r) => r.type === type && r.enabled && r.matchType === "ai" && targetsMedia(r, mediaId)
+  );
+}
 
-    if (rule.matchType === "exact" && text === kw) return rule;
-    if (rule.matchType === "contains" && text.includes(kw)) return rule;
-    if (rule.matchType === "regex") {
-      try {
-        const re = new RegExp(kw, "i");
-        if (re.test(text)) return rule;
-      } catch {}
-    }
-  }
-  return null;
+const clampInt = (v, min, max, def) => {
+  const n = Number.parseInt(v, 10);
+  return Number.isFinite(n) ? Math.min(max, Math.max(min, n)) : def;
+};
+
+/**
+ * "Nomi | https://havola" qatorlarini tugmalar ro'yxatiga aylantiradi.
+ * Instagram tugmali shablon maksimal 3 ta tugmani qabul qiladi.
+ */
+export function parseButtons(raw) {
+  if (Array.isArray(raw)) return raw.filter((b) => b?.title && b?.url).slice(0, 3);
+  return String(raw || "")
+    .split("\n")
+    .map((line) => {
+      const i = line.lastIndexOf("|");
+      if (i < 0) return null;
+      const title = line.slice(0, i).trim().slice(0, 20);
+      const url = line.slice(i + 1).trim();
+      return title && /^https?:\/\/\S+$/i.test(url) ? { title, url } : null;
+    })
+    .filter(Boolean)
+    .slice(0, 3);
+}
+
+/** Tugmalarni tahrirlash formasi uchun matnga qaytaradi. */
+export function buttonsToText(buttons) {
+  return (buttons || []).map((b) => `${b.title} | ${b.url}`).join("\n");
+}
+
+/**
+ * ChatPlace "Action" bloklariga mos qo'shimcha maydonlar:
+ *  - aiIntent: AI trigger uchun ma'no tavsifi (matchType = "ai")
+ *  - tags: qoida ishlaganda kontaktga qo'yiladigan teglar
+ *  - buttons: DM javobidagi havola tugmalari
+ *  - reminder*: obuna bo'lmaganlarga N daqiqadan so'ng eslatma
+ *  - followUp*: sovg'a yuborilgach N daqiqadan so'ng qo'shimcha xabar
+ */
+export function sanitizeRuleExtras(data = {}) {
+  const tags = Array.isArray(data.tags)
+    ? data.tags
+    : String(data.tags || "").split(",");
+  return {
+    aiIntent: String(data.aiIntent || "").trim().slice(0, 300),
+    tags: tags.map((t) => String(t).trim()).filter(Boolean).slice(0, 10),
+    buttons: parseButtons(data.buttons),
+    reminderText: String(data.reminderText || "").trim().slice(0, 1000),
+    reminderDelayMin: clampInt(data.reminderDelayMin, 0, 1380, 45),
+    followUpText: String(data.followUpText || "").trim().slice(0, 1000),
+    followUpDelayMin: clampInt(data.followUpDelayMin, 1, 1380, 60),
+  };
 }
 
 /** Yangi qoida qo'shish */
@@ -178,6 +258,7 @@ export function addRule(user, ruleData) {
     publicReplies: Array.isArray(ruleData.publicReplies) ? ruleData.publicReplies : (ruleData.publicReply ? [ruleData.publicReply] : []),
     publicReply: ruleData.publicReply || "",
     privateReply: ruleData.privateReply || "",
+    ...sanitizeRuleExtras(ruleData),
     enabled: true,
     createdAt: new Date().toISOString(),
   };

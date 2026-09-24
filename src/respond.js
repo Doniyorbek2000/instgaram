@@ -1,7 +1,9 @@
 import { generateReply } from "./ai.js";
 import { isActive } from "./subscription.js";
 import { notifyHandoff, notifyHotLead } from "./notify.js";
-import { findKeywordRule } from "./rules.js";
+import { findKeywordRule, aiRules } from "./rules.js";
+import { classifyIntent } from "./ai.js";
+import { ruleReplyOptions, onRuleDelivered, onGateBlocked } from "./ruleActions.js";
 import { persist } from "./db.js";
 import { runAutomations, rememberOptions, gateMessage, passesGate } from "./automation.js";
 import { fireEvent } from "./integrations.js";
@@ -106,7 +108,8 @@ export async function processMessage(tenant, channel, chatKey, { text = "", medi
   if (!text && !media.length) return { reply: prefix || null };
 
   // 6. Kalit so'z bo'yicha avtomatlashtirish qoidasi (Rule Engine)
-  const rule = findKeywordRule(tenant, text);
+  // Kalit so'z topilmasa — AI trigger qoidalari (ma'no bo'yicha) tekshiriladi
+  const rule = findKeywordRule(tenant, text) || (await classifyIntent(tenant, text, aiRules(tenant, "keyword_dm")));
   if (rule) {
     console.log(`[${channel}] ${tenant.businessName}: Qoida ishga tushdi ("${rule.name}")`);
     rule.stats ||= {};
@@ -116,16 +119,17 @@ export async function processMessage(tenant, channel, chatKey, { text = "", medi
       if (rule.requireFollow && (short === "ig" || short === "tg")) {
         const ok = await passesGate(tenant, short, fullKey.slice(fullKey.indexOf(":") + 1));
         if (ok === false) {
-          rule.stats.gateBlocked = (rule.stats.gateBlocked || 0) + 1;
           const gm = gateMessage(tenant, short, rule);
           const options = normOptions(gm.options);
+          onGateBlocked(tenant, rule, fullKey, options);
           rememberOptions(tenant, fullKey, options);
           logExchange(tenant, fullKey, shownText, gm.reply);
           return { reply: gm.reply, quickReplies: options };
         }
       }
       rule.stats.sent = (rule.stats.sent || 0) + 1;
-      const options = rule.formId ? [{ title: rule.formButton || "📝 Ariza qoldirish", payload: `FORM:${rule.formId}` }] : [];
+      const options = ruleReplyOptions(rule);
+      onRuleDelivered(tenant, rule, fullKey);
       rememberOptions(tenant, fullKey, options);
       logExchange(tenant, fullKey, shownText, rule.privateReply);
       return { reply: rule.privateReply, quickReplies: options };

@@ -1,5 +1,7 @@
 import { commentReplyText, commentPrivateReplyText } from "../autoReply.js";
-import { sendReply } from "../outbound.js";
+import { sendReply, optionsAsText } from "../outbound.js";
+import { classifyIntent } from "../ai.js";
+import { ruleReplyOptions, onRuleDelivered, onGateBlocked } from "../ruleActions.js";
 import { award, confirmPendingReferral } from "../gamification.js";
 import { processMessage } from "../respond.js";
 import { isActive } from "../subscription.js";
@@ -12,6 +14,8 @@ import {
   findStoryReplyRule,
   pickPublicReply,
   ensureRules,
+  isCatchAll,
+  aiRules,
 } from "../rules.js";
 import {
   replyToComment,
@@ -101,16 +105,16 @@ export async function handleInstagramEntry(tenant, entry) {
           rule.stats.sent = (rule.stats.sent || 0) + 1;
           persist(tenant);
         }
-        const formBtn = rule?.formId ? [{ title: rule.formButton || "📝 Ariza qoldirish", payload: `FORM:${rule.formId}` }] : [];
-        await sendReply(tenant, "instagram", senderId, rewardText, formBtn);
+        await sendReply(tenant, "instagram", senderId, rewardText, ruleReplyOptions(rule));
+        onRuleDelivered(tenant, rule, `ig:${senderId}`);
         confirmPendingReferral(tenant, `ig:${senderId}`).catch(() => {});
       } else {
         console.log(`[IG Follower Gate] ❌ ${senderId} hali obuna bo'lmagan`);
         const warnText = "Siz hali sahifamizga obuna bo'lmabsiz 🥺 Iltimos, profilimizga obuna bo'ling va so'ng quyidagi tugmani bosing:";
         const btnText = rule?.notFollowingButton || "Obuna bo'ldim ✅";
-        await sendDirectQuickReplies(tenant, senderId, warnText, [
-          { title: btnText, payload: qrPayload },
-        ]);
+        const gateOptions = [{ title: btnText, payload: qrPayload }];
+        await sendDirectQuickReplies(tenant, senderId, warnText, gateOptions);
+        onGateBlocked(tenant, rule, `ig:${senderId}`, gateOptions);
       }
       continue;
     }
@@ -142,7 +146,8 @@ export async function handleInstagramEntry(tenant, entry) {
         storyRule.stats.sent = (storyRule.stats.sent || 0) + 1;
         persist(tenant);
         const extra = pts > 0 ? `\n\n⭐ +${pts} ball! Balingizni ko'rish uchun "${tenant.gamification.keywords.balance}" deb yozing.` : "";
-        await sendDirectMessage(tenant, senderId, storyRule.privateReply + extra);
+        await sendReply(tenant, "instagram", senderId, storyRule.privateReply + extra, ruleReplyOptions(storyRule));
+        onRuleDelivered(tenant, storyRule, key);
         continue;
       }
       if (pts > 0) {
@@ -155,14 +160,18 @@ export async function handleInstagramEntry(tenant, entry) {
     const isStoryReply = Boolean(message.reply_to?.story || message.attachments?.some((a) => a.type === "story_reply"));
     if (isStoryReply) {
       award(tenant, key, "story_reply").catch(() => {});
-      const storyReplyRule = findStoryReplyRule(tenant, message.text);
+      let storyReplyRule = findStoryReplyRule(tenant, message.text);
+      if ((!storyReplyRule || isCatchAll(storyReplyRule)) && message.text) {
+        storyReplyRule = (await classifyIntent(tenant, message.text, aiRules(tenant, "story_reply"))) || storyReplyRule;
+      }
       if (storyReplyRule && storyReplyRule.privateReply) {
         console.log(`[IG Story Reply] ${tenant.businessName}: ${senderId} story'ga javob berdi`);
         storyReplyRule.stats ||= {};
         storyReplyRule.stats.triggered = (storyReplyRule.stats.triggered || 0) + 1;
         storyReplyRule.stats.sent = (storyReplyRule.stats.sent || 0) + 1;
         persist(tenant);
-        await sendDirectMessage(tenant, senderId, storyReplyRule.privateReply);
+        await sendReply(tenant, "instagram", senderId, storyReplyRule.privateReply, ruleReplyOptions(storyReplyRule));
+        onRuleDelivered(tenant, storyReplyRule, key);
         continue;
       }
     }
@@ -226,7 +235,15 @@ export async function handleInstagramEntry(tenant, entry) {
     }
 
     // ChatPlace uslubida qoidani qidiramiz (mediaId va kalit so'z bo'yicha)
-    const commentRule = findCommentRule(tenant, comment.text, mediaId);
+    let commentRule = findCommentRule(tenant, comment.text, mediaId);
+    // AI trigger: kalit so'z mos kelmasa, kommentning MA'NOSI bo'yicha qoida tanlanadi
+    if ((!commentRule || isCatchAll(commentRule)) && comment.text) {
+      const smart = await classifyIntent(tenant, comment.text, aiRules(tenant, "comment_to_dm", mediaId));
+      if (smart) {
+        console.log(`[IG AI Trigger] "${comment.text}" → "${smart.name}"`);
+        commentRule = smart;
+      }
+    }
     if (commentRule) {
       commentRule.stats ||= {};
       commentRule.stats.triggered = (commentRule.stats.triggered || 0) + 1;
@@ -245,18 +262,19 @@ export async function handleInstagramEntry(tenant, entry) {
       const isFollowing = fromId ? await checkFollowerStatus(tenant, fromId) : false;
 
       if (!isFollowing) {
-        commentRule.stats.gateBlocked = (commentRule.stats.gateBlocked || 0) + 1;
-        persist(tenant);
         console.log(`[IG Follower Gate] @${comment.from?.username} obuna bo'lmagan — ogohlantirish yuborilmoqda`);
         const warnMsg = commentRule.notFollowingMessage || "Sovg'ani olish uchun avval sahifamizga obuna bo'ling! 👇";
         const btnTitle = commentRule.notFollowingButton || "Obuna bo'ldim ✅";
         
         // Private Reply orqali Quick Reply tugmali ogohlantirish yuboramiz
+        const gateOptions = [{ title: btnTitle, payload: `CHECK_FOLLOW:${commentRule.id}` }];
         await privateReplyToComment(tenant, comment.id, warnMsg);
         if (fromId) {
-          await sendDirectQuickReplies(tenant, fromId, warnMsg, [
-            { title: btnTitle, payload: `CHECK_FOLLOW:${commentRule.id}` }
-          ]);
+          await sendDirectQuickReplies(tenant, fromId, warnMsg, gateOptions);
+          onGateBlocked(tenant, commentRule, `ig:${fromId}`, gateOptions);
+        } else {
+          commentRule.stats.gateBlocked = (commentRule.stats.gateBlocked || 0) + 1;
+          persist(tenant);
         }
         continue;
       }
@@ -279,10 +297,13 @@ export async function handleInstagramEntry(tenant, entry) {
       privateText = commentPrivateReplyText(); // AI ham ishlamasa oxirgi zaxira
     }
     if (privateText) {
-      const priv = await privateReplyToComment(tenant, comment.id, privateText);
+      // Private reply faqat matn qabul qiladi — havola tugmalari matn oxiriga qo'shiladi
+      const links = (commentRule?.buttons || []).map((b) => ({ title: b.title, url: b.url }));
+      const priv = await privateReplyToComment(tenant, comment.id, optionsAsText(privateText, links));
       console.log(`[IG Komment] Direct shaxsiy javob: ${priv ? "OK" : "XATO"}`);
       if (commentRule && priv && !priv.error) {
         commentRule.stats.sent = (commentRule.stats.sent || 0) + 1;
+        if (comment.from?.id) onRuleDelivered(tenant, commentRule, `ig:${comment.from.id}`);
         persist(tenant);
       }
     }

@@ -18,6 +18,7 @@ import { settingsRouter } from "./web/settings_ui.js";
 import { telegramRouter } from "./telegram.js";
 import { reportsBotRouter, reportsBotAvailable, setupReportsBotWebhook, checkAndSendDailyReports } from "./reportsBot.js";
 import { checkAndPublishScheduledPosts } from "./postPublisher.js";
+import { runDueFollowUps } from "./followups.js";
 import { page } from "./web/layout.js";
 import { findUserByPlatformId, persist } from "./db.js";
 import { handleInstagramEntry } from "./handlers/instagram.js";
@@ -295,6 +296,11 @@ const server = app.listen(config.port, () => {
 
   // Rejalashtirilgan Instagram postlarini nashr qilish — vaqtga aniqroq mos kelishi
   // kerak bo'lgani uchun kunlik hisobotdan tezroq (har 5 daqiqada) tekshiriladi
+  // Obuna eslatmalari va follow-up xabarlar — daqiqa aniqligida
+  setInterval(() => {
+    runDueFollowUps().catch((err) => console.error("[FollowUp] xato:", err.message));
+  }, 60 * 1000);
+
   setInterval(() => {
     checkAndPublishScheduledPosts().catch((err) => console.error("[PostPublisher] xato:", err.message));
   }, 5 * 60 * 1000);

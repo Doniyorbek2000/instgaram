@@ -63,6 +63,7 @@ function normalizeUser(u) {
   u.forms ||= {}; // DM lid formalari: {list, sessions, submissions}
   u.contactMeta ||= {}; // chatKey -> {tags, note, fields}
   u.integrations ||= {}; // {webhookUrl, sheetsUrl, events}
+  u.followUps ||= []; // Kechiktirilgan xabarlar navbati (eslatma / follow-up)
   return u;
 }
 
