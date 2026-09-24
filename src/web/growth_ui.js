@@ -169,7 +169,7 @@ growthRouter.get("/growth", requireAuth, async (req, res) => {
     `;
   } else if (tab === "referrals") {
     const referrals = user.growth?.referrals || [];
-    const refLink = `https://chat.voxo.uz/register?ref=${user.id.slice(0, 8)}`;
+    const refLink = `https://obunext.uz/register?ref=${user.id.slice(0, 8)}`;
     contentHtml = `
       <div class="card">
         <h3>🔗 Referal Havolalar (Referral System)</h3>

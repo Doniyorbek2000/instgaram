@@ -55,7 +55,7 @@ export function notifyHotLead(tenant, channel, chatKey, text) {
   const chatId = tenant.settings?.telegramChatId;
   if (!chatId) return Promise.resolve(false);
 
-  const inboxUrl = `${config.baseUrl || "https://chat.voxo.uz"}/inbox?chat=${encodeURIComponent(chatKey)}`;
+  const inboxUrl = `${config.baseUrl || "https://obunext.uz"}/inbox?chat=${encodeURIComponent(chatKey)}`;
   const inlineKeyboard = {
     inline_keyboard: [
       [

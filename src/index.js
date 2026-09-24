@@ -68,20 +68,20 @@ app.use(teamContext);
 // SEO: Robots.txt & XML Sitemap for Google Search Indexing
 app.get("/robots.txt", (_req, res) => {
   res.type("text/plain");
-  res.send("User-agent: *\nAllow: /\nSitemap: https://chat.voxo.uz/sitemap.xml\n");
+  res.send("User-agent: *\nAllow: /\nSitemap: https://obunext.uz/sitemap.xml\n");
 });
 
 app.get("/sitemap.xml", (_req, res) => {
   res.type("application/xml");
   res.send(`<?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
-  <url><loc>https://chat.voxo.uz/</loc><priority>1.0</priority><changefreq>daily</changefreq></url>
-  <url><loc>https://chat.voxo.uz/features</loc><priority>0.9</priority><changefreq>weekly</changefreq></url>
-  <url><loc>https://chat.voxo.uz/pricing</loc><priority>0.9</priority><changefreq>weekly</changefreq></url>
-  <url><loc>https://chat.voxo.uz/faq</loc><priority>0.8</priority><changefreq>monthly</changefreq></url>
-  <url><loc>https://chat.voxo.uz/contact</loc><priority>0.8</priority><changefreq>monthly</changefreq></url>
-  <url><loc>https://chat.voxo.uz/login</loc><priority>0.6</priority><changefreq>monthly</changefreq></url>
-  <url><loc>https://chat.voxo.uz/register</loc><priority>0.6</priority><changefreq>monthly</changefreq></url>
+  <url><loc>https://obunext.uz/</loc><priority>1.0</priority><changefreq>daily</changefreq></url>
+  <url><loc>https://obunext.uz/features</loc><priority>0.9</priority><changefreq>weekly</changefreq></url>
+  <url><loc>https://obunext.uz/pricing</loc><priority>0.9</priority><changefreq>weekly</changefreq></url>
+  <url><loc>https://obunext.uz/faq</loc><priority>0.8</priority><changefreq>monthly</changefreq></url>
+  <url><loc>https://obunext.uz/contact</loc><priority>0.8</priority><changefreq>monthly</changefreq></url>
+  <url><loc>https://obunext.uz/login</loc><priority>0.6</priority><changefreq>monthly</changefreq></url>
+  <url><loc>https://obunext.uz/register</loc><priority>0.6</priority><changefreq>monthly</changefreq></url>
 </urlset>`);
 });
 
@@ -92,11 +92,10 @@ app.get("/google954f397ce1b4faab.html", (_req, res) => {
 });
 
 // Ijtimoiy tarmoqlarda havola ulashilganda ko'rinadigan rasm (og:image).
-// scripts/generate-og-image.mjs orqali oldindan generatsiya qilingan, statik
-// fayl sifatida xotirada bir marta o'qib, keyingi so'rovlarga qayta beriladi.
 const assetsDir = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "assets");
 const ogImageBuffer = readFileSync(path.join(assetsDir, "og-image.png"));
 const faviconBuffer = readFileSync(path.join(assetsDir, "favicon.png"));
+const logoBuffer = existsSync(path.join(assetsDir, "logo.png")) ? readFileSync(path.join(assetsDir, "logo.png")) : faviconBuffer;
 
 app.get("/og-image.png", (_req, res) => {
   res.type("image/png");
@@ -104,12 +103,16 @@ app.get("/og-image.png", (_req, res) => {
   res.send(ogImageBuffer);
 });
 
-// Data: URI favicon'lar o'rniga — ko'p havola-preview bot va qidiruv
-// tizimlari data: URI'ni o'qiy olmaydi, haqiqiy statik fayl kerak.
 app.get("/favicon.png", (_req, res) => {
   res.type("image/png");
   res.setHeader("Cache-Control", "public, max-age=86400");
   res.send(faviconBuffer);
+});
+
+app.get(["/logo.png", "/assets/logo.png"], (_req, res) => {
+  res.type("image/png");
+  res.setHeader("Cache-Control", "public, max-age=86400");
+  res.send(logoBuffer);
 });
 
 // Publik marketing sayti (ko'p tilli: /, /features, /pricing, /faq, /contact)

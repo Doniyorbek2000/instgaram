@@ -206,7 +206,7 @@ function finishForm(tenant, key, form, s) {
   if (chatId && form.notify !== false) {
     const esc = (x) => String(x ?? "").replace(/[<>&]/g, (c) => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;" }[c]));
     const lines = Object.entries(s.answers).map(([k, v]) => `<b>${esc(k)}:</b> ${esc(v)}`).join("\n");
-    const url = `${config.baseUrl || "https://chat.voxo.uz"}/forms?tab=submissions`;
+    const url = `${config.baseUrl || "https://obunext.uz"}/forms?tab=submissions`;
     sendTelegram(chatId, `📝 <b>YANGI ARIZA: ${esc(form.name)}</b>\n\n${lines}\n\n<b>Kanal:</b> ${esc(sub.channel.toUpperCase())}`, {
       inline_keyboard: [[{ text: "📋 Arizalarni ko'rish", url }]],
     }).catch(() => {});

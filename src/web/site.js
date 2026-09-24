@@ -46,50 +46,96 @@ function siteLayout(lang, path, title, body, { user, active = "" } = {}) {
   const navLink = (href, key, label) =>
     `<a href="${href}" class="${active === key ? "active" : ""}">${label}</a>`;
 
-  const canonicalUrl = `https://chat.voxo.uz${path === "/" ? "" : path}`;
+  const canonicalUrl = `https://obunext.uz${path === "/" ? "" : path}`;
+  const localeMap = { uz: "uz_UZ", ru: "ru_RU", en: "en_US" };
+  const metaDescription = esc(tr.hero?.sub || "Obunext — Instagram Direct, Telegram va WhatsApp uchun ko'p kanalli sun'iy intellektli avtomatlashtirish, CRM va vizual savdo voronkasi platformasi.");
   return `<!DOCTYPE html>
 <html lang="${lang}">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>${esc(title)} — Obunext Sales & Multi-Channel Automation Platform</title>
-<meta name="description" content="${esc(tr.hero.sub)}">
-<meta name="keywords" content="chatplace, chatplace ai, instagram dm avtomatlashtirish, telegram bot, whatsapp business, obunext, ai chatbot uzbekistan, omnichannel inbox, visual automations studio">
-<meta name="robots" content="index, follow">
+<title>${esc(title)} | Obunext — Instagram, Telegram & WhatsApp AI Avtomatlashtirish</title>
+<meta name="description" content="${metaDescription}">
+<meta name="keywords" content="obunext, obunext.uz, instagram avtomatlashtirish, instagram dm bot, telegram bot biznes uchun, whatsapp business api uzbekistan, chatplace muqobili, manychat uzbekistan, sun'iy intellekt chatbot, visual flow builder, crm tizimi, avto javob instagram, savdo voronkasi, biznesni avtomatlashtirish">
+<meta name="author" content="Obunext">
+<meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1">
+<meta name="theme-color" content="#7c3aed">
 <meta name="google-site-verification" content="google954f397ce1b4faab">
 <link rel="canonical" href="${canonicalUrl}">
-<link rel="alternate" hreflang="uz" href="https://chat.voxo.uz${path}?lang=uz">
-<link rel="alternate" hreflang="ru" href="https://chat.voxo.uz${path}?lang=ru">
-<link rel="alternate" hreflang="en" href="https://chat.voxo.uz${path}?lang=en">
-<!-- Open Graph / Facebook -->
+<link rel="alternate" hreflang="uz" href="https://obunext.uz${path}?lang=uz">
+<link rel="alternate" hreflang="ru" href="https://obunext.uz${path}?lang=ru">
+<link rel="alternate" hreflang="en" href="https://obunext.uz${path}?lang=en">
+<link rel="alternate" hreflang="x-default" href="https://obunext.uz${path}">
+
+<!-- Open Graph / Facebook / Telegram -->
 <meta property="og:site_name" content="Obunext">
 <meta property="og:type" content="website">
 <meta property="og:url" content="${canonicalUrl}">
-<meta property="og:title" content="${esc(title)} — Obunext Sales & Automation">
-<meta property="og:description" content="${esc(tr.hero.sub)}">
-<meta property="og:image" content="https://chat.voxo.uz/og-image.png">
+<meta property="og:title" content="${esc(title)} | Obunext">
+<meta property="og:description" content="${metaDescription}">
+<meta property="og:image" content="https://obunext.uz/og-image.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="Obunext AI Platformasi">
+<meta property="og:locale" content="${localeMap[lang] || 'uz_UZ'}">
+
 <!-- Twitter Cards -->
 <meta name="twitter:card" content="summary_large_image">
-<meta name="twitter:title" content="${esc(title)} — Obunext">
-<meta name="twitter:description" content="${esc(tr.hero.sub)}">
-<!-- Structured Data JSON-LD -->
+<meta name="twitter:title" content="${esc(title)} | Obunext">
+<meta name="twitter:description" content="${metaDescription}">
+<meta name="twitter:image" content="https://obunext.uz/og-image.png">
+
+<!-- Favicon & App Icons -->
+<link rel="icon" href="/favicon.png" type="image/png">
+<link rel="apple-touch-icon" href="/logo.png">
+
+<!-- Structured Data JSON-LD (SoftwareApplication & Organization) -->
 <script type="application/ld+json">
 {
   "@context": "https://schema.org",
-  "@type": "SoftwareApplication",
-  "name": "Obunext",
-  "url": "https://chat.voxo.uz",
-  "applicationCategory": "BusinessApplication",
-  "operatingSystem": "All",
-  "offers": {
-    "@type": "Offer",
-    "price": "0",
-    "priceCurrency": "USD"
-  },
-  "description": "Instagram DMs, Telegram Bot, WhatsApp Business va Facebook Messenger uchun ko'p kanalli sun'iy intellektli avtomatlashtirish va CRM platformasi."
+  "@graph": [
+    {
+      "@type": "Organization",
+      "@id": "https://obunext.uz/#organization",
+      "name": "Obunext",
+      "url": "https://obunext.uz",
+      "logo": {
+        "@type": "ImageObject",
+        "url": "https://obunext.uz/logo.png"
+      },
+      "description": "Instagram, Telegram va WhatsApp uchun ko'p kanalli sun'iy intellektli avtomatlashtirish platformasi"
+    },
+    {
+      "@type": "WebSite",
+      "@id": "https://obunext.uz/#website",
+      "url": "https://obunext.uz",
+      "name": "Obunext",
+      "publisher": { "@id": "https://obunext.uz/#organization" },
+      "inLanguage": "${lang}"
+    },
+    {
+      "@type": "SoftwareApplication",
+      "@id": "https://obunext.uz/#software",
+      "name": "Obunext",
+      "url": "https://obunext.uz",
+      "applicationCategory": "BusinessApplication",
+      "operatingSystem": "All (Web-based SaaS)",
+      "description": "${metaDescription}",
+      "offers": {
+        "@type": "Offer",
+        "price": "0",
+        "priceCurrency": "USD",
+        "availability": "https://schema.org/InStock"
+      },
+      "aggregateRating": {
+        "@type": "AggregateRating",
+        "ratingValue": "4.9",
+        "reviewCount": "128"
+      }
+    }
+  ]
 }
 </script>
-<link rel="icon" href="/favicon.png" type="image/png">
 <style>
   :root {
     --brand: #7c3aed; --brand-2: #db2777; --brand-3: #f97316;

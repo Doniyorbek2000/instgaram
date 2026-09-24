@@ -62,7 +62,7 @@ const svg = `
     <text x="42" y="30" font-family="Arial, sans-serif" font-size="20" font-weight="700" fill="#ffffff">500+ tadbirkor ishonch bildirgan</text>
   </g>
 
-  <text x="1120" y="580" text-anchor="end" font-family="Arial, sans-serif" font-size="22" font-weight="700" fill="#ffffff" opacity="0.85">chat.voxo.uz</text>
+  <text x="1120" y="580" text-anchor="end" font-family="Arial, sans-serif" font-size="22" font-weight="700" fill="#ffffff" opacity="0.85">obunext.uz</text>
 </svg>
 `;
 

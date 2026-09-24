@@ -389,7 +389,7 @@ export async function answerQuiz(tenant, key, quizId, idx) {
 
 export function publicBoardUrl(tenant) {
   const g = ensureGame(tenant);
-  return `${config.baseUrl || "https://chat.voxo.uz"}/top/${g.slug}`;
+  return `${config.baseUrl || "https://obunext.uz"}/top/${g.slug}`;
 }
 
 export function balanceText(tenant, key) {
