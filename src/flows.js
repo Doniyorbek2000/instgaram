@@ -129,7 +129,7 @@ function sanitizeTrigger(t = {}) {
     keyword: str(t.keyword, 500).trim(),
     matchType,
     aiIntent: str(t.aiIntent, 300).trim(),
-    mediaId: str(t.mediaId, 60).trim(),
+    mediaId: mediaIdList(t.mediaId).join(","),
     publicReplies: (Array.isArray(t.publicReplies) ? t.publicReplies : String(t.publicReplies || "").split("\n"))
       .map((x) => str(x, 300).trim())
       .filter(Boolean)
@@ -248,8 +248,18 @@ function bumpNode(flow, nodeId) {
 // Triggerlar
 // ============================================================
 
+/** Trigger'dagi post ID'lari ("" yoki "*" — barcha postlar). */
+export function mediaIdList(v) {
+  return [...new Set(String(v || "").split(/[\s,]+/).map((x) => x.trim()).filter((x) => /^[\w-]{1,40}$/.test(x)))].slice(0, 30);
+}
+
+const mediaAllowed = (trigger, mediaId) => {
+  const ids = mediaIdList(trigger.mediaId);
+  return !ids.length || !mediaId || ids.includes(String(mediaId));
+};
+
 function triggerMatches(trigger, { text = "", mediaId = "", ref = "" }) {
-  if (trigger.mediaId && trigger.mediaId !== "*" && mediaId && trigger.mediaId !== mediaId) return false;
+  if (!mediaAllowed(trigger, mediaId)) return false;
   if (trigger.type === "ref") {
     const want = normalizeText(trigger.keyword);
     return Boolean(ref) && (!want || want === "*" || normalizeText(ref) === want);
@@ -274,10 +284,12 @@ export function findFlowTrigger(tenant, type, ctx = {}) {
       const kw = normalizeText(trigger.keyword);
       const catchAll = trigger.matchType === "any" || !kw || kw === "*";
       if (type === "keyword" && catchAll) continue;
-      hits.push({ flow, trigger, catchAll });
+      hits.push({ flow, trigger, catchAll, specificPost: mediaIdList(trigger.mediaId).length > 0 });
     }
   }
-  return hits.find((h) => !h.catchAll) || hits[0] || null;
+  // Aniq kalit so'z > "hamma matn"; teng bo'lsa aniq post uchun trigger barcha postlarnikidan ustun
+  const rank = (h) => (h.catchAll ? 0 : 2) + (h.specificPost ? 1 : 0);
+  return hits.sort((a, b) => rank(b) - rank(a))[0] || null;
 }
 
 /** AI triggerli flow'lar — ai.classifyIntent'ga beriladigan nomzodlar. */
@@ -288,7 +300,7 @@ export function aiFlowCandidates(tenant, type, mediaId = "") {
     if (!flow.enabled || !flow.start || !isFlowAllowed(tenant, flow, all)) continue;
     for (const trigger of flow.triggers || []) {
       if (trigger.type !== type || trigger.matchType !== "ai") continue;
-      if (trigger.mediaId && trigger.mediaId !== "*" && mediaId && trigger.mediaId !== mediaId) continue;
+      if (!mediaAllowed(trigger, mediaId)) continue;
       out.push({ id: `${flow.id}`, name: flow.name, aiIntent: trigger.aiIntent || flow.name, flow, trigger });
     }
   }

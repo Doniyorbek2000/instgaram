@@ -85,7 +85,7 @@ function ruleCard(r) {
       <div style="margin-top:12px; font-size:13.5px; display:flex; gap:16px; flex-wrap:wrap">
         ${keywordLine}
         ${r.targetMediaId && r.targetMediaId !== "*"
-          ? `<div><span class="hint">Post ID:</span> <code style="background:#0f172a; padding:3px 8px; border-radius:6px; color:#38bdf8">${esc(r.targetMediaId)}</code></div>`
+          ? `<div><span class="hint">Postlar:</span> <code style="background:#0f172a; padding:3px 8px; border-radius:6px; color:#38bdf8">🎯 ${r.targetMediaId.split(",").length} ta tanlangan</code></div>`
           : r.type === "comment_to_dm" ? `<div><span class="hint">Qamrov:</span> <span style="color:#94a3b8">Barcha postlar</span></div>` : ""}
         ${r.tags?.length ? `<div><span class="hint">Teglar:</span> ${r.tags.map((t) => `<code style="background:#0f172a; padding:2px 6px; border-radius:6px; color:#fbbf24">#${esc(t)}</code>`).join(" ")}</div>` : ""}
       </div>
@@ -147,8 +147,35 @@ function ruleForm(r = {}, { action, submitLabel }) {
         <p class="hint" style="margin:6px 0 0; font-size:12px">Obuna bo'lmay ketgan mijozga avtomatik eslatma — tashlab ketilgan lidlarning bir qismini qaytaradi.</p>
       </div>
 
-      <label>Aniq Post / Reels ID (hamma postlar uchun *)</label>
-      <input type="text" name="targetMediaId" value="${v(r.targetMediaId || "*")}">
+      <label>Qaysi postlarda ishlasin</label>
+      <div class="post-scope" style="background:#0b0f19; border:1px solid var(--border); border-radius:12px; padding:10px">
+        <input type="hidden" name="targetMediaId" value="${v(r.targetMediaId || "*")}">
+        <div style="display:flex; gap:6px; flex-wrap:wrap; align-items:center">
+          <span class="ps-label" style="font-size:13.5px; font-weight:600; flex:1; min-width:160px"></span>
+          <button type="button" class="secondary ps-all" style="margin:0; padding:6px 12px; font-size:12.5px">🌐 Barcha postlar</button>
+          <button type="button" class="btn ps-pick" style="margin:0; padding:6px 12px; font-size:12.5px">🎯 Post / Reels tanlash</button>
+        </div>
+        <div class="pp-prev"></div>
+      </div>
+      <script src="/assets/post-picker.js"></script>
+      <script>
+        (function () {
+          var box = document.currentScript.previousElementSibling.previousElementSibling;
+          var input = box.querySelector("input[name=targetMediaId]");
+          var ids = function () { return input.value.split(/[\\s,]+/).filter(function (x) { return x && x !== "*"; }); };
+          function draw() {
+            var list = ids();
+            box.querySelector(".ps-label").textContent = list.length ? "🎯 " + list.length + " ta tanlangan post" : "🌐 Barcha postlar va Reels";
+            box.querySelector(".ps-all").style.display = list.length ? "" : "none";
+            window.ObxPostPicker.preview(list, box.querySelector(".pp-prev"));
+          }
+          box.querySelector(".ps-all").addEventListener("click", function () { input.value = "*"; draw(); });
+          box.querySelector(".ps-pick").addEventListener("click", function () {
+            window.ObxPostPicker.open(ids(), function (next) { input.value = next.length ? next.join(",") : "*"; draw(); });
+          });
+          draw();
+        })();
+      </script>
 
       <label>💬 Ochiq komment javoblari (har qatorda bitta — tasodifiy tanlanadi)</label>
       <textarea name="publicReplies" rows="3" placeholder="Direct'ga yubordik! 📥&#10;Direct'ni tekshiring ✨">${v(publicReplies)}</textarea>
@@ -188,7 +215,7 @@ function ruleFromBody(body = {}) {
     type,
     matchType,
     keyword: String(body.keyword || "*").trim().slice(0, 500) || "*",
-    targetMediaId: String(body.targetMediaId || "*").trim() || "*",
+    targetMediaId: String(body.targetMediaId || "*").split(/[\s,]+/).filter((x) => /^[\w-]{1,40}$/.test(x)).slice(0, 30).join(",") || "*",
     requireFollow: body.requireFollow === "true" || body.requireFollow === "on",
     notFollowingMessage: String(body.notFollowingMessage || "").trim().slice(0, 1000),
     notFollowingButton: String(body.notFollowingButton || "Obuna bo'ldim ✅").trim().slice(0, 20),

@@ -388,11 +388,13 @@ export async function createCarouselContainer(tenant, { mediaUrls, caption = "" 
 }
 
 /** Akkauntning so'nggi postlari — "Tasodifiy G'olib" uchun post tanlash ro'yxati. */
-export function getRecentMedia(tenant, limit = 12) {
+export function getRecentMedia(tenant, limit = 12, after = "") {
   const igUserId = tenant?.meta?.igUserId;
   const token = igToken(tenant);
   if (!igUserId || !token) return Promise.resolve({ error: { message: "Instagram ulanmagan" } });
-  return igGraphGet(`${igUserId}/media`, { fields: "id,caption,thumbnail_url,media_type,permalink,timestamp", limit }, token);
+  const params = { fields: "id,caption,thumbnail_url,media_url,media_type,media_product_type,permalink,timestamp", limit };
+  if (after) params.after = after;
+  return igGraphGet(`${igUserId}/media`, params, token);
 }
 
 /** Bitta post ostidagi kommentlar ro'yxati — g'olibni tasodifiy tanlash uchun. Javob: { data: [...] }. */

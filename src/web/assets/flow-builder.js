@@ -370,7 +370,9 @@
   /** Mobil: inspektor varag'i blok tanlanganda ochiladi, bo'sh joyga bosilganda yopiladi. */
   var sheetPinned = false; // "⚙️" orqali ochilgan flow sozlamalari tahrirlash paytida yopilmasin
   function syncSheet() {
-    side.classList.toggle("open", Boolean(selected || sheetPinned || panel));
+    var open = Boolean(selected || sheetPinned || panel);
+    side.classList.toggle("open", open);
+    document.body.classList.toggle("fb-sheet-open", open); // telefonda "Saqlash" varaq ustiga chiqadi
   }
   var settingsBtn = document.getElementById("fbSettingsBtn");
   if (settingsBtn) settingsBtn.addEventListener("click", function () {
@@ -1214,8 +1216,9 @@
         else if (t.matchType !== "any") box.appendChild(field("Kalit so'zlar (vergul bilan)", textInput(t, "keyword", { placeholder: "narx, price, цена" })));
       }
       if (t.type === "ref") box.appendChild(field("Referal kodi", textInput(t, "keyword", { placeholder: "promo2026" }), "Havola: ig.me/m/<username>?ref=<kod>. Bo'sh — istalgan kod."));
-      if (t.type === "comment" || t.type === "live_comment") {
-        box.appendChild(field("Post / Reels ID (bo'sh — barcha postlar)", textInput(t, "mediaId", { placeholder: "*" })));
+      if (t.type === "comment") box.appendChild(postScope(t));
+      if (t.type === "live_comment") {
+        box.appendChild(field("Jonli efir ID (bo'sh — barcha efirlar)", textInput(t, "mediaId", { placeholder: "barcha efirlar" })));
       }
       if (t.type === "comment") {
         var ta = h("textarea", { rows: 3, placeholder: "Direct'ni tekshiring 📩\nYubordik ✨", oninput: function (e) { t.publicReplies = e.target.value.split("\n"); changed(); } });
@@ -1455,6 +1458,38 @@
       setTimeout(function () { inp.focus(); }, 0);
     }
     setTimeout(function () { chat.scrollTop = chat.scrollHeight; }, 0);
+  }
+
+  /** Komment trigger'i: barcha postlar yoki tanlangan post/Reels (rasm bilan tanlanadi). */
+  function postScope(t) {
+    var ids = String(t.mediaId || "").split(/[\s,]+/).filter(function (x) { return x && x !== "*"; });
+    var wrapEl = h("div", { class: "fb-scope" });
+    wrapEl.appendChild(h("label", { text: "Qaysi postlarda ishlasin" }));
+    var setIds = function (next) {
+      t.mediaId = next.join(",");
+      changed(true);
+    };
+    wrapEl.appendChild(h("div", { class: "fb-seg" }, [
+      h("button", { type: "button", class: ids.length ? "" : "on", text: "🌐 Barcha postlar", onclick: function () { if (ids.length) setIds([]); } }),
+      h("button", { type: "button", class: ids.length ? "on" : "", text: "🎯 Tanlangan post", onclick: function () {
+        if (!window.ObxPostPicker) return alert("Post tanlagich yuklanmadi");
+        window.ObxPostPicker.open(ids, function (next) { setIds(next); });
+      } }),
+    ]));
+    if (ids.length) {
+      var prev = h("div", { class: "pp-prev" });
+      wrapEl.appendChild(prev);
+      if (window.ObxPostPicker) window.ObxPostPicker.preview(ids, prev);
+      wrapEl.appendChild(h("div", { class: "fb-row", style: "margin-top:6px" }, [
+        h("span", { class: "fb-hint", style: "margin:0", text: ids.length + " ta post · faqat shularning kommentlari" }),
+        h("button", { type: "button", class: "secondary", style: "flex:0 0 auto; margin:0; padding:4px 10px; font-size:12px", text: "✏️ O'zgartirish", onclick: function () {
+          window.ObxPostPicker.open(ids, function (next) { setIds(next); });
+        } }),
+      ]));
+    } else {
+      wrapEl.appendChild(h("p", { class: "fb-hint", text: "Istalgan post yoki Reels ostidagi mos komment flow'ni ishga tushiradi." }));
+    }
+    return wrapEl;
   }
 
   // ---------- saqlash ----------

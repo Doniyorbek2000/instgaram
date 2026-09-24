@@ -47,7 +47,10 @@ const SHORT_LABELS = { message: "💬 Xabar", input: "📝 Savol", condition: "�
 function flowSummary(flow) {
   const s = flow.stats || {};
   const conv = s.started ? Math.round(((s.conversions || 0) / s.started) * 100) : 0;
-  const triggers = (flow.triggers || []).map((t) => TRIGGER_TYPES[t.type] || t.type);
+  const triggers = (flow.triggers || []).map((t) => {
+    const n = t.type === "comment" && t.mediaId ? t.mediaId.split(",").length : 0;
+    return `${TRIGGER_TYPES[t.type] || t.type}${n ? ` · 🎯 ${n} ta post` : ""}`;
+  });
   return { conv, triggers, nodes: Object.keys(flow.nodes || {}).length, s };
 }
 
@@ -380,6 +383,9 @@ flowsRouter.get("/flows/:id", requireAuth, async (req, res) => {
         .fb-zoom button { margin:0; padding:6px 11px }
         .fb-mobile-only { display:none }
         .fb-tools button:disabled { opacity:.35; cursor:default }
+        .fb-seg { display:flex; gap:4px; background:#0b0f19; border:1px solid var(--border); border-radius:10px; padding:3px }
+        .fb-seg button { flex:1; margin:0; padding:6px 8px; font-size:12px; background:transparent; border:0; box-shadow:none; color:#94a3b8; border-radius:8px }
+        .fb-seg button.on { background:linear-gradient(120deg,#7c3aed,#db2777); color:#fff }
         .fb-val.good { color:#34d399 } .fb-val.warn { color:#fbbf24 } .fb-val.bad { color:#f87171; border-color:#f87171 }
         .fb-node.err { border-color:#f87171 } .fb-node.warn { border-color:rgba(251,191,36,.7); border-style:dashed }
         .fb-node.simcur { box-shadow:0 0 0 3px #f59e0b, 0 0 30px rgba(245,158,11,.45) }
@@ -424,6 +430,10 @@ flowsRouter.get("/flows/:id", requireAuth, async (req, res) => {
           /* Saqlash va sozlamalar — doim ko'rinadigan joyda (pastki chap burchak) */
           #fbSave { position:fixed; left:12px; bottom:16px; z-index:6; padding:10px 16px !important; font-size:14px !important }
           #fbSettingsBtn { position:fixed; left:132px; bottom:16px; z-index:6; padding:10px 14px !important; font-size:14px !important }
+          /* Varaq ochiq bo'lsa Saqlash tugmasi yuqori o'ng burchakka — varaq ostida qolmasin */
+          body.fb-sheet-open #fbSave { z-index:60; bottom:auto; left:auto; top:12px; right:12px; box-shadow:0 8px 24px rgba(0,0,0,.5) }
+          body.fb-sheet-open #fbSettingsBtn { display:none }
+          body.fb-sheet-open .fb-toolbar { z-index:60 }
         }
       </style>
       <div class="fb">
@@ -456,6 +466,7 @@ flowsRouter.get("/flows/:id", requireAuth, async (req, res) => {
       </div>
       <script type="application/json" id="fbData">${safeJson(publicFlow(flow))}</script>
       <script type="application/json" id="fbMeta">${safeJson(meta)}</script>
+      <script src="/assets/post-picker.js"></script>
       <script src="/assets/flow-builder.js"></script>`,
       { user: u, active: "flows" }
     )
