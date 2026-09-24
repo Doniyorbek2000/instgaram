@@ -58,7 +58,7 @@ function normOptions(options) {
  * channel: "instagram" | "facebook" | "whatsapp" | "telegram"
  * payload — bosilgan tugma qiymati; ref — referal parametri; profile — {username, name}
  */
-export async function processMessage(tenant, channel, chatKey, { text = "", media = [], payload = "", ref = "", profile = {} }) {
+export async function processMessage(tenant, channel, chatKey, { text = "", media = [], payload = "", ref = "", profile = {}, messageId = "" }) {
   // 1. Obuna faol emasmi — bot javob bermaydi
   if (!isActive(tenant)) {
     console.log(
@@ -103,7 +103,7 @@ export async function processMessage(tenant, channel, chatKey, { text = "", medi
 
   // 5a. Flow builder: tugma bosilishi, "ma'lumot yig'ish" blokiga javob,
   // referal havola yoki yangi kontakt triggerlari. Flow xabarlarni o'zi yuboradi.
-  const flowCtx = { text, userText: shownText, profile };
+  const flowCtx = { text, userText: shownText, profile, messageId };
   try {
     const flowPayload = payload || resolvePayload(tenant, fullKey, text);
     let handled = await handleFlowInbound(tenant, fullKey, { text, payload: flowPayload }, flowCtx);

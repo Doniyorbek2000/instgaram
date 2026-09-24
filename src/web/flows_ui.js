@@ -42,7 +42,7 @@ function safeJson(value) {
   return JSON.stringify(value).replace(/</g, "\\u003c").replace(/>/g, "\\u003e").replace(/&/g, "\\u0026");
 }
 
-const SHORT_LABELS = { message: "💬 Xabar", input: "📝 Savol", condition: "🔀 Shart", action: "⚡ Amal", delay: "⏱️ Kutish", ai: "🧠 AI", redirect: "↪️ O'tish" };
+const SHORT_LABELS = { message: "💬 Xabar", input: "📝 Savol", condition: "🔀 Shart", action: "⚡ Amal", delay: "⏱️ Kutish", ai: "🧠 AI", redirect: "↪️ O'tish", note: "🗒️ Izoh" };
 
 function flowSummary(flow) {
   const s = flow.stats || {};
@@ -256,6 +256,8 @@ flowsRouter.get("/flows/:id", requireAuth, async (req, res) => {
         .fb-out.url { padding-right:8px }
         .t-message header { color:#c4b5fd } .t-input header { color:#fbbf24 } .t-condition header { color:#34d399 }
         .t-action header { color:#f472b6 } .t-delay header { color:#38bdf8 } .t-ai header { color:#a78bfa } .t-redirect header { color:#94a3b8 }
+        .t-note { background:#3a3417; border-color:rgba(250,204,21,0.35) } .t-note header { color:#fde68a } .t-note .body { color:#fef3c7; max-height:220px }
+        .t-note.c-blue { background:#172a3a; border-color:rgba(56,189,248,.35) } .t-note.c-pink { background:#3a1730; border-color:rgba(244,114,182,.35) } .t-note.c-green { background:#173a25; border-color:rgba(52,211,153,.35) }
         .fb-side { background:#0f1628; border-left:1px solid var(--border); overflow-y:auto; padding:16px }
         .fb-side h3 { margin:0 0 10px; font-size:16px }
         .fb-side label { font-size:12px; margin-top:10px }

@@ -210,6 +210,7 @@ export async function handleInstagramEntry(tenant, entry) {
       media,
       payload: qrPayload,
       ref: refParam,
+      messageId: message.mid || "",
       profile: { username: cached?.username || "", name: cached?.name || "" },
     });
     if (reply) {

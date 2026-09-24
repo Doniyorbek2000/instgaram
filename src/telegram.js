@@ -66,6 +66,29 @@ export async function isTelegramChannelMember(user, telegramUserId) {
   return false;
 }
 
+/** Istalgan kanal/guruhga a'zolikni tekshiradi (flow shartlari uchun). null — tekshirib bo'lmadi. */
+export async function isTelegramMemberOf(user, channel, telegramUserId) {
+  const token = user.settings?.telegramBotToken;
+  const chat = String(channel || "").trim().replace(/^https?:\/\/t\.me\//, "@");
+  if (!token || !chat || !telegramUserId) return null;
+  const r = await callTelegramApi(token, "getChatMember", { chat_id: chat, user_id: Number(telegramUserId) });
+  if (!r?.ok) return null;
+  const st = r.result?.status;
+  if (["creator", "administrator", "member"].includes(st)) return true;
+  if (st === "restricted") return Boolean(r.result?.is_member);
+  return false;
+}
+
+/** Foydalanuvchi kanalga "boost" berganmi (bot kanalda admin bo'lishi shart). */
+export async function hasTelegramBoost(user, channel, telegramUserId) {
+  const token = user.settings?.telegramBotToken;
+  const chat = String(channel || user.settings?.telegramChannel || "").trim().replace(/^https?:\/\/t\.me\//, "@");
+  if (!token || !chat || !telegramUserId) return null;
+  const r = await callTelegramApi(token, "getUserChatBoosts", { chat_id: chat, user_id: Number(telegramUserId) });
+  if (!r?.ok) return null;
+  return (r.result?.boosts || []).length > 0;
+}
+
 /** Kanal havolasi (@kanal -> https://t.me/kanal). */
 export function telegramChannelUrl(user) {
   const ch = String(user.settings?.telegramChannel || "").trim();
@@ -309,6 +332,7 @@ telegramRouter.post("/telegram/webhook/:userId", async (req, res) => {
     text,
     media,
     ref,
+    messageId: String(message.message_id || ""),
     profile: { username: message.from?.username || "", name: [message.from?.first_name, message.from?.last_name].filter(Boolean).join(" ") },
   });
   if (reply) {

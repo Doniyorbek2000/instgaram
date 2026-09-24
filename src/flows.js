@@ -39,6 +39,7 @@ export const TRIGGER_TYPES = {
   story_mention: "🌟 Story'da belgilash",
   new_contact: "👋 Yangi kontakt (birinchi xabar)",
   ref: "🔗 Referal havola (?ref=)",
+  referral: "🤝 Do'sti qo'shildi (taklif qilgan odam uchun)",
 };
 
 export const MATCH_TYPES = {
@@ -57,6 +58,7 @@ export const NODE_TYPES = {
   delay: "⏱️ Kutish",
   ai: "🧠 AI javob",
   redirect: "↪️ Boshqa flow",
+  note: "🗒️ Izoh",
 };
 
 export const CONDITION_KINDS = {
@@ -67,6 +69,7 @@ export const CONDITION_KINDS = {
   points: "Ballar",
   var: "O'zgaruvchi",
   follows: "Obuna bo'lgan",
+  tg_boost: "Telegram kanalga boost bergan",
   channel: "Kanal",
 };
 
@@ -79,6 +82,8 @@ export const ACTION_KINDS = {
   handoff: "Operatorga o'tkazish",
   notify: "Telegram bildirishnoma",
   webhook: "Webhook / CRM ga yuborish",
+  run_flow: "Boshqa flow'ni ishga tushirish",
+  react: "❤️ Xabarga reaksiya",
 };
 
 export const INPUT_VALIDATIONS = { text: "Matn", name: "Ism", phone: "Telefon", email: "Email", number: "Raqam" };
@@ -186,6 +191,8 @@ function sanitizeNode(n, ids) {
       return { ...base, prompt: str(n.prompt, 1000), next: ref(n.next) };
     case "redirect":
       return { ...base, flowId: str(n.flowId, 60) };
+    case "note":
+      return { ...base, text: str(n.text, 2000), color: ["yellow", "blue", "pink", "green"].includes(n.color) ? n.color : "yellow" };
     default:
       return null;
   }
@@ -246,7 +253,7 @@ function triggerMatches(trigger, { text = "", mediaId = "", ref = "" }) {
     const want = normalizeText(trigger.keyword);
     return Boolean(ref) && (!want || want === "*" || normalizeText(ref) === want);
   }
-  if (trigger.type === "new_contact" || trigger.type === "story_mention") return true;
+  if (trigger.type === "new_contact" || trigger.type === "story_mention" || trigger.type === "referral") return true;
   if (trigger.matchType === "ai") return false;
   return matchesRule({ keyword: trigger.keyword || "*", matchType: trigger.matchType }, text);
 }
@@ -335,15 +342,37 @@ export async function evaluateCondition(tenant, key, c, ctx = {}) {
       return Boolean(val);
     }
     case "follows": {
+      // Telegram'da bir nechta kanal ko'rsatilsa — HAMMASIGA obuna bo'lishi shart
+      const channels = String(c.value || "").split(/[,\s]+/).filter(Boolean);
+      if (chan === "tg" && channels.length) {
+        const check = ctx.checkTgMember || defaultTgMember;
+        for (const chName of channels) if ((await check(tenant, chName, id)) === false) return false;
+        return true;
+      }
       const check = ctx.checkFollow || defaultCheckFollow;
       const ok = await check(tenant, chan, id);
       return ok !== false; // null — tekshirib bo'lmadi → o'tkazamiz
+    }
+    case "tg_boost": {
+      if (chan !== "tg") return false;
+      const check = ctx.checkTgBoost || defaultTgBoost;
+      return (await check(tenant, String(c.value || "").trim(), id)) === true;
     }
     case "channel":
       return String(c.value || "").split(/[,\s]+/).includes(chan);
     default:
       return false;
   }
+}
+
+async function defaultTgMember(tenant, channel, id) {
+  const { isTelegramMemberOf } = await import("./telegram.js");
+  return isTelegramMemberOf(tenant, channel, id);
+}
+
+async function defaultTgBoost(tenant, channel, id) {
+  const { hasTelegramBoost } = await import("./telegram.js");
+  return hasTelegramBoost(tenant, channel, id);
 }
 
 async function defaultCheckFollow(tenant, chan, id) {
@@ -398,6 +427,24 @@ async function runActions(tenant, key, flow, node, ctx) {
           sendTelegram(tenant.settings.telegramChatId, `🔔 <b>${escapeHtml(flow.name)}</b>\n\n${escapeHtml(value)}\n\n👤 ${escapeHtml(key)}`).catch(() => {});
         }
         break;
+      case "run_flow": {
+        const target = findFlow(tenant, a.key);
+        if (!target?.start || target.id === flow.id || (ctx.depth || 0) >= MAX_REDIRECT_DEPTH) break;
+        if (a.value === "referrer") {
+          // "Taklif qilgan odam uchun": xabarlar mijozga emas, uni taklif qilgan odamga ketadi
+          const refKey = tenant.gamification?.participants?.[key]?.referredBy;
+          if (!refKey) break;
+          setFields(tenant, refKey, { last_referral: displayNameOf(tenant, key) });
+          await startFlow(tenant, refKey, target, { depth: (ctx.depth || 0) + 1 });
+        } else {
+          // Parallel ravishda (joriy flow davom etadi) — sessiyasiz qismlarini bajaradi
+          await startFlow(tenant, key, target, { depth: (ctx.depth || 0) + 1, send: ctx.send });
+        }
+        break;
+      }
+      case "react":
+        await reactToMessage(tenant, key, ctx);
+        break;
       case "webhook":
         fireEvent(
           tenant,
@@ -409,6 +456,36 @@ async function runActions(tenant, key, flow, node, ctx) {
       default:
         break;
     }
+  }
+}
+
+function displayNameOf(tenant, key) {
+  const f = tenant.contactMeta?.[key]?.fields || {};
+  const p = tenant.contactProfiles?.[splitKey(key).id] || {};
+  return f.name || p.name || (p.username ? `@${p.username}` : "do'stingiz");
+}
+
+/** ❤️ reaksiya: DM xabariga (Instagram / Telegram) yoki kommentga layk. */
+async function reactToMessage(tenant, key, ctx) {
+  if (ctx.send) {
+    await ctx.send({ key, reaction: "love", messageId: ctx.messageId || "", commentId: ctx.commentId || "" });
+    return;
+  }
+  const { chan, id } = splitKey(key);
+  try {
+    if (ctx.commentId && chan === "ig") {
+      const { likeComment } = await import("./services/instagram.js");
+      await likeComment(tenant, ctx.commentId);
+    } else if (ctx.messageId && chan === "ig") {
+      const { igGraphPost } = await import("./graph.js");
+      await igGraphPost("me/messages", { recipient: { id }, sender_action: "react", payload: { message_id: ctx.messageId, reaction: "love" } }, tenant.meta?.igAccessToken || tenant.meta?.pageAccessToken || "");
+    } else if (ctx.messageId && chan === "tg") {
+      const { callTelegramApi } = await import("./telegram.js");
+      const token = tenant.settings?.telegramBotToken || process.env.TELEGRAM_BOT_TOKEN;
+      await callTelegramApi(token, "setMessageReaction", { chat_id: id, message_id: Number(ctx.messageId), reaction: [{ type: "emoji", emoji: "❤" }] });
+    }
+  } catch (err) {
+    console.error("[Flow] reaksiya xatosi:", err.message);
   }
 }
 
@@ -502,6 +579,7 @@ export function activeFlowSession(tenant, key) {
  * amallarni bajaradi. Tugma/savol/kutish blokida to'xtaydi (mijoz javobini kutadi).
  */
 export async function runFrom(tenant, key, flow, nodeId, ctx = {}, depth = 0) {
+  ctx.depth = Math.max(depth, ctx.depth || 0);
   let current = nodeId;
   let steps = 0;
   while (current && steps++ < MAX_STEPS) {
@@ -605,6 +683,7 @@ export async function runFrom(tenant, key, flow, nodeId, ctx = {}, depth = 0) {
 /** Flow'ni boshidan ishga tushiradi (trigger ishlaganda). */
 export async function startFlow(tenant, key, flow, ctx = {}, depth = 0) {
   if (!flow?.start) return { status: "empty" };
+  depth = Math.max(depth, ctx.depth || 0);
   bumpDaily(tenant, flow, "started");
   console.log(`[Flow] ${tenant.businessName}: "${flow.name}" → ${key}`);
   return runFrom(tenant, key, flow, flow.start, ctx, depth);
@@ -667,6 +746,18 @@ export async function handleFlowInbound(tenant, key, { text = "", payload = "" }
   setFields(tenant, key, fields);
   setSession(tenant, key, null);
   await runFrom(tenant, key, flow, node.next, { ...ctx, text });
+  return true;
+}
+
+/**
+ * Do'st taklif qilinganda (geymifikatsiya referali tasdiqlanganda) — taklif qilgan
+ * odam uchun "referral" triggerli flow'lar ishga tushadi. {last_referral} — yangi do'st.
+ */
+export async function fireReferralFlows(tenant, referrerKey, newKey) {
+  const hit = findFlowTrigger(tenant, "referral", {});
+  if (!hit) return false;
+  setFields(tenant, referrerKey, { last_referral: displayNameOf(tenant, newKey) });
+  await startFlow(tenant, referrerKey, hit.flow, {});
   return true;
 }
 

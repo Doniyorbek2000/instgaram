@@ -278,7 +278,10 @@ export async function handleReferral(tenant, newKey, code, ctx = {}) {
   }
 
   const pts = await award(tenant, refKey, "referral", { note: `Taklif: ${participantName(tenant, newKey)}` });
-  if (pts > 0) refP.referrals = (refP.referrals || 0) + 1;
+  if (pts > 0) {
+    refP.referrals = (refP.referrals || 0) + 1;
+    notifyReferrer(tenant, refKey, newKey);
+  }
   persist(tenant);
   return {
     ok: pts > 0,
@@ -286,6 +289,13 @@ export async function handleReferral(tenant, newKey, code, ctx = {}) {
     points: pts,
     reply: `Xush kelibsiz! 🎉 Siz ${participantName(tenant, refKey)} taklifi bilan qo'shildingiz. O'zingiz ham ball to'plang — "${g.keywords.balance}" deb yozing.`,
   };
+}
+
+/** Taklif qilgan odam uchun "referral" triggerli flow'larni fon rejimida ishga tushiradi. */
+function notifyReferrer(tenant, refKey, newKey) {
+  import("./flows.js")
+    .then(({ fireReferralFlows }) => fireReferralFlows(tenant, refKey, newKey))
+    .catch((err) => console.error("[Referal flow]", err.message));
 }
 
 /** "Faqat obunachilar" rejimida kutib turgan referalni obuna bo'lgach tasdiqlaydi. */
@@ -297,7 +307,10 @@ export async function confirmPendingReferral(tenant, key) {
   if (prof?.is_user_follow_business !== true) return 0;
   p.pendingReferral = false;
   const pts = await award(tenant, p.referredBy, "referral", { note: `Taklif: ${participantName(tenant, key)}` });
-  if (pts > 0) g.participants[p.referredBy].referrals = (g.participants[p.referredBy].referrals || 0) + 1;
+  if (pts > 0) {
+    g.participants[p.referredBy].referrals = (g.participants[p.referredBy].referrals || 0) + 1;
+    notifyReferrer(tenant, p.referredBy, key);
+  }
   persist(tenant);
   return pts;
 }

@@ -26,7 +26,7 @@
   flow.triggers = flow.triggers || [];
 
   var MEDIA_LABEL = { image: "🖼️ Rasm", video: "🎬 Video", audio: "🎧 Audio", file: "📎 Fayl", post: "📸 Instagram post" };
-  var ICONS = { message: "💬", input: "📝", condition: "🔀", action: "⚡", delay: "⏱️", ai: "🧠", redirect: "↪️" };
+  var ICONS = { message: "💬", input: "📝", condition: "🔀", action: "⚡", delay: "⏱️", ai: "🧠", redirect: "↪️", note: "🗒️" };
 
   // ---------- yordamchilar ----------
 
@@ -76,6 +76,7 @@
       case "redirect":
         var f = meta.otherFlows.filter(function (x) { return x.id === n.flowId; })[0];
         return f ? "→ " + f.name : "(flow tanlanmagan)";
+      case "note": return n.text || "Izoh yozing…";
       default: return "";
     }
   }
@@ -90,6 +91,8 @@
       case "points": return k + " " + (c.op === "lte" ? "≤ " : c.op === "eq" ? "= " : "≥ ") + c.value;
       case "var": return "{" + c.key + "} " + (c.op === "not_exists" ? "bo'sh" : c.op === "eq" ? "= " + c.value : c.op === "contains" ? "∋ " + c.value : "to'ldirilgan");
       case "channel": return k + ": " + c.value;
+      case "follows": return k + (c.value ? ": " + c.value : "");
+      case "tg_boost": return k + (c.value ? ": " + c.value : "");
       default: return k;
     }
   }
@@ -97,7 +100,11 @@
   function actionLabel(a) {
     var k = meta.actionKinds[a.kind] || a.kind;
     if (a.kind === "set_var") return k + ": {" + a.key + "} = " + a.value;
-    if (a.kind === "handoff") return k;
+    if (a.kind === "handoff" || a.kind === "react") return k;
+    if (a.kind === "run_flow") {
+      var tf = meta.otherFlows.filter(function (x) { return x.id === a.key; })[0];
+      return k + ": " + (tf ? tf.name : "?") + (a.value === "referrer" ? " (taklif qilganga)" : "");
+    }
     return k + (a.value ? ": " + a.value : "");
   }
 
@@ -114,7 +121,7 @@
     } else if (n.type === "condition") {
       outs.push({ port: "yes", label: "✅ Ha", cls: "yes", target: n.yes });
       outs.push({ port: "no", label: "❌ Yo'q", cls: "no", target: n.no });
-    } else if (n.type !== "redirect") {
+    } else if (n.type !== "redirect" && n.type !== "note") {
       outs.push({ port: "next", label: n.type === "input" ? "Javobdan keyin" : n.type === "delay" ? "Kutgandan keyin" : "Keyingi", cls: "", target: n.next });
     }
     return outs;
@@ -141,11 +148,11 @@
     var counts = (flow.stats && flow.stats.nodes) || {};
     Object.keys(flow.nodes).forEach(function (id) {
       var n = flow.nodes[id];
-      var el = h("div", { class: "fb-node t-" + n.type + (selected === id ? " sel" : ""), "data-id": id });
+      var el = h("div", { class: "fb-node t-" + n.type + (n.type === "note" ? " c-" + (n.color || "yellow") : "") + (selected === id ? " sel" : ""), "data-id": id });
       el.style.left = (n.x || 0) + "px";
       el.style.top = (n.y || 0) + "px";
       if (flow.start === id) el.appendChild(h("span", { class: "start", text: "▶ START" }));
-      el.appendChild(h("span", { class: "in" }));
+      if (n.type !== "note") el.appendChild(h("span", { class: "in" }));
       el.appendChild(h("header", {}, [
         (ICONS[n.type] || "") + " " + String(meta.nodeTypes[n.type] || n.type).replace(/^\S+\s/, ""),
         h("span", { class: "cnt", text: counts[id] ? "👥 " + counts[id] : "#" + id }),
@@ -354,6 +361,7 @@
       case "delay": return { minutes: 60, next: null };
       case "ai": return { prompt: "", next: null };
       case "redirect": return { flowId: meta.otherFlows[0] ? meta.otherFlows[0].id : "" };
+      case "note": return { text: "", color: "yellow" };
       default: return {};
     }
   }
@@ -363,6 +371,7 @@
     var id = uid("n");
     var n = Object.assign({ id: id, type: type }, defaults(type));
     var prev = selected && flow.nodes[selected];
+    if (type === "note") prev = null; // izoh hech narsaga ulanmaydi
     if (prev) {
       n.x = (prev.x || 0) + 320;
       n.y = prev.y || 0;
@@ -374,7 +383,7 @@
       n.y = Math.round((r.height / 2 - view.y) / view.k - 60);
     }
     flow.nodes[id] = n;
-    if (!flow.start) flow.start = id;
+    if (!flow.start && type !== "note") flow.start = id;
     selected = id;
     markDirty();
     renderAll();
@@ -531,7 +540,9 @@
       h("button", { type: "button", class: "secondary", style: "margin:0; padding:4px 10px; font-size:12px", text: "✕", onclick: function () { selected = null; renderAll(); } }),
     ]));
     side.appendChild(h("div", { style: "display:flex; gap:6px; flex-wrap:wrap" }, [
-      flow.start === n.id
+      n.type === "note"
+        ? null
+        : flow.start === n.id
         ? h("span", { class: "status-tag", text: "▶ Boshlanish bloki" })
         : h("button", { type: "button", class: "secondary", style: "margin:0; padding:5px 10px; font-size:12px", text: "▶ Start qilish", onclick: function () { flow.start = n.id; markDirty(); renderAll(); } }),
       h("button", { type: "button", class: "secondary", style: "margin:0; padding:5px 10px; font-size:12px", text: "⧉ Nusxa", onclick: function () { duplicateNode(n.id); } }),
@@ -595,6 +606,11 @@
     if (n.type === "ai") {
       side.appendChild(field("AI uchun ko'rsatma (ixtiyoriy)", textArea(n, "prompt", 4, "Masalan: mijozga mos tarifni tavsiya qil"), "AI biznesingiz bilim bazasi va mijoz xabari asosida javob beradi."));
       side.appendChild(field("Keyingi blok", targetSelect(n, "next", n.next)));
+    }
+
+    if (n.type === "note") {
+      side.appendChild(field("Izoh matni (faqat siz va jamoangiz ko'radi)", textArea(n, "text", 6, "Masalan: bu tarmoq faqat aksiya davrida ishlaydi")));
+      side.appendChild(field("Rang", select([["yellow", "🟨 Sariq"], ["blue", "🟦 Ko'k"], ["pink", "🟪 Pushti"], ["green", "🟩 Yashil"]], n.color || "yellow", function (v) { n.color = v; changed(); })));
     }
 
     if (n.type === "redirect") {
@@ -720,7 +736,15 @@
       row.appendChild(select([["ig", "Instagram"], ["tg", "Telegram"], ["wa", "WhatsApp"], ["fb", "Messenger"]], c.value || "ig", function (v) { c.value = v; changed(); }));
       if (!c.value) c.value = "ig";
     } else if (c.kind === "follows") {
-      row.appendChild(h("p", { class: "fb-hint", text: "Instagram'da sahifaga, Telegram'da kanalga obunani tekshiradi." }));
+      row.style.flexDirection = "column";
+      row.style.alignItems = "stretch";
+      row.appendChild(textInput(c, "value", { placeholder: "Telegram: @kanal1, @kanal2 (bo'sh — asosiy kanal)" }));
+      row.appendChild(h("p", { class: "fb-hint", text: "Instagram'da sahifaga obunani tekshiradi. Telegram'da ko'rsatilgan barcha kanallarga a'zo bo'lishi shart (bot kanallarda admin bo'lishi kerak)." }));
+    } else if (c.kind === "tg_boost") {
+      row.style.flexDirection = "column";
+      row.style.alignItems = "stretch";
+      row.appendChild(textInput(c, "value", { placeholder: "@kanal (bo'sh — asosiy kanal)" }));
+      row.appendChild(h("p", { class: "fb-hint", text: "Faqat Telegram. Mijoz kanalga boost bergan bo'lsa — Ha." }));
     }
     box.appendChild(row);
     return box;
@@ -736,7 +760,15 @@
       add_tag: "teg (vergul bilan bir nechta)", remove_tag: "teg", add_points: "masalan 10 yoki -5",
       conversion: "konversiya nomi (masalan: Lid)", notify: "Yangi lid: {name}, {phone}", webhook: "hodisa belgisi",
     };
-    if (a.kind === "set_var") {
+    if (a.kind === "run_flow") {
+      box.appendChild(h("div", { class: "fb-row", style: "margin-top:6px" }, [
+        select([["", "— flow tanlang —"]].concat(meta.otherFlows.map(function (f) { return [f.id, f.name]; })), a.key, function (v) { a.key = v; changed(); }),
+        select([["self", "Shu mijozga"], ["referrer", "Uni taklif qilgan odamga"]], a.value || "self", function (v) { a.value = v; changed(); }),
+      ]));
+      box.appendChild(h("p", { class: "fb-hint", text: "\"Taklif qilgan odamga\" — xabarlar referal egasiga boradi ({last_referral} — yangi do'st ismi)." }));
+    } else if (a.kind === "react") {
+      box.appendChild(h("p", { class: "fb-hint", text: "Mijoz xabariga ❤️ (Instagram/Telegram) yoki kommentga layk bosiladi." }));
+    } else if (a.kind === "set_var") {
       box.appendChild(h("div", { class: "fb-row", style: "margin-top:6px" }, [
         textInput(a, "key", { placeholder: "o'zgaruvchi" }),
         textInput(a, "value", { placeholder: "qiymat" }),
