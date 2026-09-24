@@ -10,7 +10,7 @@
  */
 import crypto from "node:crypto";
 import { listUsers, persist, updateUser } from "./db.js";
-import { ensureFlows, findFlow, sanitizeFlow, dailySeries, TRIGGER_TYPES } from "./flows.js";
+import { ensureFlows, findFlow, sanitizeFlow, dailySeries, TRIGGER_TYPES, validateFlow, flowSnapshot } from "./flows.js";
 import { autoLayout, AI_FLOW_PROMPT } from "./flowTemplates.js";
 import { allTags, displayName, windowStatus, getContactMeta } from "./contacts.js";
 import { allContacts, sanitizeBroadcast, createBroadcast, runBroadcast, resolveAudience } from "./broadcasts.js";
@@ -103,6 +103,13 @@ function prepareFlow(input, existing) {
   return needsLayout ? autoLayout(flow) : flow;
 }
 
+/** Xatoli flow yoqilmaydi; natijada tekshiruv hisoboti qaytadi. */
+function checkFlow(t, flow) {
+  const validation = validateFlow(flow, ensureFlows(t).list);
+  if (flow.enabled && validation.errors.length) flow.enabled = false;
+  return validation;
+}
+
 export const TOOLS = [
   {
     name: "get_business_info",
@@ -140,7 +147,8 @@ export const TOOLS = [
     run: (t, a) => {
       const f = findFlow(t, a.flowId);
       if (!f) throw new Error("flow not found");
-      return { ...f, nodes: Object.values(f.nodes) };
+      const { versions, ...rest } = f;
+      return { ...rest, nodes: Object.values(f.nodes), validation: validateFlow(f, ensureFlows(t).list) };
     },
   },
   {
@@ -156,8 +164,9 @@ export const TOOLS = [
     run: (t, a) => {
       const flow = prepareFlow(a.flow);
       ensureFlows(t).list.unshift(flow);
+      const validation = checkFlow(t, flow);
       persist(t);
-      return { created: flowSummary(flow), editorPath: `/flows/${flow.id}` };
+      return { created: flowSummary(flow), editorPath: `/flows/${flow.id}`, validation };
     },
   },
   {
@@ -174,9 +183,12 @@ export const TOOLS = [
       const list = ensureFlows(t).list;
       const idx = list.findIndex((f) => f.id === a.flowId);
       if (idx < 0) throw new Error("flow not found");
-      list[idx] = prepareFlow(a.flow, list[idx]);
+      const prev = list[idx];
+      list[idx] = prepareFlow(a.flow, prev);
+      list[idx].versions = [flowSnapshot(prev), ...(prev.versions || [])].slice(0, 15);
+      const validation = checkFlow(t, list[idx]);
       persist(t);
-      return { updated: flowSummary(list[idx]) };
+      return { updated: flowSummary(list[idx]), validation };
     },
   },
   {
@@ -187,6 +199,10 @@ export const TOOLS = [
     run: (t, a) => {
       const f = findFlow(t, a.flowId);
       if (!f) throw new Error("flow not found");
+      if (a.enabled && !f.enabled) {
+        const { errors } = validateFlow(f, ensureFlows(t).list);
+        if (errors.length) throw new Error(`flow has errors: ${errors.map((e) => e.msg).join("; ")}`);
+      }
       f.enabled = Boolean(a.enabled);
       persist(t);
       return flowSummary(f);

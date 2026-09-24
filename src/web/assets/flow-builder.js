@@ -14,8 +14,12 @@
 
   var view = { x: 40, y: 70, k: 1 };
   var selected = null;
+  var selectedEdge = null; // { node, port }
+  var panel = null; // null | "problems" | "versions" | "sim"
   var dirty = false;
   var saving = false;
+  var validation = meta.validation || { errors: [], warnings: [] };
+  var sim = null;
 
   if (Array.isArray(flow.nodes)) {
     var map = {};
@@ -62,6 +66,123 @@
   function markDirty() {
     dirty = true;
     setStatus("● Saqlanmagan o'zgarishlar", "#fbbf24");
+    scheduleHistory();
+    scheduleValidate();
+  }
+
+  // ---------- bekor qilish / qaytarish (undo / redo) ----------
+
+  var history = [];
+  var histPos = -1;
+  var histTimer = null;
+
+  function snapshotState() {
+    return JSON.stringify({ name: flow.name, enabled: flow.enabled, triggers: flow.triggers, start: flow.start, nodes: flow.nodes });
+  }
+
+  function commitHistory() {
+    clearTimeout(histTimer);
+    histTimer = null;
+    var snap = snapshotState();
+    if (history[histPos] === snap) return;
+    history = history.slice(0, histPos + 1);
+    history.push(snap);
+    if (history.length > 100) history.shift();
+    histPos = history.length - 1;
+    updateHistButtons();
+  }
+
+  function scheduleHistory() {
+    clearTimeout(histTimer);
+    histTimer = setTimeout(commitHistory, 350);
+  }
+
+  function resetHistory() {
+    history = [snapshotState()];
+    histPos = 0;
+    updateHistButtons();
+  }
+
+  function restoreState(snap) {
+    var st = JSON.parse(snap);
+    flow.name = st.name;
+    flow.enabled = st.enabled;
+    flow.triggers = st.triggers || [];
+    flow.start = st.start;
+    flow.nodes = st.nodes || {};
+    if (selected && !flow.nodes[selected]) selected = null;
+    selectedEdge = null;
+    dirty = true;
+    setStatus("● Saqlanmagan o'zgarishlar", "#fbbf24");
+    scheduleValidate();
+    renderAll();
+  }
+
+  function undo() {
+    if (histTimer) commitHistory();
+    if (histPos <= 0) return;
+    histPos--;
+    restoreState(history[histPos]);
+    updateHistButtons();
+  }
+
+  function redo() {
+    if (histPos >= history.length - 1) return;
+    histPos++;
+    restoreState(history[histPos]);
+    updateHistButtons();
+  }
+
+  function updateHistButtons() {
+    var u = document.querySelector('[data-act="undo"]');
+    var r = document.querySelector('[data-act="redo"]');
+    if (u) u.disabled = histPos <= 0 && !histTimer;
+    if (r) r.disabled = histPos >= history.length - 1;
+  }
+
+  // ---------- tekshiruv (serverdagi validateFlow bilan bir xil) ----------
+
+  var valTimer = null;
+  var valSeq = 0;
+
+  function scheduleValidate() {
+    clearTimeout(valTimer);
+    valTimer = setTimeout(runValidate, 700);
+  }
+
+  function runValidate() {
+    var seq = ++valSeq;
+    fetch(location.pathname + "/validate", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(serialize()) })
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        if (seq !== valSeq || !d.ok) return;
+        validation = d.validation;
+        renderValidation();
+        if (panel === "problems") renderSide();
+      })
+      .catch(function () {});
+  }
+
+  function problemsOf(id) {
+    return {
+      err: validation.errors.some(function (x) { return x.nodeId === id; }),
+      warn: validation.warnings.some(function (x) { return x.nodeId === id; }),
+    };
+  }
+
+  function renderValidation() {
+    var badge = document.getElementById("fbVal");
+    if (badge) {
+      var e = validation.errors.length;
+      var w = validation.warnings.length;
+      badge.textContent = e ? "⛔ " + e + " xato" + (w ? " · " + w + " ⚠️" : "") : w ? "⚠️ " + w + " ogohlantirish" : "✓ Xatosiz";
+      badge.className = "secondary fb-val " + (e ? "bad" : w ? "warn" : "good");
+    }
+    Array.prototype.forEach.call(canvas.querySelectorAll(".fb-node"), function (el) {
+      var pr = problemsOf(el.getAttribute("data-id"));
+      el.classList.toggle("err", pr.err);
+      el.classList.toggle("warn", !pr.err && pr.warn);
+    });
   }
 
   function snippet(n) {
@@ -148,7 +269,7 @@
     var counts = (flow.stats && flow.stats.nodes) || {};
     Object.keys(flow.nodes).forEach(function (id) {
       var n = flow.nodes[id];
-      var el = h("div", { class: "fb-node t-" + n.type + (n.type === "note" ? " c-" + (n.color || "yellow") : "") + (selected === id ? " sel" : ""), "data-id": id });
+      var el = h("div", { class: "fb-node t-" + n.type + (n.type === "note" ? " c-" + (n.color || "yellow") : "") + (selected === id ? " sel" : "") + (sim && sim.cur === id ? " simcur" : ""), "data-id": id });
       el.style.left = (n.x || 0) + "px";
       el.style.top = (n.y || 0) + "px";
       if (flow.start === id) el.appendChild(h("span", { class: "start", text: "▶ START" }));
@@ -170,6 +291,7 @@
       canvas.appendChild(el);
     });
     renderEdges();
+    renderValidation();
   }
 
   function portPoint(nodeId, port) {
@@ -194,20 +316,50 @@
     return "M" + a.x + "," + a.y + " C" + (a.x + dx) + "," + a.y + " " + (b.x - dx) + "," + b.y + " " + b.x + "," + b.y;
   }
 
+  function attr(v) {
+    return String(v).replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;");
+  }
+
   function renderEdges() {
     var paths = [];
+    var mid = null;
     Object.keys(flow.nodes).forEach(function (id) {
       outputs(flow.nodes[id]).forEach(function (o) {
         if (!o.port || !o.target || !flow.nodes[o.target]) return;
         var a = portPoint(id, o.port);
         var b = inPoint(o.target);
-        if (a && b) paths.push('<path class="' + o.cls + '" d="' + curve(a, b) + '"/>');
+        if (!a || !b) return;
+        var isSel = selectedEdge && selectedEdge.node === id && selectedEdge.port === o.port;
+        var d = curve(a, b);
+        paths.push('<path class="' + o.cls + (isSel ? " selected" : "") + '" d="' + d + '"/>');
+        paths.push('<path class="hit" data-node="' + attr(id) + '" data-port="' + attr(o.port) + '" d="' + d + '"><title>Tanlash uchun bosing</title></path>');
+        if (isSel) {
+          var dx = Math.max(60, Math.abs(b.x - a.x) / 2);
+          // Kubik egri chiziqning o'rtasi: (P0 + 3P1 + 3P2 + P3) / 8
+          mid = { x: (a.x + 3 * (a.x + dx) + 3 * (b.x - dx) + b.x) / 8, y: (a.y + 3 * a.y + 3 * b.y + b.y) / 8 };
+        }
       });
     });
     if (drag && drag.kind === "link" && drag.to) {
       paths.push('<path class="drag" d="' + curve(drag.from, drag.to) + '"/>');
     }
     edges.innerHTML = paths.join("");
+    var old = canvas.querySelector(".fb-edge-x");
+    if (old) old.remove();
+    if (mid) {
+      var x = h("button", { type: "button", class: "fb-edge-x", title: "Ulanishni uzish (Delete)", text: "✕" });
+      x.style.left = mid.x - 13 + "px";
+      x.style.top = mid.y - 13 + "px";
+      canvas.appendChild(x);
+    }
+  }
+
+  function deleteSelectedEdge() {
+    if (!selectedEdge || !flow.nodes[selectedEdge.node]) return;
+    setTarget(flow.nodes[selectedEdge.node], selectedEdge.port, null);
+    selectedEdge = null;
+    markDirty();
+    renderAll();
   }
 
   function renderAll() {
@@ -218,11 +370,12 @@
   /** Mobil: inspektor varag'i blok tanlanganda ochiladi, bo'sh joyga bosilganda yopiladi. */
   var sheetPinned = false; // "⚙️" orqali ochilgan flow sozlamalari tahrirlash paytida yopilmasin
   function syncSheet() {
-    side.classList.toggle("open", Boolean(selected || sheetPinned));
+    side.classList.toggle("open", Boolean(selected || sheetPinned || panel));
   }
   var settingsBtn = document.getElementById("fbSettingsBtn");
   if (settingsBtn) settingsBtn.addEventListener("click", function () {
     selected = null;
+    panel = null;
     sheetPinned = true;
     renderAll();
   });
@@ -276,7 +429,24 @@
   wrap.addEventListener("pointerdown", function (e) {
     if (e.button !== 0) return;
     if (pinch) return;
-    if (e.target.closest(".fb-toolbar, .fb-zoom")) return;
+    if (e.target.closest(".fb-toolbar, .fb-zoom, .fb-quick")) return;
+    closeQuick();
+    if (e.target.closest(".fb-edge-x")) {
+      e.preventDefault();
+      deleteSelectedEdge();
+      return;
+    }
+    var hit = e.target.closest("path.hit");
+    if (hit) {
+      e.preventDefault();
+      selectedEdge = { node: hit.getAttribute("data-node"), port: hit.getAttribute("data-port") };
+      renderEdges();
+      return;
+    }
+    if (selectedEdge) {
+      selectedEdge = null;
+      renderEdges();
+    }
     var port = e.target.closest(".port");
     var nodeEl = e.target.closest(".fb-node");
     if (port) {
@@ -285,6 +455,7 @@
       var id = nodeEl.getAttribute("data-id");
       if (selected !== id) {
         selected = id;
+        panel = panel === "sim" ? "sim" : null;
         Array.prototype.forEach.call(canvas.querySelectorAll(".fb-node.sel"), function (el) { el.classList.remove("sel"); });
         nodeEl.classList.add("sel");
         renderSide();
@@ -330,9 +501,10 @@
     var d = drag;
     drag = null;
     if (d.kind === "node" && d.moved) markDirty();
-    if (d.kind === "pan" && !d.moved && (selected || sheetPinned)) {
+    if (d.kind === "pan" && !d.moved && (selected || sheetPinned || (panel && panel !== "sim"))) {
       selected = null;
       sheetPinned = false;
+      if (panel !== "sim") panel = null;
       renderAll();
     }
     if (d.kind === "link") {
@@ -342,6 +514,8 @@
       setTarget(flow.nodes[d.node], d.port, targetId && targetId !== d.node ? targetId : null);
       markDirty();
       renderAll();
+      // Bo'sh joyga tashlandi — shu yerda yangi blok yaratib ulash menyusi
+      if (!target && d.to) openQuick(e.clientX, e.clientY, d.to, d.node, d.port);
     }
   }
 
@@ -417,13 +591,18 @@
     }
   }
 
-  function addNode(type) {
+  function addNode(type, opts) {
+    opts = opts || {};
     var r = wrap.getBoundingClientRect();
     var id = uid("n");
     var n = Object.assign({ id: id, type: type }, defaults(type));
     var prev = selected && flow.nodes[selected];
-    if (type === "note") prev = null; // izoh hech narsaga ulanmaydi
-    if (prev) {
+    if (type === "note" || opts.at) prev = null; // izoh hech narsaga ulanmaydi
+    if (opts.at) {
+      n.x = Math.round(opts.at.x + 20);
+      n.y = Math.round(opts.at.y - 24);
+      if (opts.from && flow.nodes[opts.from.node]) setTarget(flow.nodes[opts.from.node], opts.from.port, id);
+    } else if (prev) {
       n.x = (prev.x || 0) + 320;
       n.y = prev.y || 0;
       if ("next" in prev && !prev.next && !(prev.buttons || []).some(function (b) { return !b.url; })) prev.next = id;
@@ -487,18 +666,164 @@
     b.addEventListener("click", function () { addNode(b.getAttribute("data-add")); });
   });
 
+  // ---------- tez qo'shish menyusi (portni bo'sh joyga tortganda) ----------
+
+  var quick = null;
+
+  function closeQuick() {
+    if (quick) quick.remove();
+    quick = null;
+  }
+
+  function openQuick(clientX, clientY, at, fromNode, fromPort) {
+    closeQuick();
+    var r = wrap.getBoundingClientRect();
+    quick = h("div", { class: "fb-quick" }, [h("div", { class: "fb-hint", style: "margin:0 0 4px", text: "Yangi blok qo'shib ulash:" })].concat(
+      Object.keys(ICONS).filter(function (t) { return t !== "note"; }).map(function (t) {
+        return h("button", { type: "button", class: "secondary", text: ICONS[t] + " " + String(meta.nodeTypes[t] || t).replace(/^\S+\s/, ""), onclick: function () {
+          closeQuick();
+          addNode(t, { at: at, from: { node: fromNode, port: fromPort } });
+        } });
+      })
+    ));
+    quick.style.left = Math.min(clientX - r.left, r.width - 200) + "px";
+    quick.style.top = Math.min(clientY - r.top, r.height - 300) + "px";
+    wrap.appendChild(quick);
+  }
+
+  // ---------- avtomatik tartiblash ----------
+
+  function arrange() {
+    var depth = {};
+    var order = [];
+    var queue = flow.start && flow.nodes[flow.start] ? [flow.start] : [];
+    if (queue.length) depth[flow.start] = 0;
+    while (queue.length) {
+      var id = queue.shift();
+      order.push(id);
+      outputs(flow.nodes[id]).forEach(function (o) {
+        var t = o.target && flow.nodes[o.target];
+        if (t && t.type !== "note" && depth[o.target] === undefined) {
+          depth[o.target] = depth[id] + 1;
+          queue.push(o.target);
+        }
+      });
+    }
+    var maxD = order.reduce(function (m, id) { return Math.max(m, depth[id]); }, -1);
+    var notes = [];
+    Object.keys(flow.nodes).forEach(function (id) {
+      if (flow.nodes[id].type === "note") notes.push(id);
+      else if (depth[id] === undefined) { depth[id] = maxD + 1; order.push(id); }
+    });
+    var heightOf = function (id) {
+      var el = canvas.querySelector('.fb-node[data-id="' + id + '"]');
+      return el ? el.offsetHeight : 160;
+    };
+    var cols = {};
+    order.forEach(function (id) { (cols[depth[id]] = cols[depth[id]] || []).push(id); });
+    Object.keys(cols).forEach(function (d) {
+      var y = 0;
+      cols[d].forEach(function (id) {
+        flow.nodes[id].x = Number(d) * 340;
+        flow.nodes[id].y = y;
+        y += heightOf(id) + 40;
+      });
+    });
+    var ny = 0;
+    notes.forEach(function (id) {
+      flow.nodes[id].x = -340;
+      flow.nodes[id].y = ny;
+      ny += heightOf(id) + 30;
+    });
+    markDirty();
+    renderAll();
+    fitView();
+  }
+
+  // ---------- nusxa olish / qo'yish (boshqa flow'ga ham) ----------
+
+  var clip = null;
+
+  function copyNode(id) {
+    if (!flow.nodes[id]) return;
+    clip = JSON.stringify(flow.nodes[id]);
+    try { localStorage.setItem("fbClip", clip); } catch (err) { /* xotira yopiq — faqat shu sahifada ishlaydi */ }
+    setStatus("⧉ Blok nusxalandi — Ctrl+V bilan qo'ying", "#94a3b8");
+  }
+
+  function pasteNode() {
+    var raw = clip;
+    try { raw = localStorage.getItem("fbClip") || clip; } catch (err) { raw = clip; }
+    if (!raw) return;
+    var n;
+    try { n = JSON.parse(raw); } catch (err) { return; }
+    if (!n || !ICONS[n.type]) return;
+    var r = wrap.getBoundingClientRect();
+    n.id = uid("n");
+    n.x = Math.round((r.width / 2 - view.x) / view.k - 130 + Math.random() * 40);
+    n.y = Math.round((r.height / 2 - view.y) / view.k - 60 + Math.random() * 40);
+    if ("next" in n) n.next = null;
+    if ("yes" in n) n.yes = null;
+    if ("no" in n) n.no = null;
+    (n.buttons || []).forEach(function (b) { b.id = uid("b"); b.next = null; });
+    if (n.type === "redirect" && n.flowId === flow.id) n.flowId = "";
+    flow.nodes[n.id] = n;
+    if (!flow.start && n.type !== "note") flow.start = n.id;
+    selected = n.id;
+    markDirty();
+    renderAll();
+  }
+
   document.addEventListener("keydown", function (e) {
-    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s") {
+    var mod = e.ctrlKey || e.metaKey;
+    var key = (e.key || "").toLowerCase();
+    if (mod && key === "s") {
       e.preventDefault();
       save();
       return;
     }
     var typing = /^(INPUT|TEXTAREA|SELECT)$/.test((document.activeElement || {}).tagName || "");
-    if (!typing && selected && (e.key === "Delete" || e.key === "Backspace")) {
-      e.preventDefault();
-      if (confirm("Blok o'chirilsinmi?")) deleteNode(selected);
+    if (typing) return;
+    if (e.key === "Escape") {
+      closeQuick();
+      selectedEdge = null;
+      renderEdges();
+      return;
+    }
+    if (mod && key === "z") { e.preventDefault(); if (e.shiftKey) redo(); else undo(); return; }
+    if (mod && key === "y") { e.preventDefault(); redo(); return; }
+    if (mod && key === "c" && selected) { e.preventDefault(); copyNode(selected); return; }
+    if (mod && key === "v") { e.preventDefault(); pasteNode(); return; }
+    if (mod && key === "d" && selected) { e.preventDefault(); duplicateNode(selected); return; }
+    if (e.key === "Delete" || e.key === "Backspace") {
+      if (selectedEdge) { e.preventDefault(); deleteSelectedEdge(); return; }
+      if (selected) {
+        e.preventDefault();
+        deleteNode(selected); // Ctrl+Z bilan qaytariladi
+      }
     }
   });
+
+  Array.prototype.forEach.call(document.querySelectorAll("[data-act]"), function (b) {
+    b.addEventListener("click", function () {
+      var act = b.getAttribute("data-act");
+      if (act === "undo") undo();
+      else if (act === "redo") redo();
+      else if (act === "arrange") arrange();
+      else if (act === "sim") openPanel("sim");
+      else if (act === "versions") openPanel("versions");
+    });
+  });
+  var valBadge = document.getElementById("fbVal");
+  if (valBadge) valBadge.addEventListener("click", function () { openPanel("problems"); });
+
+  function openPanel(name) {
+    selected = null;
+    sheetPinned = false;
+    panel = name;
+    if (name === "sim") simStart();
+    renderAll();
+  }
 
   // ---------- o'ng panel (inspektor) ----------
 
@@ -582,6 +907,9 @@
   function renderSide() {
     side.innerHTML = "";
     syncSheet();
+    if (panel === "problems") return renderProblems();
+    if (panel === "versions") return renderVersions();
+    if (panel === "sim" && !selected) return renderSim();
     if (!selected || !flow.nodes[selected]) {
       renderFlowSettings();
       return;
@@ -591,6 +919,13 @@
       h("h3", { text: (ICONS[n.type] || "") + " " + String(meta.nodeTypes[n.type] || n.type).replace(/^\S+\s/, "") }),
       h("button", { type: "button", class: "secondary", style: "margin:0; padding:4px 10px; font-size:12px", text: "✕", onclick: function () { selected = null; renderAll(); } }),
     ]));
+    var nodeProblems = validation.errors.concat(validation.warnings).filter(function (x) { return x.nodeId === n.id; });
+    if (nodeProblems.length) {
+      side.appendChild(h("div", { class: "fb-problems" }, nodeProblems.map(function (x) {
+        var isErr = validation.errors.indexOf(x) >= 0;
+        return h("div", { class: isErr ? "bad" : "warn", text: (isErr ? "⛔ " : "⚠️ ") + x.msg.replace(/^[^:]*#\S+: /, "") });
+      })));
+    }
     side.appendChild(h("div", { style: "display:flex; gap:6px; flex-wrap:wrap" }, [
       n.type === "note"
         ? null
@@ -598,7 +933,8 @@
         ? h("span", { class: "status-tag", text: "▶ Boshlanish bloki" })
         : h("button", { type: "button", class: "secondary", style: "margin:0; padding:5px 10px; font-size:12px", text: "▶ Start qilish", onclick: function () { flow.start = n.id; markDirty(); renderAll(); } }),
       h("button", { type: "button", class: "secondary", style: "margin:0; padding:5px 10px; font-size:12px", text: "⧉ Nusxa", onclick: function () { duplicateNode(n.id); } }),
-      h("button", { type: "button", class: "secondary", style: "margin:0; padding:5px 10px; font-size:12px; color:#f87171", text: "🗑️ O'chirish", onclick: function () { if (confirm("Blok o'chirilsinmi?")) deleteNode(n.id); } }),
+      h("button", { type: "button", class: "secondary", style: "margin:0; padding:5px 10px; font-size:12px", text: "📋 Nusxalash", title: "Ctrl+C — boshqa flow'ga ham qo'yish mumkin", onclick: function () { copyNode(n.id); } }),
+      h("button", { type: "button", class: "secondary", style: "margin:0; padding:5px 10px; font-size:12px; color:#f87171", text: "🗑️ O'chirish", onclick: function () { deleteNode(n.id); setStatus("🗑️ Blok o'chirildi — Ctrl+Z / ↶ bilan qaytarish mumkin", "#fbbf24"); } }),
     ]));
 
     if (n.type === "message") {
@@ -837,8 +1173,22 @@
     side.appendChild(h("h3", { text: "⚙️ Flow sozlamalari" }));
     side.appendChild(field("Nomi", textInput(flow, "name")));
     side.appendChild(h("label", { style: "display:flex; gap:8px; align-items:center; cursor:pointer; margin-top:12px" }, [
-      h("input", { type: "checkbox", checked: flow.enabled, style: "width:auto; margin:0", onchange: function (e) { flow.enabled = e.target.checked; markDirty(); } }),
+      h("input", { type: "checkbox", checked: flow.enabled, style: "width:auto; margin:0", onchange: function (e) {
+        if (e.target.checked && validation.errors.length) {
+          e.target.checked = false;
+          alert("Flow'da " + validation.errors.length + " ta xato bor — avval ularni tuzating (yuqoridagi ⛔ tugmasi).");
+          openPanel("problems");
+          return;
+        }
+        flow.enabled = e.target.checked;
+        markDirty();
+      } }),
       "Flow faol (triggerlar ishlaydi)",
+    ]));
+    side.appendChild(h("div", { style: "display:flex; gap:6px; flex-wrap:wrap; margin-top:10px" }, [
+      h("button", { type: "button", class: "secondary", style: "margin:0; padding:5px 10px; font-size:12px", text: "▶ Sinash", onclick: function () { openPanel("sim"); } }),
+      h("button", { type: "button", class: "secondary", style: "margin:0; padding:5px 10px; font-size:12px", text: "🕘 Versiyalar" + (flow.versionCount ? " (" + flow.versionCount + ")" : ""), onclick: function () { openPanel("versions"); } }),
+      h("a", { class: "btn secondary", href: location.pathname + "/export", style: "margin:0; padding:5px 10px; font-size:12px", text: "⬇️ Eksport" }),
     ]));
 
     side.appendChild(h("h3", { text: "🎯 Triggerlar", style: "margin-top:18px" }));
@@ -873,7 +1223,222 @@
       "Boshlandi: " + (s.started || 0) + " · Yakunlandi: " + (s.completed || 0) + " · Konversiya: " + (s.conversions || 0) +
         (s.started ? " (" + Math.round(((s.conversions || 0) / s.started) * 100) + "%)" : ""),
     ]));
-    side.appendChild(h("p", { class: "fb-hint", text: "Maslahat: blokni tanlang va chapdan yangi blok qo'shing — u avtomatik ulanadi. Portni (rangli nuqta) tortib boshqa blokka tashlang. Bo'sh joyga tashlash — ulanishni uzadi. Ctrl+S — saqlash, Delete — blokni o'chirish." }));
+    side.appendChild(h("p", { class: "fb-hint", text: "Maslahat: blokni tanlang va chapdan yangi blok qo'shing — u avtomatik ulanadi. Portni (rangli nuqta) tortib boshqa blokka tashlang; bo'sh joyga tashlasangiz — yangi blok qo'shish menyusi chiqadi. Chiziqni bosib ✕ bilan uzing. Ctrl+Z / Ctrl+Shift+Z — bekor qilish/qaytarish, Ctrl+C / Ctrl+V — nusxa, Ctrl+D — dublikat, Delete — o'chirish, Ctrl+S — saqlash." }));
+  }
+
+  // ---------- panellar: xatolar, versiyalar, simulyator ----------
+
+  function panelHeader(title) {
+    return h("div", { style: "display:flex; justify-content:space-between; align-items:center" }, [
+      h("h3", { text: title }),
+      h("button", { type: "button", class: "secondary", style: "margin:0; padding:4px 10px; font-size:12px", text: "✕", onclick: function () { closePanel(); } }),
+    ]);
+  }
+
+  function closePanel() {
+    panel = null;
+    if (sim) { sim = null; }
+    renderAll();
+  }
+
+  function focusNode(id) {
+    if (!flow.nodes[id]) return;
+    selected = id;
+    panel = null;
+    renderAll();
+    ensureVisible(flow.nodes[id]);
+  }
+
+  function renderProblems() {
+    side.appendChild(panelHeader("🩺 Flow tekshiruvi"));
+    var all = validation.errors.map(function (x) { return { x: x, bad: true }; })
+      .concat(validation.warnings.map(function (x) { return { x: x, bad: false }; }));
+    if (!all.length) {
+      side.appendChild(h("div", { class: "fb-item", style: "color:#34d399", text: "✓ Xato topilmadi — flow'ni yoqishingiz mumkin." }));
+      return;
+    }
+    side.appendChild(h("p", { class: "fb-hint", text: "⛔ xatolar tuzatilmaguncha flow yoqilmaydi. ⚠️ ogohlantirishlar — flow ishlaydi, lekin tekshirib chiqing. Bosing — blokka o'tadi." }));
+    all.forEach(function (it) {
+      side.appendChild(h("button", {
+        type: "button",
+        class: "secondary fb-problem " + (it.bad ? "bad" : "warn"),
+        text: (it.bad ? "⛔ " : "⚠️ ") + it.x.msg,
+        onclick: function () { if (it.x.nodeId) focusNode(it.x.nodeId); else { panel = null; renderAll(); } },
+      }));
+    });
+  }
+
+  function renderVersions() {
+    side.appendChild(panelHeader("🕘 Versiyalar tarixi"));
+    side.appendChild(h("p", { class: "fb-hint", text: "Har saqlashda oldingi holat saqlanadi (oxirgi 15 ta). Tiklangan versiya o'chiq holda ochiladi; joriy holat ham tarixga tushadi." }));
+    var box = h("div", { text: "Yuklanmoqda…", class: "fb-hint" });
+    side.appendChild(box);
+    fetch(location.pathname + "/versions").then(function (r) { return r.json(); }).then(function (d) {
+      if (panel !== "versions") return;
+      box.textContent = "";
+      if (!d.ok || !d.versions.length) { box.textContent = d.ok ? "Hali versiyalar yo'q — flow saqlanganda paydo bo'ladi." : "⚠️ " + d.error; return; }
+      d.versions.forEach(function (v) {
+        box.appendChild(h("div", { class: "fb-item", style: "display:flex; justify-content:space-between; align-items:center; gap:8px" }, [
+          h("div", {}, [
+            h("b", { text: new Date(v.at).toLocaleString().slice(0, 17), style: "color:#e2e8f0; font-size:13px" }),
+            h("div", { class: "fb-hint", text: v.name + " · " + v.nodes + " blok · " + v.triggers + " trigger" }),
+          ]),
+          h("button", { type: "button", class: "secondary", style: "margin:0; padding:5px 10px; font-size:12px; flex:none", text: "↺ Tiklash", onclick: function () { restoreVersion(v.idx); } }),
+        ]));
+      });
+    }).catch(function () { box.textContent = "⚠️ Tarmoq xatosi"; });
+  }
+
+  function restoreVersion(idx) {
+    if (dirty && !confirm("Saqlanmagan o'zgarishlar yo'qoladi. Davom etilsinmi?")) return;
+    fetch(location.pathname + "/restore/" + idx, { method: "POST" }).then(function (r) { return r.json(); }).then(function (d) {
+      if (!d.ok) throw new Error(d.error || "Tiklab bo'lmadi");
+      flow = d.flow;
+      validation = d.validation;
+      selected = null;
+      selectedEdge = null;
+      panel = null;
+      dirty = false;
+      resetHistory();
+      setStatus("↺ Versiya tiklandi (flow o'chiq — tekshirib yoqing)", "#a78bfa");
+      renderAll();
+      fitView();
+    }).catch(function (err) { alert(err.message); });
+  }
+
+  // Simulyator: flow'ni brauzerda qadam-baqadam o'tkazadi. Hech narsa yuborilmaydi,
+  // teg/ball o'zgarmaydi; shartlarning natijasini sinovchi o'zi tanlaydi.
+  function simStart() {
+    sim = { vars: { name: "Aziza", first_name: "Aziza", username: "aziza_test", business: meta.business || "", phone: "", points: "0" }, log: [], wait: null, cur: null, steps: 0 };
+    if (!flow.start || !flow.nodes[flow.start]) simPush("sys", "⛔ START bloki yo'q");
+    else simRun(flow.start);
+  }
+
+  function simPush(who, text, extra) {
+    sim.log.push(Object.assign({ who: who, text: text }, extra || {}));
+  }
+
+  function fill(text) {
+    return String(text || "").replace(/\{([a-z0-9_]+)(?:\|([^}]*))?\}/gi, function (m, key, fb) {
+      var v = sim.vars[key.toLowerCase()];
+      return v !== undefined && v !== "" ? v : fb !== undefined ? fb : "";
+    });
+  }
+
+  function simRun(id) {
+    sim.wait = null;
+    while (id && flow.nodes[id]) {
+      if (++sim.steps > 60) { simPush("sys", "⚠️ Juda ko'p qadam — flow siklga tushib qolgan bo'lishi mumkin"); id = null; break; }
+      var n = flow.nodes[id];
+      sim.cur = id;
+      if (n.type === "message") {
+        simPush("bot", fill(n.text), { media: n.media ? MEDIA_LABEL[n.media.type] + (n.media.name ? ": " + n.media.name : "") : "", links: (n.buttons || []).filter(function (b) { return b.url; }) });
+        var steps = (n.buttons || []).filter(function (b) { return !b.url; });
+        if (steps.length) { sim.wait = { kind: "buttons", node: n, buttons: steps }; break; }
+        id = n.next;
+      } else if (n.type === "input") {
+        simPush("bot", fill(n.text));
+        sim.wait = { kind: "input", node: n };
+        break;
+      } else if (n.type === "condition") {
+        simPush("sys", "🔀 Shart: " + ((n.conditions || []).map(condLabel).join(n.match === "any" ? " YOKI " : " VA ") || "shart yo'q"));
+        if (!(n.conditions || []).length) { id = n.yes; continue; }
+        sim.wait = { kind: "cond", node: n };
+        break;
+      } else if (n.type === "action") {
+        (n.actions || []).forEach(function (a) {
+          if (a.kind === "set_var" && a.key) sim.vars[a.key.toLowerCase()] = fill(a.value);
+          simPush("sys", "⚡ " + actionLabel(a));
+        });
+        if ((n.actions || []).some(function (a) { return a.kind === "handoff"; })) { simPush("sys", "👤 Suhbat operatorga o'tdi — bot jim"); id = null; break; }
+        id = n.next;
+      } else if (n.type === "delay") {
+        simPush("sys", "⏱️ " + n.minutes + " daqiqa kutish (sinovda o'tkazib yuborildi)");
+        id = n.next;
+      } else if (n.type === "ai") {
+        simPush("bot", "🧠 AI javobi" + (n.prompt ? " — " + n.prompt : " (bilim bazasi asosida)"), { ai: true });
+        id = n.next;
+      } else if (n.type === "redirect") {
+        var rf = meta.otherFlows.filter(function (x) { return x.id === n.flowId; })[0];
+        simPush("sys", "↪️ " + (rf ? "\"" + rf.name + "\" flow'iga o'tadi" : "Flow tanlanmagan"));
+        id = null;
+      } else {
+        id = null;
+      }
+    }
+    if (!sim.wait) {
+      sim.cur = null;
+      simPush("end", "🏁 Flow tugadi");
+    }
+    renderNodes();
+    if (panel === "sim" && !selected) renderSide();
+  }
+
+  function simCheck(kind, text) {
+    var t = String(text || "").trim();
+    if (!t) return false;
+    if (kind === "phone") return t.replace(/\D/g, "").length >= 9;
+    if (kind === "email") return /^[\w.+-]+@[\w-]+\.[\w.-]{2,}$/i.test(t);
+    if (kind === "number") return Number.isFinite(Number(t.replace(/\s/g, "").replace(",", ".")));
+    return true;
+  }
+
+  function simAnswer(text) {
+    var w = sim.wait;
+    if (!w || w.kind !== "input") return;
+    simPush("user", text);
+    if (!simCheck(w.node.validate, text)) {
+      simPush("bot", w.node.retryText ? fill(w.node.retryText) : "❗ Javob noto'g'ri (" + (meta.inputValidations[w.node.validate] || "") + ") — qayta so'raladi");
+      renderSide();
+      return;
+    }
+    sim.vars[(w.node.varName || "javob").toLowerCase()] = text.trim();
+    if (w.node.validate === "phone") sim.vars.phone = text.trim();
+    if (w.node.validate === "name") { sim.vars.name = text.trim(); sim.vars.first_name = text.trim(); }
+    simRun(w.node.next);
+  }
+
+  function renderSim() {
+    side.appendChild(panelHeader("▶ Sinov (simulyator)"));
+    side.appendChild(h("div", { style: "display:flex; gap:6px; margin-bottom:8px" }, [
+      h("button", { type: "button", class: "secondary", style: "margin:0; padding:5px 10px; font-size:12px", text: "↺ Qaytadan", onclick: function () { simStart(); renderAll(); } }),
+    ]));
+    side.appendChild(h("p", { class: "fb-hint", style: "margin:0 0 8px", text: "Mijozga hech narsa yuborilmaydi. Shartlarda natijani o'zingiz tanlaysiz. Saqlanmagan o'zgarishlar ham sinaladi." }));
+    var trig = (flow.triggers || []).map(function (t) { return (meta.triggerTypes[t.type] || t.type) + (t.keyword ? ": " + t.keyword : t.aiIntent ? ": " + t.aiIntent : ""); });
+    if (trig.length) side.appendChild(h("div", { class: "fb-hint", style: "margin-bottom:6px", text: "🎯 " + trig.join(" · ") }));
+    var chat = h("div", { class: "fb-sim" });
+    sim.log.forEach(function (m) {
+      if (m.who === "bot") {
+        chat.appendChild(h("div", { class: "b bot" + (m.ai ? " ai" : "") }, [
+          m.media ? h("div", { class: "media", text: m.media }) : null,
+          m.text ? h("div", { text: m.text }) : null,
+          (m.links || []).length ? h("div", { class: "links" }, m.links.map(function (b) { return h("a", { href: b.url, target: "_blank", rel: "noopener", text: "🔗 " + b.title }); })) : null,
+        ]));
+      } else if (m.who === "user") {
+        chat.appendChild(h("div", { class: "b user", text: m.text }));
+      } else {
+        chat.appendChild(h("div", { class: "b sys" + (m.who === "end" ? " end" : ""), text: m.text }));
+      }
+    });
+    side.appendChild(chat);
+    var w = sim.wait;
+    if (w && w.kind === "buttons") {
+      side.appendChild(h("div", { class: "fb-sim-actions" }, w.buttons.map(function (b) {
+        return h("button", { type: "button", class: "secondary", text: b.title, onclick: function () { simPush("user", "🔘 " + b.title); simRun(b.next); } });
+      })));
+    } else if (w && w.kind === "cond") {
+      side.appendChild(h("div", { class: "fb-sim-actions" }, [
+        h("button", { type: "button", class: "secondary", style: "color:#34d399", text: "✅ Ha", onclick: function () { simPush("sys", "→ Ha"); simRun(w.node.yes); } }),
+        h("button", { type: "button", class: "secondary", style: "color:#f87171", text: "❌ Yo'q", onclick: function () { simPush("sys", "→ Yo'q"); simRun(w.node.no); } }),
+      ]));
+    } else if (w && w.kind === "input") {
+      var inp = h("input", { type: "text", placeholder: w.node.validate === "phone" ? "+998 90 123 45 67" : "Javob yozing…", style: "margin:0" });
+      var send = function () { if (inp.value.trim()) simAnswer(inp.value); };
+      inp.addEventListener("keydown", function (e) { if (e.key === "Enter") { e.preventDefault(); send(); } });
+      side.appendChild(h("div", { class: "fb-row", style: "margin-top:8px" }, [inp, h("button", { type: "button", class: "btn", style: "margin:0; flex:0 0 auto", text: "➤", onclick: send })]));
+      setTimeout(function () { inp.focus(); }, 0);
+    }
+    setTimeout(function () { chat.scrollTop = chat.scrollHeight; }, 0);
   }
 
   // ---------- saqlash ----------
@@ -909,8 +1474,11 @@
           (flow.nodes[id].buttons || []).forEach(function (b) { if (keepModes[b.id]) b._mode = keepModes[b.id]; });
         });
         if (selected && !flow.nodes[selected]) selected = null;
+        if (res.d.validation) validation = res.d.validation;
         dirty = false;
-        setStatus("✓ Saqlandi " + new Date().toLocaleTimeString().slice(0, 5), "#34d399");
+        if (res.d.error) setStatus("⚠️ " + res.d.error, "#fbbf24");
+        else setStatus("✓ Saqlandi " + new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }), "#34d399");
+        commitHistory();
         renderAll();
       })
       .catch(function (err) { setStatus("⚠️ " + err.message, "#f87171"); })
@@ -927,6 +1495,8 @@
 
   applyView();
   renderAll();
+  resetHistory();
   setTimeout(fitView, 30);
+  if (/[?&]imported=1/.test(location.search)) setStatus("📥 Flow import qilindi — tekshirib, faollashtiring", "#a78bfa");
   if (/[?&]ai=1/.test(location.search)) setStatus("✨ AI flow yaratdi — tekshirib, faollashtiring", "#a78bfa");
 })();

@@ -54,12 +54,13 @@ app.set("trust proxy", Number(process.env.TRUST_PROXY ?? 1));
 // Imzo tekshiruvi uchun so'rovning xom (raw) tanasini saqlab qo'yamiz
 app.use(
   express.json({
+    limit: "1mb",
     verify: (req, _res, buf) => {
       req.rawBody = buf;
     },
   })
 );
-app.use(express.urlencoded({ extended: false }));
+app.use(express.urlencoded({ extended: false, limit: "1mb" }));
 app.use(attachUser);
 // Jamoa a'zosi egasining ish maydonida bo'lsa — req.user almashtiriladi va roli tekshiriladi
 app.use(teamContext);

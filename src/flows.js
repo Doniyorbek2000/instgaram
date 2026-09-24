@@ -796,3 +796,97 @@ export function dailySeries(tenant, flows, days = 30) {
   }
   return out;
 }
+
+// ============================================================
+// Tekshiruv (validatsiya) — saqlash va yoqishdan oldin
+// ============================================================
+
+/**
+ * Flow'dagi xato va ogohlantirishlarni topadi.
+ * errors — flow noto'g'ri ishlaydi (yoqib bo'lmaydi); warnings — ishlaydi, lekin e'tibor bering.
+ * Har bir yozuv: { nodeId?, msg }
+ */
+export function validateFlow(flow, allFlows = []) {
+  const errors = [];
+  const warnings = [];
+  const nodes = flow.nodes || {};
+  const ids = Object.keys(nodes);
+  const flowIds = new Set(allFlows.map((f) => f.id));
+  const label = (n) => `${NODE_TYPES[n.type] || n.type} #${n.id}`;
+
+  if (!ids.length) errors.push({ msg: "Flow bo'sh — kamida bitta blok qo'shing" });
+  if (ids.length && (!flow.start || !nodes[flow.start])) errors.push({ msg: "Boshlanish (START) bloki tanlanmagan" });
+  if (flow.start && nodes[flow.start]?.type === "note") errors.push({ nodeId: flow.start, msg: "Izoh bloki START bo'la olmaydi" });
+
+  const triggers = flow.triggers || [];
+  if (!triggers.length) warnings.push({ msg: "Trigger yo'q — flow faqat boshqa flow, ice breaker yoki ommaviy xabar orqali ishga tushadi" });
+  triggers.forEach((t, i) => {
+    const n = i + 1;
+    const needsKw = ["keyword", "comment", "live_comment", "story_reply"].includes(t.type);
+    if (needsKw && t.matchType === "ai" && !t.aiIntent) errors.push({ msg: `${n}-trigger: AI trigger uchun ma'no tavsifini yozing` });
+    else if (needsKw && !["any", "ai"].includes(t.matchType) && !normalizeText(t.keyword)) {
+      errors.push({ msg: `${n}-trigger: kalit so'z yozilmagan` });
+    }
+    if (t.type === "keyword" && (t.matchType === "any" || normalizeText(t.keyword) === "*")) {
+      warnings.push({ msg: `${n}-trigger: Direct'da "har qanday matn" triggeri ishlamaydi (AI suhbatni to'smasligi uchun)` });
+    }
+  });
+
+  // START'dan yetib boriladigan bloklar
+  const reach = new Set();
+  const stack = flow.start && nodes[flow.start] ? [flow.start] : [];
+  while (stack.length) {
+    const id = stack.pop();
+    if (reach.has(id) || !nodes[id]) continue;
+    reach.add(id);
+    const n = nodes[id];
+    [n.next, n.yes, n.no, ...(n.buttons || []).map((b) => b.next)].filter(Boolean).forEach((x) => stack.push(x));
+  }
+
+  for (const n of Object.values(nodes)) {
+    if (n.type === "note") continue;
+    if (!reach.has(n.id)) warnings.push({ nodeId: n.id, msg: `${label(n)}: START'dan bu blokka yo'l yo'q — hech qachon ishlamaydi` });
+    if (n.type === "message") {
+      if (!String(n.text || "").trim() && !n.media && !(n.buttons || []).length) errors.push({ nodeId: n.id, msg: `${label(n)}: xabar bo'sh` });
+      (n.buttons || []).forEach((b) => {
+        if (!b.url && !b.next) warnings.push({ nodeId: n.id, msg: `${label(n)}: "${b.title}" tugmasi hech qayerga ulanmagan (bosilsa flow tugaydi)` });
+      });
+      if ((n.buttons || []).filter((b) => b.url).length > 3) warnings.push({ nodeId: n.id, msg: `${label(n)}: Instagram 3 tadan ortiq havola tugmasini ko'rsatmaydi` });
+    }
+    if (n.type === "input" && !String(n.text || "").trim()) errors.push({ nodeId: n.id, msg: `${label(n)}: savol matni yo'q` });
+    if (n.type === "input" && !n.next) warnings.push({ nodeId: n.id, msg: `${label(n)}: javobdan keyin hech narsa yo'q (flow tugaydi)` });
+    if (n.type === "condition") {
+      if (!(n.conditions || []).length) warnings.push({ nodeId: n.id, msg: `${label(n)}: shart yo'q — doim "Ha"` });
+      if (!n.yes && !n.no) warnings.push({ nodeId: n.id, msg: `${label(n)}: Ha/Yo'q chiqishlari ulanmagan` });
+      (n.conditions || []).forEach((c) => {
+        if (c.kind === "tag" && !c.value) errors.push({ nodeId: n.id, msg: `${label(n)}: teg shartida teg yozilmagan` });
+        if (c.kind === "var" && !c.key) errors.push({ nodeId: n.id, msg: `${label(n)}: o'zgaruvchi nomi yozilmagan` });
+        if (c.kind === "weekday" && !c.value) errors.push({ nodeId: n.id, msg: `${label(n)}: hafta kunlari tanlanmagan` });
+      });
+    }
+    if (n.type === "action") {
+      if (!(n.actions || []).length) warnings.push({ nodeId: n.id, msg: `${label(n)}: amal yo'q` });
+      (n.actions || []).forEach((a) => {
+        if (a.kind === "run_flow" && (!a.key || !flowIds.has(a.key))) errors.push({ nodeId: n.id, msg: `${label(n)}: ishga tushiriladigan flow topilmadi` });
+        if ((a.kind === "add_tag" || a.kind === "remove_tag") && !a.value) errors.push({ nodeId: n.id, msg: `${label(n)}: teg yozilmagan` });
+        if (a.kind === "set_var" && !a.key) errors.push({ nodeId: n.id, msg: `${label(n)}: o'zgaruvchi nomi yozilmagan` });
+      });
+    }
+    if (n.type === "delay" && !n.next) warnings.push({ nodeId: n.id, msg: `${label(n)}: kutishdan keyin hech narsa yo'q` });
+    if (n.type === "redirect" && (!n.flowId || !flowIds.has(n.flowId) || n.flowId === flow.id)) {
+      errors.push({ nodeId: n.id, msg: `${label(n)}: o'tiladigan flow tanlanmagan yoki topilmadi` });
+    }
+  }
+  return { errors, warnings };
+}
+
+/** Versiyalar tarixi uchun flow'ning tahrirlanadigan qismi. */
+export function flowSnapshot(flow) {
+  return {
+    at: flow.updatedAt || new Date().toISOString(),
+    name: flow.name,
+    triggers: flow.triggers,
+    start: flow.start,
+    nodes: flow.nodes,
+  };
+}
