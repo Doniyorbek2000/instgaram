@@ -2,7 +2,8 @@ import test from "node:test";
 import assert from "node:assert";
 import { windowStatus, addTags } from "../src/contacts.js";
 
-const hoursAgo = (h) => new Date(Date.now() - h * 3600000).toISOString();
+const NOW = Date.parse("2026-09-24T12:00:00Z");
+const hoursAgo = (h) => new Date(NOW - h * 3600000).toISOString();
 
 test("24 soatlik oyna: IG/WA/FB — oxirgi kiruvchi xabardan 24 soat, Telegram — doim ochiq (bloklanmagan bo'lsa)", () => {
   const t = {
@@ -14,13 +15,14 @@ test("24 soatlik oyna: IG/WA/FB — oxirgi kiruvchi xabardan 24 soat, Telegram �
     },
     contactMeta: { "tg:5": { tags: [], fields: {}, blocked: true } },
   };
-  const w1 = windowStatus(t, "ig:1");
+  const w1 = windowStatus(t, "ig:1", NOW);
   assert.strictEqual(w1.open, true);
-  assert.match(w1.label, /^18 soat/);
-  assert.strictEqual(windowStatus(t, "ig:2").open, false);
-  assert.strictEqual(windowStatus(t, "wa:3").open, false, "bot xabari oynani ochmaydi");
-  assert.strictEqual(windowStatus(t, "tg:4").open, true);
-  assert.strictEqual(windowStatus(t, "tg:5").open, false);
+  assert.strictEqual(w1.label, "19 soat 0 daq qoldi");
+  assert.strictEqual(windowStatus(t, "ig:1", NOW + 18.5 * 3600000).label, "30 daq qoldi");
+  assert.strictEqual(windowStatus(t, "ig:2", NOW).open, false);
+  assert.strictEqual(windowStatus(t, "wa:3", NOW).open, false, "bot xabari oynani ochmaydi");
+  assert.strictEqual(windowStatus(t, "tg:4", NOW).open, true);
+  assert.strictEqual(windowStatus(t, "tg:5", NOW).open, false);
 });
 
 test("teglar normallashtiriladi va takrorlanmaydi", () => {
