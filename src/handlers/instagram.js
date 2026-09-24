@@ -6,7 +6,7 @@ import { findFlowTrigger, aiFlowCandidates, startFlow, pickPublicReply as pickFl
 import { renderTemplate } from "../templating.js";
 import { resolvePayload, rememberOptions } from "../automation.js";
 import { award, confirmPendingReferral } from "../gamification.js";
-import { processMessage } from "../respond.js";
+import { processMessage, commentAiReply } from "../respond.js";
 import { botEnabled } from "../credits.js";
 import { isDuplicate } from "../dedup.js";
 import { fetchAsBase64 } from "../media.js";
@@ -345,11 +345,9 @@ export async function handleInstagramEntry(tenant, entry) {
     let privateText = commentRule?.privateReply && comment.from?.id
       ? renderTemplate(commentRule.privateReply, tenant, `ig:${comment.from.id}`)
       : commentRule?.privateReply || "";
-    if (!privateText && comment.text) {
-      const { reply } = await processMessage(tenant, "instagram", `comment:${comment.from?.id || comment.id}`, {
-        text: comment.text,
-      });
-      privateText = reply || "";
+    if (!privateText && comment.text && comment.from?.id) {
+      // AI javobi mijozning haqiqiy chatiga (ig:<id>) yoziladi — Inbox'da shu odam ostida
+      privateText = await commentAiReply(tenant, "instagram", comment.from.id, comment.text);
     }
     if (!privateText) {
       privateText = commentPrivateReplyText(); // AI ham ishlamasa oxirgi zaxira

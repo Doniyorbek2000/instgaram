@@ -33,6 +33,38 @@ export function splitKey(fullKey) {
   return { chan: s.slice(0, i), id: s.slice(i + 1) };
 }
 
+/**
+ * Ichki (mijoz bo'lmagan) kalitmi: eski versiyalar komment AI javobi tarixini
+ * "comment:<id>" / "ig:comment:<id>" kaliti bilan saqlagan — ular Inbox, CRM va
+ * ommaviy xabarlarda ko'rinmasligi kerak.
+ */
+export function isInternalKey(key) {
+  const s = String(key || "");
+  return s.startsWith("comment:") || /^[a-z]{2}:comment:/.test(s);
+}
+
+/**
+ * Bazadan ichki "comment:" yozuvlarini o'chiradi (suhbatlar, statistika, CRM, lidlar).
+ * Qaytaradi: o'chirilgan yozuvlar soni (0 — o'zgarish yo'q).
+ */
+export function purgeInternalKeys(tenant) {
+  let removed = 0;
+  for (const obj of [tenant.chats, tenant.stats?.customers, tenant.contactMeta]) {
+    for (const k of Object.keys(obj || {})) {
+      if (isInternalKey(k)) {
+        delete obj[k];
+        removed++;
+      }
+    }
+  }
+  if (Array.isArray(tenant.leads)) {
+    const before = tenant.leads.length;
+    tenant.leads = tenant.leads.filter((l) => !isInternalKey(l?.chatKey) && !isInternalKey(l?.key));
+    removed += before - tenant.leads.length;
+  }
+  return removed;
+}
+
 /** WhatsApp/matnli kanallar uchun variantlarni raqamlangan ro'yxatga aylantiradi. */
 export function optionsAsText(text, options = []) {
   const payloadOpts = options.filter((o) => !o.url);

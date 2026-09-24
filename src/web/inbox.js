@@ -1,4 +1,5 @@
 import { Router } from "express";
+import { isInternalKey } from "../outbound.js";
 import { allTags, normTag, windowStatus, getContactMeta } from "../contacts.js";
 import { aiAllowed, aiSettings } from "../aiControl.js";
 import { requireAuth } from "../auth.js";
@@ -124,7 +125,7 @@ inboxRouter.get("/inbox", requireAuth, (req, res) => {
     };
   });
   // Ichki yozuvlar (komment AI tarixi "comment:..." va h.k.) Inbox'da ko'rinmasin
-  chatList = chatList.filter((c) => /^(ig|fb|wa|tg):/.test(c.key));
+  chatList = chatList.filter((c) => /^(ig|fb|wa|tg):/.test(c.key) && !isInternalKey(c.key));
 
   chatList.sort((a, b) => b.lastTime - a.lastTime);
 

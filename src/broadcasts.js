@@ -9,7 +9,7 @@
  */
 import crypto from "node:crypto";
 import { persist, listUsers } from "./db.js";
-import { sendReply, sendMedia, splitKey } from "./outbound.js";
+import { sendReply, sendMedia, splitKey, isInternalKey } from "./outbound.js";
 import { sanitizeMedia } from "./mediaStore.js";
 import { renderTemplate } from "./templating.js";
 import { getContactMeta, lastInboundAt } from "./contacts.js";
@@ -29,7 +29,7 @@ export function allContacts(tenant) {
     ...Object.keys(tenant.stats?.customers || {}),
     ...Object.keys(tenant.contactMeta || {}),
   ]);
-  return [...keys].filter((k) => CHANNELS.has(splitKey(k).chan) && k.indexOf(":") > 0 && splitKey(k).id);
+  return [...keys].filter((k) => CHANNELS.has(splitKey(k).chan) && k.indexOf(":") > 0 && splitKey(k).id && !isInternalKey(k));
 }
 
 export { lastInboundAt };

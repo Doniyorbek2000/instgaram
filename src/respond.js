@@ -259,3 +259,23 @@ export async function processMessage(tenant, channel, chatKey, { text = "", medi
   return { reply };
 
 }
+
+/**
+ * Kommentga Direct'da yuboriladigan AI shaxsiy javobi (private reply matni).
+ * Suhbat mijozning haqiqiy chatiga (masalan "ig:<id>") yoziladi — Inbox va CRM'da
+ * shu odam ostida ko'rinadi. AI o'chiq bo'lsa yoki bot faol bo'lmasa "" qaytadi.
+ */
+export async function commentAiReply(tenant, channel, fromId, commentText) {
+  const text = String(commentText || "").trim();
+  if (!fromId || !text || !botEnabled(tenant)) return "";
+  const fullKey = inboxKey(channel, String(fromId));
+  if (isManual(tenant, fullKey)) return "";
+  if (!aiAllowed(tenant, chanShort(channel), fullKey).allowed) return "";
+  recordMessage(tenant, channel, fullKey, `💬 Komment: ${text}`);
+  const before = tenant.chats?.[fullKey]?.length || 0;
+  const reply = await generateReply(tenant, fullKey, { text });
+  // AI bo'lmagan zaxira javob tarixga o'zi yozilmaydi — Inbox'da ko'rinishi uchun yozamiz
+  if ((tenant.chats?.[fullKey]?.length || 0) === before) logExchange(tenant, fullKey, `💬 Komment: ${text}`, reply || "");
+  persist(tenant);
+  return reply || "";
+}

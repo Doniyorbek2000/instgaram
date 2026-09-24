@@ -37,6 +37,7 @@ import { refreshTelegramWebhooks } from "./telegram.js";
 import { listUsers } from "./db.js";
 import { page } from "./web/layout.js";
 import { findUserByPlatformId, persist } from "./db.js";
+import { purgeInternalKeys } from "./outbound.js";
 import { handleInstagramEntry } from "./handlers/instagram.js";
 import { handleFacebookEntry } from "./handlers/facebook.js";
 import { handleWhatsAppEntry } from "./handlers/whatsapp.js";
@@ -358,6 +359,19 @@ const server = app.listen(config.port, () => {
   // Eski (maxfiy kalitsiz) Telegram webhook'larini xavfsiz holatga o'tkazamiz
   setTimeout(() => {
     listUsers().then(refreshTelegramWebhooks).catch((err) => console.error("[Telegram] webhook yangilash:", err.message));
+    // Eski versiyalar komment AI tarixini "ig:comment:<id>" kabi alohida "mijoz" qilib
+    // saqlagan — Inbox/CRM'dan bir marta tozalaymiz
+    listUsers()
+      .then((users) => {
+        for (const u of users) {
+          const n = purgeInternalKeys(u);
+          if (n) {
+            persist(u);
+            console.log(`[Tozalash] ${u.businessName || u.email}: ${n} ta ichki "comment:" yozuv o'chirildi`);
+          }
+        }
+      })
+      .catch((err) => console.error("[Tozalash] xato:", err.message));
   }, 5000);
 
   // Obuna eslatmalari va follow-up xabarlar — daqiqa aniqligida
