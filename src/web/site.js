@@ -1254,9 +1254,9 @@ site.get("/contact", (req, res) => {
     </div>
     <div class="contact-info">
       <p class="muted" style="margin:0 0 12px">${esc(c.or)}</p>
-      <a href="https://t.me/ADM_InstagramBot" target="_blank" rel="noopener"><span class="ci" style="background:none">${brandIcon("telegram", { size: 42 })}</span><div><b>${esc(c.telegram)}</b><br><span class="muted">@ADM_InstagramBot</span></div></a>
+      <a href="https://t.me/admaiuz" target="_blank" rel="noopener"><span class="ci" style="background:none">${brandIcon("telegram", { size: 42 })}</span><div><b>${esc(c.telegram)}</b><br><span class="muted">@admaiuz</span></div></a>
       <a href="mailto:info@admai.uz"><span class="ci">✉️</span><div><b>${esc(c.email)}</b><br><span class="muted">info@admai.uz</span></div></a>
-      <a href="tel:+998900000000"><span class="ci">📞</span><div><b>${esc(c.phone)}</b><br><span class="muted">+998 90 000 00 00</span></div></a>
+      <a href="tel:+998949392250"><span class="ci">📞</span><div><b>${esc(c.phone)}</b><br><span class="muted">+998 94 939 22 50</span></div></a>
     </div>
   </div></div></section>`;
   res.send(siteLayout(lang, "/contact", tr.nav.contact, body, { user: req.user, active: "contact" }));
