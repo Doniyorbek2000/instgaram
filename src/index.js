@@ -24,6 +24,7 @@ import { integrationsRouter } from "./web/integrations_ui.js";
 import { contentRouter } from "./web/content_ui.js";
 import { mediaRouter } from "./web/media_ui.js";
 import { aiLearnRouter } from "./web/ai_learn_ui.js";
+import { mcpHandler } from "./mcp.js";
 import { teamContext } from "./team.js";
 import { telegramRouter } from "./telegram.js";
 import { reportsBotRouter, reportsBotAvailable, setupReportsBotWebhook, checkAndSendDailyReports } from "./reportsBot.js";
@@ -161,6 +162,15 @@ function isValidSignature(req) {
   return false;
 }
 
+
+// MCP server (Claude va boshqa AI yordamchilar uchun) — token bilan kirish
+app.post(["/mcp", "/mcp/:token"], (req, res) => {
+  mcpHandler(req, res).catch((err) => {
+    console.error("[MCP] xato:", err.message);
+    res.status(500).json({ jsonrpc: "2.0", id: null, error: { code: -32603, message: "Internal error" } });
+  });
+});
+app.get(["/mcp", "/mcp/:token"], (_req, res) => res.set("Allow", "POST").status(405).json({ error: "Use POST (MCP Streamable HTTP)" }));
 
 // Server tirikligini tekshirish (monitoring/uptime uchun)
 app.get("/health", (_req, res) => {

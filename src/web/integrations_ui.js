@@ -7,10 +7,13 @@ import { requireAuth } from "../auth.js";
 import { page, esc } from "./layout.js";
 import { persist } from "../db.js";
 import { ensureIntegrations, INTEGRATION_EVENTS, SHEETS_APPS_SCRIPT, isSafeUrl, fireEvent } from "../integrations.js";
+import { createApiToken, revokeApiToken } from "../mcp.js";
+import { config } from "../config.js";
 
 export const integrationsRouter = Router();
 
 integrationsRouter.get("/integrations", requireAuth, (req, res) => {
+  res.setHeader("Referrer-Policy", "no-referrer"); // sahifa URL'idagi yangi token tashqariga ketmasin
   const u = req.user;
   const integ = ensureIntegrations(u);
   res.send(
@@ -68,7 +71,44 @@ integrationsRouter.get("/integrations", requireAuth, (req, res) => {
               : `<p class="hint" style="font-size:13px">Hali yuborish bo'lmagan</p>`}
           </div>
         </div>
-      </form>`,
+      </form>
+
+      <div class="card" id="mcp" style="border:1px solid #d97706">
+        <h3 style="margin-top:0">🤖 Claude bilan ulash (MCP)</h3>
+        <p class="hint" style="margin-top:0">Claude'ga oddiy tilda yozasiz — u flow yaratadi, tahrirlaydi, statistikani ko'radi va ommaviy xabar tayyorlaydi. Masalan: <i>"Reels ostida KURS deb yozganlarga obunani tekshirib bepul darsni yuboradigan flow qil"</i>.</p>
+        ${req.query.newToken ? `<div class="ok">
+            Token yaratildi — hozir nusxa oling, u boshqa ko'rsatilmaydi:
+            <div style="display:flex; gap:8px; margin-top:8px"><input id="mcpUrl" readonly value="${esc(mcpUrl(req, req.query.newToken))}" style="margin:0; font-family:monospace; font-size:12px"><button type="button" class="btn" style="margin:0" onclick="navigator.clipboard.writeText(document.getElementById('mcpUrl').value); this.textContent='✓'">📋</button></div>
+          </div>` : ""}
+        <div class="grid split-form" style="gap:16px">
+          <div>
+            <ol class="hint" style="font-size:13px; line-height:1.8; padding-left:18px; margin:0">
+              <li>O'ngda token yarating va MCP manzilini nusxalang.</li>
+              <li><b>claude.ai</b> → Sozlamalar → <b>Connectors</b> → <b>Add custom connector</b> → manzilni qo'ying.</li>
+              <li>Yoki Claude Code'da: <code>claude mcp add --transport http adm-ai &lt;manzil&gt;</code></li>
+              <li>Claude yaratgan flow'lar o'chiq holda saqlanadi — panelda ko'rib, keyin yoqasiz.</li>
+            </ol>
+            ${(u.apiTokens || []).length ? `<table style="width:100%; border-collapse:collapse; font-size:13px; margin-top:12px">
+              ${(u.apiTokens || []).map((t) => `<tr style="border-top:1px solid var(--border)">
+                <td style="padding:6px 0"><b>${esc(t.name)}</b> <span class="hint" style="font-family:monospace">${esc(t.prefix)}…</span></td>
+                <td>${t.scope === "read" ? "👁️ faqat o'qish" : "✏️ to'liq"}</td>
+                <td class="hint" style="font-size:12px">${t.lastUsedAt ? `ishlatilgan ${esc(t.lastUsedAt.slice(0, 16).replace("T", " "))}` : "hali ishlatilmagan"}</td>
+                <td><form method="post" action="/integrations/tokens/${esc(t.id)}/revoke" style="margin:0" onsubmit="return confirm('Token bekor qilinsinmi? Ulangan Claude ishlamay qoladi.')"><button class="secondary" style="margin:0; padding:3px 10px; font-size:12px; color:#f87171">Bekor qilish</button></form></td>
+              </tr>`).join("")}
+            </table>` : ""}
+          </div>
+          <form method="post" action="/integrations/tokens" style="margin:0">
+            <label>Nomi</label>
+            <input name="name" value="Claude" maxlength="60">
+            <label>Ruxsat</label>
+            <select name="scope">
+              <option value="full">✏️ To'liq — flow yaratish/tahrirlash, ommaviy xabar</option>
+              <option value="read">👁️ Faqat o'qish — statistika va ko'rish</option>
+            </select>
+            <button class="btn" style="width:100%; margin-top:10px">🔑 Token yaratish</button>
+          </form>
+        </div>
+      </div>`,
       { user: u, active: "integrations" }
     )
   );
@@ -91,6 +131,23 @@ function saveSettings(req) {
 integrationsRouter.post("/integrations", requireAuth, (req, res) => {
   const errors = saveSettings(req);
   res.redirect(errors.length ? `/integrations?error=${encodeURIComponent(errors.join(". "))}` : "/integrations?saved=1");
+});
+
+function mcpUrl(req, token) {
+  const base = config.baseUrl || `${req.protocol}://${req.get("host")}`;
+  return `${base}/mcp/${token}`;
+}
+
+integrationsRouter.post("/integrations/tokens", requireAuth, (req, res) => {
+  const r = createApiToken(req.user, { name: req.body?.name, scope: req.body?.scope });
+  if (r.error) return res.redirect(`/integrations?error=${encodeURIComponent(r.error)}#mcp`);
+  // Token faqat bir marta, URL orqali ko'rsatiladi (bazada faqat xesh)
+  res.redirect(`/integrations?newToken=${encodeURIComponent(r.token)}#mcp`);
+});
+
+integrationsRouter.post("/integrations/tokens/:id/revoke", requireAuth, (req, res) => {
+  revokeApiToken(req.user, req.params.id);
+  res.redirect("/integrations#mcp");
 });
 
 integrationsRouter.post("/integrations/test", requireAuth, (req, res) => {
