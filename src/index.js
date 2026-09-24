@@ -186,7 +186,7 @@ app.get("/webhook", (req, res) => {
   const token = req.query["hub.verify_token"];
   const challenge = req.query["hub.challenge"];
 
-  if (mode === "subscribe" && token === config.verifyToken) {
+  if (mode === "subscribe" && config.verifyToken && token === config.verifyToken) {
     console.log("Webhook muvaffaqiyatli tasdiqlandi ✅");
     return res.status(200).send(challenge);
   }

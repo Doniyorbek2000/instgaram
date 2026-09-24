@@ -6,11 +6,24 @@ import {
   createSession,
   getSessionUser,
   deleteSession,
+  deleteUserSessions,
   updateUser,
 } from "./db.js";
 
 function hashPassword(password, salt) {
   return crypto.scryptSync(password, salt, 64).toString("hex");
+}
+
+/**
+ * Parolni saqlangan hash bilan doimiy vaqtda solishtiradi.
+ * timingSafeEqual uzunliklar farq qilsa xato otadi — hash buzilgan/bo'sh
+ * bo'lsa server yiqilmasligi uchun avval uzunlikni tekshiramiz.
+ */
+function verifyPassword(password, user) {
+  if (!user?.salt || !user?.passwordHash) return false;
+  const actual = Buffer.from(hashPassword(String(password ?? ""), user.salt));
+  const expected = Buffer.from(user.passwordHash);
+  return actual.length === expected.length && crypto.timingSafeEqual(actual, expected);
 }
 
 export async function register(email, password, businessName) {
@@ -80,12 +93,7 @@ export async function login(email, password) {
   }
 
   const user = await findUserByEmail(email);
-  const ok =
-    user &&
-    crypto.timingSafeEqual(
-      Buffer.from(hashPassword(password || "", user.salt)),
-      Buffer.from(user.passwordHash)
-    );
+  const ok = verifyPassword(password, user);
 
   if (!ok) {
     const count = (rec?.until > Date.now() ? rec.count : (rec?.count || 0)) + 1;
@@ -105,27 +113,35 @@ export async function logout(token) {
   await deleteSession(token);
 }
 
-/** Parolni o'zgartiradi (avval eski parolni tekshiradi) */
-export async function changePassword(user, oldPassword, newPassword) {
-  const hash = hashPassword(oldPassword || "", user.salt);
-  const ok = crypto.timingSafeEqual(
-    Buffer.from(hash),
-    Buffer.from(user.passwordHash)
-  );
-  if (!ok) return { error: "Joriy parol noto'g'ri" };
+/**
+ * Parolni o'zgartiradi (avval eski parolni tekshiradi).
+ * Muvaffaqiyatda joriy sessiyadan (currentToken) boshqa barcha sessiyalar
+ * bekor qilinadi — parol o'g'irlangan bo'lsa, hujumchi tizimdan chiqariladi.
+ */
+export async function changePassword(user, oldPassword, newPassword, currentToken = null) {
+  if (!verifyPassword(oldPassword, user)) return { error: "Joriy parol noto'g'ri" };
   if (!newPassword || newPassword.length < 6) {
     return { error: "Yangi parol kamida 6 ta belgidan iborat bo'lsin" };
   }
   const salt = crypto.randomBytes(16).toString("hex");
-  await updateUser(user.id, { salt, passwordHash: hashPassword(newPassword, salt) });
+  const passwordHash = hashPassword(newPassword, salt);
+  await updateUser(user.id, { salt, passwordHash });
+  user.salt = salt;
+  user.passwordHash = passwordHash;
+  await deleteUserSessions(user.id, currentToken);
   return { ok: true };
 }
 
-/** Cookie sarlavhasidan sid qiymatini ajratib oladi */
+/** Cookie sarlavhasidan aynan "sid" nomli cookie qiymatini ajratib oladi */
 export function parseSid(req) {
-  const cookies = req.headers.cookie || "";
-  const match = cookies.match(/(?:^|;|\s*)sid=([^;]+)/);
-  return match ? match[1] : null;
+  for (const part of String(req.headers.cookie || "").split(";")) {
+    const eq = part.indexOf("=");
+    if (eq === -1) continue;
+    if (part.slice(0, eq).trim() !== "sid") continue;
+    const value = part.slice(eq + 1).trim();
+    return /^[a-f0-9]{16,128}$/i.test(value) ? value : null;
+  }
+  return null;
 }
 
 /** Kirgan foydalanuvchini req.user ga qo'yadi (bo'lmasa null) */

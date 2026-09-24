@@ -7,7 +7,10 @@ export const config = {
   graphApiVersion: process.env.GRAPH_API_VERSION || "v21.0",
   // Admin (dasturchi) email'i — bu foydalanuvchi barcha bizneslarning
   // Meta tokenlarini boshqara oladi. Vergul bilan bir nechta bo'lishi mumkin.
-  adminEmails: (process.env.ADMIN_EMAILS ? `${process.env.ADMIN_EMAILS},superadmin@example.com` : "superadmin@example.com,doniyorbekabdujabborov45@gmail.com,victorucbot@gmail.com")
+  // MUHIM: faqat .env dan olinadi. Kodga qattiq yozilgan email bo'lmasligi shart —
+  // ro'yxatdan o'tishda email tasdiqlanmaydi, ya'ni shu emailni birinchi bo'lib
+  // band qilgan har kim admin bo'lib qolardi.
+  adminEmails: (process.env.ADMIN_EMAILS || "")
     .split(",")
     .map((e) => e.toLowerCase().trim())
     .filter(Boolean),

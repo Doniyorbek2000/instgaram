@@ -225,6 +225,22 @@ export async function deleteSession(token) {
   }
 }
 
+/**
+ * Foydalanuvchining barcha sessiyalarini bekor qiladi (exceptToken saqlanadi).
+ * Parol o'zgarganda o'g'irlangan/eski sessiyalar ishlashda davom etmasligi uchun.
+ */
+export async function deleteUserSessions(userId, exceptToken = null) {
+  if (pg.isPgReady()) { await pg.deleteUserSessions(userId, exceptToken); return; }
+  let changed = false;
+  for (const [token, session] of Object.entries(db.sessions)) {
+    if (session.userId === userId && token !== exceptToken) {
+      delete db.sessions[token];
+      changed = true;
+    }
+  }
+  if (changed) save();
+}
+
 // ==== Platforma sozlamalari (tarif narxlari) ====
 
 /** Admin o'zgartirgan tarif narxlari (planId -> so'm). Bo'sh bo'lsa default ishlatiladi. */

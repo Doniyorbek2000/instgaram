@@ -131,7 +131,7 @@ web.post("/login", authRateLimiter, async (req, res) => {
 
 web.get("/logout", async (req, res) => {
   await logout(parseSid(req));
-  res.setHeader("Set-Cookie", "sid=; Path=/; Max-Age=0");
+  res.setHeader("Set-Cookie", "sid=; HttpOnly; Path=/; SameSite=Lax; Max-Age=0");
   res.redirect("/login");
 });
 
@@ -737,7 +737,7 @@ web.get("/account", requireAuth, (req, res) => {
 
 web.post("/account/password", requireAuth, async (req, res) => {
   const { oldPassword, newPassword } = req.body || {};
-  const result = await changePassword(req.user, oldPassword, newPassword);
+  const result = await changePassword(req.user, oldPassword, newPassword, parseSid(req));
   if (result.error) return res.send(accountPage(req.user, { error: result.error }));
   res.send(accountPage(req.user, { ok: "Parol yangilandi ✅" }));
 });
@@ -1712,32 +1712,6 @@ RECS:
     recs: recsArr.join("<br>"),
     fullText: generatedText,
   });
-});
-
-// AI Biznes Bilimlar Bazasini saqlash (/settings/business)
-web.post("/settings/business", requireAuth, async (req, res) => {
-  const u = req.user;
-  const { businessName, businessInfo, creativeReasoning, geminiApiKey } = req.body || {};
-  
-  u.settings ||= {};
-  u.settings.creativeReasoning = creativeReasoning === "1" || creativeReasoning === "true" || creativeReasoning === true;
-  
-  const patch = { settings: u.settings };
-  if (typeof businessName === "string") {
-    u.businessName = businessName.trim().slice(0, 200);
-    patch.businessName = u.businessName;
-  }
-  if (typeof businessInfo === "string") {
-    u.businessInfo = businessInfo.trim();
-    patch.businessInfo = u.businessInfo;
-  }
-  if (typeof geminiApiKey === "string") {
-    u.geminiApiKey = geminiApiKey.trim();
-    patch.geminiApiKey = u.geminiApiKey;
-  }
-
-  await updateUser(u.id, patch);
-  res.redirect("/account?saved=1");
 });
 
 // Telegram Admin Chat ID sozlamasi

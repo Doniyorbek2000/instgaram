@@ -335,6 +335,15 @@ export async function deleteSession(token) {
   await pgPool.query("DELETE FROM sessions WHERE token=$1", [token]);
 }
 
+/** Foydalanuvchining barcha sessiyalarini o'chiradi (exceptToken'dan tashqari) */
+export async function deleteUserSessions(userId, exceptToken = null) {
+  if (!pgReady || !userId) return;
+  await pgPool.query(
+    "DELETE FROM sessions WHERE user_id=$1 AND token IS DISTINCT FROM $2",
+    [userId, exceptToken]
+  );
+}
+
 // ============================================================
 // PLATFORM SETTINGS (tarif narxlari)
 // ============================================================

@@ -2,6 +2,7 @@ import "dotenv/config";
 import { Client } from 'ssh2';
 import fs from 'node:fs';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 if (!process.env.SSH_HOST || !process.env.SSH_PASSWORD) {
   console.error("❌ .env da SSH_HOST va SSH_PASSWORD to'ldirilmagan (.env.example ga qarang).");
@@ -16,7 +17,8 @@ const config = {
 };
 
 
-const localBaseDir = 'c:/Users/Comp X/Desktop/instagram';
+// Skript turgan papka — loyiha ildizi (qaysi kompyuterda ishga tushirilishidan qat'i nazar)
+const localBaseDir = path.dirname(fileURLToPath(import.meta.url));
 const remoteProjectDir = '/opt/instagram';
 
 const filesToUpload = [

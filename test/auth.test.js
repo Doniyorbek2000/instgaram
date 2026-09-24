@@ -11,8 +11,8 @@ rmSync(dataDir, { recursive: true, force: true });
 // Admin email'ni ai.js/config o'qishidan oldin belgilaymiz
 process.env.ADMIN_EMAILS = "boss@example.com";
 
-const { register, login, isAdmin, loginOrRegisterWithGoogle } = await import("../src/auth.js");
-const { findUserByPlatformId, updateUser, listUsers } = await import("../src/db.js");
+const { register, login, isAdmin, loginOrRegisterWithGoogle, changePassword, parseSid } = await import("../src/auth.js");
+const { findUserByPlatformId, updateUser, listUsers, getSessionUser } = await import("../src/db.js");
 
 test("ro'yxatdan o'tish va kirish ishlaydi", async () => {
   const reg = await register("test@example.com", "parol123", "Test Biznes");
@@ -62,6 +62,32 @@ test("admin faqat ADMIN_EMAILS ro'yxatidagilar bo'ladi", async () => {
   const { user: oddiy } = await register("oddiy@example.com", "parol123", "Do'kon 2");
   assert.strictEqual(isAdmin(boss), true);
   assert.strictEqual(isAdmin(oddiy), false);
+});
+
+test("ADMIN_EMAILS'dan tashqari hech qanday qattiq yozilgan admin email yo'q", async () => {
+  const { user } = await register("superadmin@example.com", "parol123", "Hujumchi");
+  assert.strictEqual(isAdmin(user), false);
+});
+
+test("parol o'zgarganda boshqa sessiyalar bekor qilinadi, joriysi qoladi", async () => {
+  const { user, token: current } = await register("sessiya@example.com", "eski123", "Sessiya");
+  const { token: other } = await login("sessiya@example.com", "eski123");
+  assert.ok(await getSessionUser(other));
+
+  const r = await changePassword(user, "eski123", "yangi123", current);
+  assert.ok(r.ok);
+  assert.strictEqual(await getSessionUser(other), null);
+  assert.strictEqual((await getSessionUser(current))?.id, user.id);
+  assert.ok((await login("sessiya@example.com", "yangi123")).token);
+  assert.ok((await login("sessiya@example.com", "eski123")).error);
+});
+
+test("parseSid faqat aynan 'sid' cookie'ni oladi", () => {
+  const tok = "a".repeat(64);
+  assert.strictEqual(parseSid({ headers: { cookie: `psid=${"b".repeat(64)}; sid=${tok}` } }), tok);
+  assert.strictEqual(parseSid({ headers: { cookie: `xsid=${tok}` } }), null);
+  assert.strictEqual(parseSid({ headers: { cookie: "sid=<script>" } }), null);
+  assert.strictEqual(parseSid({ headers: {} }), null);
 });
 
 test("admin barcha bizneslar ro'yxatini ko'ra oladi", async () => {
