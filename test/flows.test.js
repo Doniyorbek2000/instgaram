@@ -239,3 +239,21 @@ test("processMessage: kalit so'z flow'ni ishga tushiradi, javob flow orqali keta
   assert.deepStrictEqual(log, ["user:Kurs narxi?", "assistant:Salom, do'stim! Qaysi kurs?"]);
   assert.ok(flows.activeFlowSession(t, "tg:321"));
 });
+
+test("ice breaker tugmasi (IB:n) savol matni sifatida ishlanadi va kalit so'z flow'ini ishga tushiradi", async () => {
+  const t = await newTenant("ib@x.uz");
+  t.settings.icebreakers = [{ question: "Kurslar narxi qancha?", flowId: "" }];
+  addFlow(t, lead);
+  const res = await processMessage(t, "instagram", "900", { payload: "IB:0" });
+  assert.strictEqual(res.reply, null);
+  assert.deepStrictEqual(t.chats["ig:900"].map((m) => m.role), ["user", "assistant"]);
+  assert.strictEqual(t.chats["ig:900"][0].text, "Kurslar narxi qancha?");
+});
+
+test("flow'ni boshidan ochgan tugma (ice breaker / broadcast) 'boshlandi' deb hisoblanadi", async () => {
+  const t = await newTenant("ibflow@x.uz");
+  const flow = addFlow(t, lead);
+  const { ctx } = capture();
+  await flows.handleFlowInbound(t, "ig:901", { payload: `FLOW:${flow.id}:${flow.start}` }, ctx);
+  assert.strictEqual(flow.stats.started, 1);
+});

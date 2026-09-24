@@ -604,6 +604,8 @@ export async function handleFlowInbound(tenant, key, { text = "", payload = "" }
       persist(tenant);
       return true;
     }
+    // Ice breaker yoki broadcast tugmasi flow'ni boshidan ochsa — "boshlandi" deb hisoblaymiz
+    if (nodeId === flow.start) bumpDaily(tenant, flow, "started");
     await runFrom(tenant, key, flow, nodeId, { ...ctx, text });
     return true;
   }

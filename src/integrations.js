@@ -17,14 +17,16 @@ export const INTEGRATION_EVENTS = {
   new_contact: "Yangi kontakt yozdi",
   reward_redeemed: "Ball evaziga sovg'a olindi",
   points_awarded: "Ball berildi (geymifikatsiya)",
+  conversion: "Flow'da konversiya qayd etildi",
+  flow_event: "Flow'dagi \"Webhook / CRM\" amali",
 };
 
-const DEFAULT_EVENTS = { form_submitted: true, lead: true, reward_redeemed: true, new_contact: false, points_awarded: false };
+const DEFAULT_EVENTS = { form_submitted: true, lead: true, reward_redeemed: true, new_contact: false, points_awarded: false, conversion: true, flow_event: true };
 const TIMEOUT_MS = 6000;
 
 export function ensureIntegrations(tenant) {
   tenant.integrations ||= {};
-  tenant.integrations.events ||= { ...DEFAULT_EVENTS };
+  tenant.integrations.events = { ...DEFAULT_EVENTS, ...(tenant.integrations.events || {}) };
   tenant.integrations.log ||= [];
   return tenant.integrations;
 }

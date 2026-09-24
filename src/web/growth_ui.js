@@ -8,6 +8,9 @@ import { brandIcon } from "./icons.js";
 import { persist } from "../db.js";
 import { getProfileStats, getAccountInsights, getRecentMedia, getMediaComments, privateReplyToComment } from "../services/instagram.js";
 
+import { ensureFlows } from "../flows.js";
+import { setIceBreakers } from "../services/instagram.js";
+
 export const growthRouter = Router();
 
 growthRouter.get("/growth", requireAuth, async (req, res) => {
@@ -136,18 +139,30 @@ growthRouter.get("/growth", requireAuth, async (req, res) => {
       </div>
     `;
   } else if (tab === "icebreakers") {
-    const ib = user.settings?.icebreakers || [];
+    const ib = normalizeIcebreakers(user.settings?.icebreakers);
+    const flows = ensureFlows(user).list;
+    const status = user.settings?.icebreakersStatus;
+    const row = (i) => `
+      <div style="display:flex; gap:8px; flex-wrap:wrap">
+        <input type="text" name="q${i}" maxlength="80" placeholder="${["💰 Narxlar qancha?", "📍 Manzilingiz qayerda?", "🚚 Yetkazib berasizmi?", "👤 Operator bilan gaplashish"][i]}" value="${esc(ib[i]?.question || "")}" style="flex:2; min-width:220px; margin:0">
+        <select name="f${i}" style="flex:1; min-width:180px; margin:0">
+          <option value="">🧠 AI javob beradi</option>
+          ${flows.map((f) => `<option value="${esc(f.id)}" ${ib[i]?.flowId === f.id ? "selected" : ""}>🧩 ${esc(f.name)}</option>`).join("")}
+        </select>
+      </div>`;
     contentHtml = `
       <div class="card">
-        <h3>👋 Salomlashuv Tugmalari (Welcome Buttons)</h3>
-        <p class="hint">Mijoz Instagram Direct'ga BIRINCHI marta yozganda, AI javobi bilan birga shu tugmalar ham yuboriladi (faqat Instagram'da ishlaydi). Bo'sh qoldirilgan tugma ko'rsatilmaydi.</p>
+        <h3>👋 Salomlashuv tugmalari (Instagram Ice Breakers)</h3>
+        <p class="hint">Mijoz Instagram Direct'ni birinchi marta ochganda, hali hech narsa yozmasidan <b>oldin</b> shu savollar ko'rinadi. Bosilgan savolga AI javob beradi yoki tanlangan flow ishga tushadi. 4 tagacha.</p>
+        ${status ? `<div class="${status.ok ? "ok" : "error"}" style="margin:10px 0">${status.ok ? "✅ Instagram'da ro'yxatdan o'tkazildi" : `⚠️ Instagram qabul qilmadi: ${esc(status.error || "")}`} <span style="opacity:.7">(${esc(String(status.at || "").slice(0, 16).replace("T", " "))})</span></div>` : ""}
         <form method="post" action="/growth/icebreakers">
-          <div style="display:flex; flex-direction:column; gap:10px; margin-top:16px">
-            <input type="text" name="ib1" maxlength="20" placeholder="1-Tugma: masalan 💰 Narxlar" value="${esc(ib[0] || "")}">
-            <input type="text" name="ib2" maxlength="20" placeholder="2-Tugma: masalan 📍 Manzil" value="${esc(ib[1] || "")}">
-            <input type="text" name="ib3" maxlength="20" placeholder="3-Tugma: masalan 👤 Operator" value="${esc(ib[2] || "")}">
-            <p class="hint" style="margin:0">Instagram tugma matni uzunligi cheklangan — 20 belgigacha.</p>
-            <button type="submit" class="btn" style="width:fit-content; margin-top:8px">💾 Saqlash</button>
+          <div style="display:flex; flex-direction:column; gap:10px; margin-top:12px">
+            ${[0, 1, 2, 3].map(row).join("")}
+            <label style="display:flex; gap:8px; align-items:center; cursor:pointer; margin:4px 0 0; text-transform:none; letter-spacing:0; font-size:13.5px; font-weight:600">
+              <input type="checkbox" name="alsoQuick" ${user.settings?.icebreakersQuick !== false ? "checked" : ""} style="width:auto; margin:0">
+              Birinchi AI javobida ham tezkor tugma sifatida ko'rsatish
+            </label>
+            <button type="submit" class="btn" style="width:fit-content; margin-top:8px">💾 Saqlash va Instagram'ga yuborish</button>
           </div>
         </form>
       </div>
@@ -205,15 +220,43 @@ growthRouter.get("/growth", requireAuth, async (req, res) => {
   );
 });
 
-growthRouter.post("/growth/icebreakers", requireAuth, (req, res) => {
-  const { ib1, ib2, ib3 } = req.body || {};
-  req.user.settings ||= {};
-  req.user.settings.icebreakers = [ib1, ib2, ib3]
-    .map((s) => String(s || "").trim().slice(0, 20))
-    .filter(Boolean);
-  persist(req.user);
+growthRouter.post("/growth/icebreakers", requireAuth, async (req, res) => {
+  const b = req.body || {};
+  const u = req.user;
+  const flows = ensureFlows(u).list;
+  u.settings ||= {};
+  u.settings.icebreakers = [0, 1, 2, 3]
+    .map((i) => ({
+      question: String(b[`q${i}`] || "").trim().slice(0, 80),
+      flowId: flows.some((f) => f.id === b[`f${i}`]) ? b[`f${i}`] : "",
+    }))
+    .filter((x) => x.question);
+  u.settings.icebreakersQuick = b.alsoQuick === "on";
+
+  // Instagram'ga haqiqiy Ice Breakers sifatida ro'yxatdan o'tkazamiz
+  const items = u.settings.icebreakers.map((x, i) => {
+    const flow = x.flowId ? flows.find((f) => f.id === x.flowId) : null;
+    return { question: x.question, payload: flow?.start ? `FLOW:${flow.id}:${flow.start}` : `IB:${i}` };
+  });
+  const connected = Boolean(u.meta?.igAccessToken || u.meta?.pageAccessToken);
+  if (connected) {
+    const r = await setIceBreakers(u, items);
+    u.settings.icebreakersStatus = r && !r.error
+      ? { ok: true, at: new Date().toISOString() }
+      : { ok: false, error: r?.error?.message || "Meta so'rovni rad etdi (instagram_business_manage_messages ruxsatini tekshiring)", at: new Date().toISOString() };
+  } else {
+    u.settings.icebreakersStatus = { ok: false, error: "Instagram ulanmagan — tugmalar saqlandi, ulangach qayta saqlang", at: new Date().toISOString() };
+  }
+  persist(u);
   res.redirect("/growth?tab=icebreakers&saved=1");
 });
+
+/** Eski format (satrlar ro'yxati) va yangi format ({question, flowId}) ni birxillashtiradi. */
+export function normalizeIcebreakers(list) {
+  return (Array.isArray(list) ? list : [])
+    .map((x) => (typeof x === "string" ? { question: x, flowId: "" } : { question: String(x?.question || ""), flowId: String(x?.flowId || "") }))
+    .filter((x) => x.question);
+}
 
 growthRouter.post("/growth/random-winner", requireAuth, async (req, res) => {
   const user = req.user;

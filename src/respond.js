@@ -227,9 +227,15 @@ export async function processMessage(tenant, channel, chatKey, { text = "", medi
   if (prefix && reply) reply = `${prefix}\n\n${reply}`;
 
   // 9. Instagram'da birinchi xabarga — sozlangan bo'lsa — tezkor savol tugmalari qo'shiladi
-  const icebreakers = channel === "instagram" ? (tenant.settings?.icebreakers || []).filter(Boolean) : [];
+  const icebreakers =
+    channel === "instagram" && tenant.settings?.icebreakersQuick !== false
+      ? (tenant.settings?.icebreakers || [])
+          .map((x, i) => ({ title: String(typeof x === "string" ? x : x?.question || "").slice(0, 20), payload: `IB:${i}` }))
+          .filter((o) => o.title)
+      : [];
   if (isFirstMessage && icebreakers.length) {
-    return { reply, quickReplies: normOptions(icebreakers) };
+    rememberOptions(tenant, fullKey, icebreakers);
+    return { reply, quickReplies: icebreakers };
   }
   return { reply };
 
