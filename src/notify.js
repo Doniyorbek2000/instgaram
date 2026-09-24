@@ -1,5 +1,6 @@
 // Telegram orqali biznes egasiga bildirishnoma yuboradi.
 import { config } from "./config.js";
+import { notifyPush } from "./push.js";
 
 const botToken = process.env.TELEGRAM_BOT_TOKEN || "";
 
@@ -31,6 +32,7 @@ export async function sendTelegram(chatId, text, replyMarkup = null) {
 
 /** Biznes egasiga operator chaqirilgani haqida xabar beradi. */
 export function notifyHandoff(tenant, channel, chatKey) {
+  notifyPush(tenant, { title: "🚨 Operator chaqirildi", body: `${String(channel).toUpperCase()} · ${chatKey}`, url: `/inbox?chat=${encodeURIComponent(chatKey)}`, tag: `handoff-${chatKey}` });
   const chatId = tenant.settings?.telegramChatId;
   if (!chatId) return Promise.resolve(false);
 
@@ -52,6 +54,7 @@ export function notifyHandoff(tenant, channel, chatKey) {
 
 /** Biznes egasiga yangi haridor/buyurtma haridor (Hot Lead) haqida telegraf bildirishnoma yuboradi. */
 export function notifyHotLead(tenant, channel, chatKey, text) {
+  notifyPush(tenant, { title: "🛍️ Yangi lid", body: String(text || "").slice(0, 160), url: `/inbox?chat=${encodeURIComponent(chatKey)}`, tag: `lead-${chatKey}` });
   const chatId = tenant.settings?.telegramChatId;
   if (!chatId) return Promise.resolve(false);
 

@@ -27,7 +27,7 @@ const INVITE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 const MAX_MEMBERS = 50;
 
 const OWNER_ONLY = ["/team", "/integrations/tokens", "/account/password", "/settings/password", "/billing/pay", "/admin", "/connect/instagram", "/account/delete"];
-const ALWAYS = ["/workspace", "/logout", "/assets/", "/team/join/"];
+const ALWAYS = ["/workspace", "/logout", "/assets/", "/team/join/", "/sw.js", "/manifest.webmanifest", "/push/", "/l/", "/g/", "/w/", "/p/"];
 const OPERATOR = ["/dashboard", "/inbox", "/clients", "/contacts", "/handoff", "/analytics", "/shop/orders", "/push"];
 const VIEWER_GET = ["/media", "/dashboard", "/inbox", "/clients", "/contacts", "/analytics", "/flows", "/triggers", "/forms", "/game", "/broadcasts", "/content", "/growth", "/scheduler", "/templates", "/integrations", "/sequences", "/shop", "/growth-tools"];
 

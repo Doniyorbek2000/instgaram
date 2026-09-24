@@ -48,7 +48,11 @@ export function resolveAudience(tenant, filter = {}, now = Date.now()) {
 
   return allContacts(tenant).filter((key) => {
     const { chan } = splitKey(key);
-    if (channel && chan !== channel) return false;
+    const fields = tenant.contactMeta?.[key]?.fields || {};
+    // SMS / Email kanali — kanal emas, kontaktning telefon/email maydoni bo'yicha
+    if (channel === "sms" && !fields.phone) return false;
+    if (channel === "email" && !fields.email) return false;
+    if (channel && channel !== "sms" && channel !== "email" && chan !== channel) return false;
     const have = getContactMeta(tenant, key).tags;
     if (tags.length) {
       const ok = tagMode === "all" ? tags.every((t) => have.includes(t)) : tags.some((t) => have.includes(t));
@@ -59,7 +63,7 @@ export function resolveAudience(tenant, filter = {}, now = Date.now()) {
     if (tenant.contactMeta?.[key]?.optOut) return false;
     // Meta (Instagram, Messenger, WhatsApp) erkin xabarni faqat mijoz oxirgi 24 soatda
     // yozgan bo'lsa qabul qiladi. Telegram'da bunday cheklov yo'q.
-    if (only24h && chan !== "tg" && now - lastInboundAt(tenant, key) > WINDOW_MS) return false;
+    if (only24h && chan !== "tg" && channel !== "sms" && channel !== "email" && now - lastInboundAt(tenant, key) > WINDOW_MS) return false;
     return true;
   });
 }
@@ -84,7 +88,7 @@ export function sanitizeBroadcast(body = {}) {
     media: sanitizeMedia(body.media),
     buttons,
     filter: {
-      channel: ["ig", "fb", "wa", "tg"].includes(body.channel) ? body.channel : "all",
+      channel: ["ig", "fb", "wa", "tg", "sms", "email"].includes(body.channel) ? body.channel : "all",
       tags: tagList(body.tags),
       tagMode: body.tagMode === "all" ? "all" : "any",
       excludeTags: tagList(body.excludeTags),
@@ -142,7 +146,13 @@ export async function runBroadcast(tenant, broadcastId, { send = sendReply, send
       const { chan, id } = splitKey(key);
       try {
         let ok;
-        if (flow) {
+        if (b.filter?.channel === "sms" || b.filter?.channel === "email") {
+          const { sendSms, sendEmail } = await import("./messaging.js");
+          const fields = tenant.contactMeta?.[key]?.fields || {};
+          const text = renderTemplate(b.message, tenant, key) + (b.filter.channel === "sms" ? "" : "\n\n—\nObunadan chiqish uchun bizga STOP deb yozing.");
+          const r = b.filter.channel === "sms" ? await sendSms(tenant, fields.phone, text) : await sendEmail(tenant, fields.email, b.name || tenant.businessName, text);
+          ok = r.ok;
+        } else if (flow) {
           const { startFlow } = await import("./flows.js");
           const r = await startFlow(tenant, key, flow, send === sendReply ? {} : { send: async (m) => send(tenant, chan, id, m.text, m.options) });
           ok = r.status !== "empty";

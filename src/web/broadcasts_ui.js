@@ -14,7 +14,7 @@ import { isActive } from "../subscription.js";
 
 export const broadcastsRouter = Router();
 
-const CHANNEL_LABELS = { all: "🌐 Barcha kanallar", ig: "📷 Instagram", tg: "✈️ Telegram", wa: "💬 WhatsApp", fb: "🔵 Messenger" };
+const CHANNEL_LABELS = { all: "🌐 Barcha kanallar", ig: "📷 Instagram", tg: "✈️ Telegram", wa: "💬 WhatsApp", fb: "🔵 Messenger", sms: "📱 SMS (telefoni borlarga, Eskiz)", email: "✉️ Email (emaili borlarga)" };
 const STATUS = {
   scheduled: ["🗓️ Rejalashtirilgan", "#38bdf8"],
   queued: ["⏳ Navbatda", "#fbbf24"],

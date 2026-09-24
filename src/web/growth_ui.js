@@ -9,7 +9,7 @@ import { persist } from "../db.js";
 import { getProfileStats, getAccountInsights, getRecentMedia, getMediaComments, privateReplyToComment } from "../services/instagram.js";
 
 import { ensureFlows } from "../flows.js";
-import { setIceBreakers } from "../services/instagram.js";
+import { setIceBreakers, setPersistentMenu } from "../services/instagram.js";
 
 export const growthRouter = Router();
 
@@ -25,6 +25,7 @@ growthRouter.get("/growth", requireAuth, async (req, res) => {
     { id: "insights", label: "📊 Statistika (Instagram Insights)" },
     { id: "comments", label: "💬 Izohlarga avtomatik javoblar" },
     { id: "icebreakers", label: "👋 Salomlashuv tugmalari" },
+    { id: "menu", label: "📋 Doimiy menyu" },
     { id: "referrals", label: "🔗 Referal havolalar" },
   ]
     .map(
@@ -167,6 +168,36 @@ growthRouter.get("/growth", requireAuth, async (req, res) => {
         </form>
       </div>
     `;
+  } else if (tab === "menu") {
+    const menu = user.settings?.persistentMenu || [];
+    const flows = ensureFlows(user).list;
+    const st = user.settings?.persistentMenuStatus;
+    const row = (i) => {
+      const m = menu[i] || {};
+      const mode = m.url ? "url" : m.flowId ? `flow:${m.flowId}` : m.title ? "ai" : "";
+      return `<div style="display:flex; gap:8px; flex-wrap:wrap">
+        <input type="text" name="t${i}" maxlength="30" placeholder="${["🛍️ Katalog", "💰 Narxlar", "📍 Manzil", "👤 Operator", "🌐 Sayt"][i]}" value="${esc(m.title || "")}" style="flex:2; min-width:180px; margin:0">
+        <select name="a${i}" style="flex:1; min-width:170px; margin:0">
+          <option value="ai" ${mode === "ai" ? "selected" : ""}>🧠 AI javob beradi</option>
+          <option value="shop" ${m.payload === "SHOP:CATALOG" ? "selected" : ""}>🛍️ Katalogni ko'rsatish</option>
+          <option value="url" ${mode === "url" ? "selected" : ""}>🔗 Havolani ochish</option>
+          ${flows.map((f) => `<option value="flow:${esc(f.id)}" ${mode === `flow:${f.id}` ? "selected" : ""}>🧩 ${esc(f.name)}</option>`).join("")}
+        </select>
+        <input type="url" name="u${i}" placeholder="https://… (havola uchun)" value="${esc(m.url || "")}" style="flex:2; min-width:180px; margin:0">
+      </div>`;
+    };
+    contentHtml = `
+      <div class="card">
+        <h3>📋 Doimiy menyu (Instagram va Messenger)</h3>
+        <p class="hint">Direct suhbatining pastida doim turadigan menyu — mijoz istalgan vaqtda katalog, narxlar yoki operatorni tanlaydi. 5 tagacha band.</p>
+        ${st ? `<div class="${st.ok ? "ok" : "error"}" style="margin:10px 0">${esc(st.text || "")} <span style="opacity:.7">(${esc(String(st.at || "").slice(0, 16).replace("T", " "))})</span></div>` : ""}
+        <form method="post" action="/growth/menu">
+          <div style="display:flex; flex-direction:column; gap:10px; margin-top:12px">
+            ${[0, 1, 2, 3, 4].map(row).join("")}
+            <button type="submit" class="btn" style="width:fit-content; margin-top:8px">💾 Saqlash va Instagram/Messenger'ga yuborish</button>
+          </div>
+        </form>
+      </div>`;
   } else if (tab === "referrals") {
     const referrals = user.growth?.referrals || [];
     const refLink = `https://obunext.uz/register?ref=${user.id.slice(0, 8)}`;
@@ -218,6 +249,42 @@ growthRouter.get("/growth", requireAuth, async (req, res) => {
       { user, active: "growth" }
     )
   );
+});
+
+growthRouter.post("/growth/menu", requireAuth, async (req, res) => {
+  const b = req.body || {};
+  const u = req.user;
+  const flows = ensureFlows(u).list;
+  u.settings ||= {};
+  u.settings.persistentMenu = [0, 1, 2, 3, 4]
+    .map((i) => {
+      const title = String(b[`t${i}`] || "").trim().slice(0, 30);
+      if (!title) return null;
+      const a = String(b[`a${i}`] || "ai");
+      const url = String(b[`u${i}`] || "").trim();
+      if (a === "url") return /^https?:\/\/\S+$/i.test(url) ? { title, url } : null;
+      if (a === "shop") return { title, payload: "SHOP:CATALOG" };
+      if (a.startsWith("flow:")) {
+        const f = flows.find((x) => x.id === a.slice(5));
+        return f?.start ? { title, flowId: f.id, payload: `FLOW:${f.id}:${f.start}` } : null;
+      }
+      return { title, ai: true };
+    })
+    .filter(Boolean);
+  const items = u.settings.persistentMenu.map((m, i) => (m.url ? { title: m.title, url: m.url } : { title: m.title, payload: m.payload || `MENU:${i}` }));
+  const results = [];
+  if (u.meta?.igAccessToken || u.meta?.pageAccessToken) results.push(["Instagram", await setPersistentMenu(u, items, "instagram")]);
+  if (u.meta?.pageAccessToken && u.meta?.pageId) results.push(["Messenger", await setPersistentMenu(u, items, "messenger")]);
+  const ok = results.length && results.every(([, r]) => r && !r.error);
+  u.settings.persistentMenuStatus = {
+    ok: Boolean(ok),
+    at: new Date().toISOString(),
+    text: !results.length
+      ? "Saqlandi. Instagram/Facebook ulanganidan keyin qayta saqlang — menyu o'shanda yuboriladi."
+      : results.map(([n, r]) => (r && !r.error ? `✅ ${n}: yuborildi` : `⚠️ ${n}: ${r?.error?.message || "qabul qilmadi"}`)).join(" · "),
+  };
+  persist(u);
+  res.redirect("/growth?tab=menu");
 });
 
 growthRouter.post("/growth/icebreakers", requireAuth, async (req, res) => {

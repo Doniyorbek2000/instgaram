@@ -124,6 +124,7 @@ Node ids: short latin like "m1","q1","c1","a1". Node types:
 - {"id","type":"input","text":"question","varName":"name|phone|email|any_snake_case","validate":"text"|"name"|"phone"|"email"|"number","next"}
 - {"id","type":"condition","match":"all"|"any","conditions":[{"kind":"tag","op":"has"|"not","value"}|{"kind":"weekday","value":"1,2,3,4,5"}|{"kind":"time","value":"09:00-18:00"}|{"kind":"points","op":"gte"|"lte","value":"10"}|{"kind":"var","key","op":"exists"|"eq","value"}|{"kind":"follows"}],"yes":nodeId,"no":nodeId}
 - {"id","type":"split","variants":[{"id","label","weight":50,"next":nodeId}]}  (A/B test)
+- {"id","type":"catalog","text","productIds":[],"next"}  (shows shop products with "Order" buttons)
 - {"id","type":"http","method":"GET"|"POST","url","headers":"Key: value lines","body","map":"var = json.path lines","next","fail"}
 - {"id","type":"action","actions":[{"kind":"add_tag"|"remove_tag"|"conversion"|"notify"|"handoff"|"webhook","value"}|{"kind":"set_var","key","value"}|{"kind":"add_points","value":"10"}],"next"}
 - {"id","type":"delay","minutes":number,"next"}

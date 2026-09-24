@@ -73,6 +73,14 @@ export async function processMessage(tenant, channel, chatKey, { text = "", medi
 
   // Instagram salomlashuv tugmasi (ice breaker) bosildi — savol matni mijoz
   // xabari sifatida ishlanadi (AI yoki kalit so'z qoidasi javob beradi)
+  if (payload?.startsWith("MENU:")) {
+    // Doimiy menyudagi "AI javob beradi" bandi — sarlavhasi mijoz savoli sifatida
+    const item = tenant.settings?.persistentMenu?.[Number(payload.slice(5))];
+    if (item?.title) {
+      text = item.title;
+      payload = "";
+    }
+  }
   if (payload?.startsWith("IB:")) {
     const ib = tenant.settings?.icebreakers?.[Number(payload.slice(3))];
     const question = typeof ib === "string" ? ib : ib?.question;
@@ -113,6 +121,19 @@ export async function processMessage(tenant, channel, chatKey, { text = "", medi
       fireEvent(tenant, "opt_out", { contact: fullKey, channel, subscribed: !tenant.contactMeta?.[fullKey]?.optOut });
       logExchange(tenant, fullKey, shownText, opt.reply);
       return { reply: opt.reply };
+    }
+  }
+
+  // 4c. Do'kon tugmalari: katalog, "🛒 Buyurtma"
+  if (payload?.startsWith("SHOP:")) {
+    const { handleShopPayload } = await import("./shop.js");
+    const r = await handleShopPayload(tenant, fullKey, payload);
+    if (r) {
+      const options = normOptions(r.options);
+      rememberOptions(tenant, fullKey, options);
+      if (r.reply) logExchange(tenant, fullKey, shownText, r.reply);
+      persist(tenant);
+      return { reply: r.reply, quickReplies: options };
     }
   }
 
@@ -230,8 +251,23 @@ export async function processMessage(tenant, channel, chatKey, { text = "", medi
       });
       persist(tenant);
       fireEvent(tenant, "lead", { contact: fullKey, channel, phoneOrEmail: leadContact, message: text.slice(0, 300) });
+      const { autoPushCrm } = await import("./crm.js");
+      autoPushCrm(tenant, "leads", {
+        key: fullKey, phone: phoneMatch ? leadContact : "", email: emailMatch && !phoneMatch ? leadContact : "",
+        name: tenant.contactMeta?.[fullKey]?.fields?.name || "", note: text.slice(0, 500),
+      });
     }
     notifyHotLead(tenant, channel, fullKey, text + (leadContact ? `\n📞 Kontakt: ${leadContact}` : "")).catch(() => {});
+  }
+
+  // 7b. "katalog" deb yozsa — mahsulotlar karuseli (katalog to'ldirilgan bo'lsa)
+  if (/^(katalog|каталог|catalog|menyu|меню|menu|mahsulotlar|товары|products)[!?.]*$/i.test(text.trim())) {
+    const { activeProducts, sendCatalog } = await import("./shop.js");
+    if (activeProducts(tenant).length) {
+      await sendCatalog(tenant, fullKey);
+      logExchange(tenant, fullKey, shownText, "🛍️ Katalog yuborildi");
+      return { reply: null };
+    }
   }
 
   // 8a. AI avtomatik javob o'chirilgan (umumiy, kanal, jadval yoki shu chat uchun) —

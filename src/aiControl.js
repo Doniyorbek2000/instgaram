@@ -32,6 +32,9 @@ const DEFAULTS = {
   days: "1,2,3,4,5,6",
   whenOff: "silent",
   offMessage: "Rahmat! Xabaringizni oldik, tez orada javob beramiz 🙏",
+  actions: true, // AI kontakt/teg/lid yozadi
+  aiHandoff: true, // AI kerak bo'lsa operatorga o'tkazadi
+  askConsent: false, // shaxsiy ma'lumotdan oldin rozilik so'raladi
 };
 
 /** Sozlamalar (eski biznes uchun ham to'liq, sukut bo'yicha AI yoqilgan). */
@@ -93,6 +96,9 @@ export function saveAiSettings(tenant, body = {}) {
     days: (days.length ? [...new Set(days)].sort() : [1, 2, 3, 4, 5, 6]).join(","),
     whenOff: body.whenOff === "message" ? "message" : "silent",
     offMessage: String(body.offMessage || DEFAULTS.offMessage).trim().slice(0, 1000),
+    actions: body.actions === "on" || body.actions === true,
+    aiHandoff: body.aiHandoff === "on" || body.aiHandoff === true,
+    askConsent: body.askConsent === "on" || body.askConsent === true,
   };
   persist(tenant);
   return tenant.settings.ai;

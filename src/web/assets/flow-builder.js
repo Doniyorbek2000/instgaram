@@ -30,7 +30,7 @@
   flow.triggers = flow.triggers || [];
 
   var MEDIA_LABEL = { image: "🖼️ Rasm", video: "🎬 Video", audio: "🎧 Audio", file: "📎 Fayl", post: "📸 Instagram post" };
-  var ICONS = { message: "💬", input: "📝", condition: "🔀", action: "⚡", delay: "⏱️", ai: "🧠", redirect: "↪️", split: "🎲", http: "🌐", note: "🗒️" };
+  var ICONS = { message: "💬", input: "📝", condition: "🔀", action: "⚡", delay: "⏱️", ai: "🧠", redirect: "↪️", split: "🎲", http: "🌐", catalog: "🛍️", note: "🗒️" };
 
   // ---------- yordamchilar ----------
 
@@ -202,6 +202,9 @@
         var tw = (n.variants || []).reduce(function (a, v) { return a + (Number(v.weight) || 0); }, 0) || 1;
         return (n.variants || []).map(function (v) { return v.label + " — " + Math.round(((Number(v.weight) || 0) / tw) * 100) + "%"; }).join("\n") || "(variant yo'q)";
       case "http": return (n.method || "GET") + " " + (n.url || "(URL yo'q)");
+      case "catalog":
+        var names = (n.productIds || []).map(function (id) { var p = (meta.products || []).filter(function (x) { return x.id === id; })[0]; return p ? p.name : null; }).filter(Boolean);
+        return (n.text ? n.text + "\n" : "") + (names.length ? "🛍️ " + names.join(", ") : "🛍️ Barcha faol mahsulotlar (10 tagacha)");
       default: return "";
     }
   }
@@ -232,6 +235,7 @@
       var sq = (meta.sequences || []).filter(function (x) { return x.id === a.key; })[0];
       return k + ": " + (sq ? sq.name : a.kind === "seq_unsubscribe" ? "barchasi" : "?");
     }
+    if (a.kind === "payment_link") return "💳 " + (a.value || "To'lov") + ": " + (a.key || "?");
     if (a.kind === "math") return "🧮 {" + a.key + "} " + (a.value || "");
     if (a.kind === "opt_out") return a.value === "in" ? "📣 Ommaviy xabarlarga qaytarish" : "🚫 Ommaviy xabarlardan chiqarish";
     if (a.kind === "run_flow") {
@@ -614,6 +618,7 @@
       case "redirect": return { flowId: meta.otherFlows[0] ? meta.otherFlows[0].id : "" };
       case "split": return { variants: [{ id: uid("v"), label: "A", weight: 50, next: null }, { id: uid("v"), label: "B", weight: 50, next: null }] };
       case "http": return { method: "GET", url: "https://", headers: "", body: "", map: "", next: null, fail: null };
+      case "catalog": return { text: "Mahsulotlarimiz 👇", productIds: [], next: null };
       case "note": return { text: "", color: "yellow" };
       default: return {};
     }
@@ -1069,6 +1074,25 @@
       }
     }
 
+    if (n.type === "catalog") {
+      side.appendChild(field("Katalogdan oldingi matn (ixtiyoriy)", textArea(n, "text", 2)));
+      side.appendChild(h("label", { text: "Qaysi mahsulotlar (belgilanmasa — barcha faollari, 10 tagacha)" }));
+      if (!(meta.products || []).length) side.appendChild(h("p", { class: "fb-hint", text: "Katalog bo'sh — \"Do'kon va buyurtmalar\" bo'limida mahsulot qo'shing." }));
+      n.productIds = n.productIds || [];
+      (meta.products || []).forEach(function (p) {
+        side.appendChild(h("label", { style: "display:flex; gap:8px; align-items:center; margin:4px 0; text-transform:none; letter-spacing:0; font-size:13px; cursor:pointer" }, [
+          h("input", { type: "checkbox", checked: n.productIds.indexOf(p.id) >= 0, style: "width:auto; margin:0", onchange: function (e) {
+            n.productIds = n.productIds.filter(function (x) { return x !== p.id; });
+            if (e.target.checked && n.productIds.length < 10) n.productIds.push(p.id);
+            changed();
+          } }),
+          p.name + " — " + Number(p.price).toLocaleString("ru-RU"),
+        ]));
+      });
+      side.appendChild(h("p", { class: "fb-hint", text: "Har bir mahsulotda \"🛒 Buyurtma\" tugmasi bo'ladi: bosilsa buyurtma yaratiladi va Payme/Click havolasi yuboriladi." }));
+      side.appendChild(field("Keyingi blok", targetSelect(n, "next", n.next)));
+    }
+
     if (n.type === "http") {
       side.appendChild(h("div", { class: "fb-row" }, [
         select((meta.httpMethods || ["GET", "POST"]).map(function (m) { return [m, m]; }), n.method || "GET", function (v) { n.method = v; changed(true); }),
@@ -1241,6 +1265,7 @@
     var hints = {
       add_tag: "teg (vergul bilan bir nechta)", remove_tag: "teg", add_points: "masalan 10 yoki -5",
       conversion: "konversiya nomi (masalan: Lid)", notify: "Yangi lid: {name}, {phone}", webhook: "hodisa belgisi",
+      crm_lead: "Bitim nomi (bo'sh — flow nomi va ism)",
     };
     if (a.kind === "run_flow") {
       box.appendChild(h("div", { class: "fb-row", style: "margin-top:6px" }, [
@@ -1256,6 +1281,23 @@
       else seqOpts.unshift(["", "— tanlang —"]);
       box.appendChild(h("div", { style: "margin-top:6px" }, [select(seqOpts, a.key || (a.kind === "seq_unsubscribe" ? "all" : ""), function (v) { a.key = v; changed(); })]));
       if (!(meta.sequences || []).length) box.appendChild(h("p", { class: "fb-hint", text: "Avval \"Ketma-ketliklar\" bo'limida seriya yarating." }));
+    } else if (a.kind === "send_email") {
+      box.appendChild(h("div", { style: "margin-top:6px" }, [textInput(a, "key", { placeholder: "Mavzu (masalan: Buyurtmangiz qabul qilindi)" })]));
+      var eta = h("textarea", { rows: 3, placeholder: "Salom {name}! ...", style: "margin-top:6px", oninput: function (e) { a.value = e.target.value; changed(); } });
+      eta.value = a.value || "";
+      box.appendChild(eta);
+      box.appendChild(h("p", { class: "fb-hint", text: "Mijozning {email} maydoniga yuboriladi (Integratsiyalar → Email'da SMTP sozlangan bo'lsa)." }));
+    } else if (a.kind === "send_sms") {
+      var sta = h("textarea", { rows: 2, maxlength: 900, placeholder: "Buyurtmangiz №{last_order} qabul qilindi", style: "margin-top:6px", oninput: function (e) { a.value = e.target.value; changed(); } });
+      sta.value = a.value || "";
+      box.appendChild(sta);
+      box.appendChild(h("p", { class: "fb-hint", text: "Mijozning {phone} raqamiga Eskiz.uz orqali. Eskiz matn shablonini oldindan tasdiqlashni talab qiladi." }));
+    } else if (a.kind === "payment_link") {
+      box.appendChild(h("div", { class: "fb-row", style: "margin-top:6px" }, [
+        textInput(a, "key", { placeholder: "Summa: 150000 yoki {narx}" }),
+        textInput(a, "value", { placeholder: "Nima uchun (masalan: Kurs to'lovi)" }),
+      ]));
+      box.appendChild(h("p", { class: "fb-hint", text: "Buyurtma yaratiladi va mijozga Payme/Click to'lov havolasi yuboriladi (Do'kon → Sozlamalar'da kassa ulangan bo'lsa)." }));
     } else if (a.kind === "math") {
       box.appendChild(h("div", { class: "fb-row", style: "margin-top:6px" }, [
         textInput(a, "key", { placeholder: "o'zgaruvchi (masalan jami)" }),
@@ -1478,6 +1520,9 @@
         var pick = pickVariantSim(n.variants || []);
         simPush("sys", "🎲 A/B test: " + (pick ? "\"" + pick.label + "\" varianti tushdi" : "variant yo'q"));
         id = pick ? pick.next : null;
+      } else if (n.type === "catalog") {
+        simPush("bot", (n.text ? n.text + "\n" : "") + "🛍️ Katalog kartochkalari (har birida \"🛒 Buyurtma\" tugmasi)");
+        id = n.next;
       } else if (n.type === "http") {
         simPush("sys", "🌐 " + (n.method || "GET") + " " + (n.url || "") + " — sinovda so'rov yuborilmaydi, natijani tanlang");
         sim.wait = { kind: "http", node: n };

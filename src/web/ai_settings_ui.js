@@ -38,6 +38,8 @@ aiSettingsRouter.get("/ai-settings", requireAuth, (req, res) => {
         .chip-row { display:flex; gap:8px; flex-wrap:wrap }
         .chip-row label { display:flex; align-items:center; gap:6px; margin:0; padding:8px 12px; border:1px solid var(--border); border-radius:10px; cursor:pointer; text-transform:none; letter-spacing:0; font-size:14px; color:#e2e8f0 }
         .chip-row input { width:auto; margin:0 }
+        .chk { display:flex; gap:8px; align-items:flex-start; margin:8px 0; text-transform:none; letter-spacing:0; font-size:13.5px; font-weight:600; cursor:pointer; color:#e2e8f0 }
+        .chk input { width:auto; margin:2px 0 0 }
       </style>
       <form method="post" action="/ai-settings" class="grid split-form">
         <div>
@@ -82,6 +84,13 @@ aiSettingsRouter.get("/ai-settings", requireAuth, (req, res) => {
             <label>Xabar matni</label>
             <textarea name="offMessage" rows="3" maxlength="1000">${esc(s.offMessage)}</textarea>
             <p class="hint" style="font-size:12.5px">Bir mijozga 6 soatda bir martadan ko'p yuborilmaydi.</p>
+          </div>
+          <div class="card">
+            <h3 style="margin-top:0">🤖 AI menejer amallari</h3>
+            <label class="chk"><input type="checkbox" name="actions" ${s.actions ? "checked" : ""}> Suhbatdan ism, telefon, email, manzilni CRM kartochkaga yozsin, teg qo'ysin va lid ochsin</label>
+            <label class="chk"><input type="checkbox" name="aiHandoff" ${s.aiHandoff ? "checked" : ""}> Mijoz odam so'rasa yoki javob bera olmasa — operatorga o'zi o'tkazsin</label>
+            <label class="chk"><input type="checkbox" name="askConsent" ${s.askConsent ? "checked" : ""}> Telefon/emailni saqlashdan oldin shaxsiy ma'lumotlarga rozilik so'rasin</label>
+            <p class="hint" style="font-size:12.5px; margin:6px 0 0">Lid "Lidlar" ro'yxatiga, Telegram bildirishnomaga, webhook/Sheets va <a href="/integrations#crm">amoCRM / Bitrix24</a>'ga (ulangan bo'lsa) tushadi. Bu amallar mijozga ko'rinmaydi.</p>
           </div>
           <div class="card">
             <h3 style="margin-top:0">📊 Holat</h3>

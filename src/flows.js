@@ -65,6 +65,7 @@ export const NODE_TYPES = {
   redirect: "↪️ Boshqa flow",
   split: "🎲 A/B test",
   http: "🌐 HTTP so'rov",
+  catalog: "🛍️ Katalog",
   note: "🗒️ Izoh",
 };
 
@@ -94,6 +95,10 @@ export const ACTION_KINDS = {
   run_flow: "Boshqa flow'ni ishga tushirish",
   react: "❤️ Xabarga reaksiya",
   math: "🧮 Hisoblash (o'zgaruvchi)",
+  crm_lead: "📇 CRM'da lid ochish (amoCRM / Bitrix24)",
+  payment_link: "💳 Buyurtma va to'lov havolasi",
+  send_sms: "📱 SMS yuborish (Eskiz)",
+  send_email: "✉️ Email yuborish",
   seq_subscribe: "📅 Ketma-ketlikka qo'shish",
   seq_unsubscribe: "📅 Ketma-ketlikdan chiqarish",
   opt_out: "🚫 Ommaviy xabarlardan chiqarish",
@@ -215,6 +220,13 @@ function sanitizeNode(n, ids) {
         }));
       return { ...base, variants };
     }
+    case "catalog":
+      return {
+        ...base,
+        text: str(n.text, 1000),
+        productIds: (Array.isArray(n.productIds) ? n.productIds : []).map((x) => str(x, 40)).filter((x) => ID_RE.test(x)).slice(0, 10),
+        next: ref(n.next),
+      };
     case "http":
       return {
         ...base,
@@ -520,6 +532,45 @@ async function runActions(tenant, key, flow, node, ctx) {
         setFields(tenant, key, { [field]: String(res) });
         break;
       }
+      case "send_sms": {
+        const { sendSms } = await import("./messaging.js");
+        const phone = getContactMeta(tenant, key).fields.phone;
+        if (phone && value) {
+          const r = await sendSms(tenant, phone, value);
+          if (!r.ok) console.error(`[Flow SMS] ${tenant.businessName}: ${r.error}`);
+        }
+        break;
+      }
+      case "send_email": {
+        const { sendEmail } = await import("./messaging.js");
+        const email = getContactMeta(tenant, key).fields.email;
+        if (email && value) {
+          const r = await sendEmail(tenant, email, renderTemplate(a.key, tenant, key) || flow.name, value);
+          if (!r.ok) console.error(`[Flow Email] ${tenant.businessName}: ${r.error}`);
+        }
+        break;
+      }
+      case "payment_link": {
+        // key: summa ({o'zgaruvchi} mumkin), value: nima uchun to'lov
+        const { createOrder, orderMessage } = await import("./shop.js");
+        const amount = toNumber(renderTemplate(a.key, tenant, key));
+        if (!amount || amount <= 0) break;
+        const order = createOrder(tenant, key, [{ name: value || flow.name, price: amount, qty: 1 }], { source: `flow:${flow.name}` });
+        if (order) {
+          const msg = orderMessage(tenant, order);
+          await deliver(tenant, key, ctx, msg.text, msg.options);
+        }
+        break;
+      }
+      case "crm_lead": {
+        const { pushCrmLead } = await import("./crm.js");
+        const f = getContactMeta(tenant, key).fields;
+        pushCrmLead(tenant, {
+          key, title: value || `${flow.name}: ${f.name || f.phone || key}`, name: f.name, phone: f.phone, email: f.email,
+          price: f.summa || f.price || "", note: `Flow: ${flow.name}`, tags: getContactMeta(tenant, key).tags,
+        }).then((r) => { if (!r.ok) console.error(`[CRM] ${r.error}`); }).catch(() => {});
+        break;
+      }
       case "seq_subscribe": {
         const { subscribe } = await import("./sequences.js");
         if (a.key) subscribe(tenant, key, a.key);
@@ -768,6 +819,15 @@ export async function runFrom(tenant, key, flow, nodeId, ctx = {}, depth = 0) {
         row[v.id] = (row[v.id] || 0) + 1;
       }
       current = v?.next || null;
+      continue;
+    }
+
+    if (node.type === "catalog") {
+      const { sendCatalog } = await import("./shop.js");
+      if (node.text) await deliver(tenant, key, ctx, renderTemplate(node.text, tenant, key));
+      await sendCatalog(tenant, key, node.productIds || [], ctx.send ? { send: ctx.send } : {});
+      logToInbox(tenant, key, ctx, "🛍️ Katalog");
+      current = node.next;
       continue;
     }
 
@@ -1076,6 +1136,7 @@ export function validateFlow(flow, allFlows = []) {
         if ((a.kind === "add_tag" || a.kind === "remove_tag") && !a.value) errors.push({ nodeId: n.id, msg: `${label(n)}: teg yozilmagan` });
         if (a.kind === "set_var" && !a.key) errors.push({ nodeId: n.id, msg: `${label(n)}: o'zgaruvchi nomi yozilmagan` });
         if (a.kind === "math" && !a.key) errors.push({ nodeId: n.id, msg: `${label(n)}: hisoblash uchun o'zgaruvchi nomi yozilmagan` });
+        if (a.kind === "payment_link" && !toNumber(a.key) && !String(a.key || "").includes("{")) errors.push({ nodeId: n.id, msg: `${label(n)}: to'lov summasi yozilmagan` });
         if (a.kind === "seq_subscribe" && !a.key) errors.push({ nodeId: n.id, msg: `${label(n)}: ketma-ketlik tanlanmagan` });
       });
     }
