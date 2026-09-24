@@ -458,7 +458,7 @@ function siteLayout(lang, path, title, body, { user, active = "" } = {}) {
 <body>
 <header class="nav" id="nav">
   <div class="wrap nav-inner">
-    <a class="brand" href="/">${logoMark(32)}<span class="txt">AI Biznes Yordamchi</span></a>
+    <a class="brand" href="/">${logoMark(32)}<span class="txt">Obunext</span></a>
     <input type="checkbox" id="mc" class="menu-check">
     <nav class="nav-menu">
       ${navLink("/features", "features", nav.features)}
@@ -506,7 +506,7 @@ function footer(lang, path, tr) {
     <div class="wrap">
       <div class="foot-grid">
         <div>
-          <a class="brand" href="/">${logoMark(30)}<span>AI Biznes Yordamchi</span></a>
+          <a class="brand" href="/">${logoMark(30)}<span>Obunext</span></a>
           <p class="tag">${esc(f.tagline)}</p>
         </div>
         <div class="fcol"><h4>${esc(f.colProduct)}</h4>
@@ -536,7 +536,7 @@ function footer(lang, path, tr) {
         Narxlar O'zbekiston Respublikasi milliy valyutasida (so'm, UZS) ko'rsatilgan.
       </div>
       <div class="foot-bottom">
-        <span>© ${new Date().getFullYear()} AI Biznes Yordamchi · ${esc(f.rights)}</span>
+        <span>© ${new Date().getFullYear()} Obunext · ${esc(f.rights)}</span>
         <span class="foot-lang">${footLang}</span>
       </div>
     </div>
@@ -846,7 +846,7 @@ export function authPage(lang, kind, { error = "", values = {}, refCode = "" } =
 <html lang="${lang}">
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>${esc(title)} — AI Biznes Yordamchi</title>
+<title>${esc(title)} — Obunext</title>
 <link rel="icon" href="/favicon.png" type="image/png">
 <style>
   :root { --brand:#7c3aed; --grad:linear-gradient(120deg,#7c3aed,#db2777 55%,#f97316 115%); --ink:#0f1222; --muted:#6b7280; --line:#ececf3; }
@@ -904,7 +904,7 @@ export function authPage(lang, kind, { error = "", values = {}, refCode = "" } =
 <body>
 <div class="auth">
   <div class="side">
-    <a class="brand" href="/">${logoMark(34)} <span>AI Biznes Yordamchi</span></a>
+    <a class="brand" href="/">${logoMark(34)} <span>Obunext</span></a>
     <div class="mid">
       <h2>${esc(a.sideTitle)}</h2>
       <ul>${a.points.map((p) => `<li><span class="ck">✓</span> ${esc(p)}</li>`).join("")}</ul>
@@ -1010,7 +1010,7 @@ site.get("/privacy-policy", (req, res) => {
   const body = legalBody("Maxfiylik siyosati / Privacy Policy", [
     {
       h: "1. Biz kim va bu xizmat nima qiladi",
-      body: `AI Biznes Yordamchi — tadbirkorlarga Instagram, Facebook Messenger va WhatsApp'dagi
+      body: `Obunext — tadbirkorlarga Instagram, Facebook Messenger va WhatsApp'dagi
         mijoz xabarlariga sun'iy intellekt yordamida avtomatik javob berish imkonini beruvchi xizmat.
         Xizmat rasmiy Meta Graph API asosida ishlaydi.`,
     },
@@ -1076,7 +1076,7 @@ site.get("/terms", (req, res) => {
   const body = legalBody("Foydalanish shartlari / Terms of Service", [
     {
       h: "1. Xizmat haqida",
-      body: `AI Biznes Yordamchi tadbirkorlarga o'z Instagram, Messenger va WhatsApp kanallarida
+      body: `Obunext tadbirkorlarga o'z Instagram, Messenger va WhatsApp kanallarida
         mijozlarga avtomatik javob berish imkonini beradi. Xizmatdan foydalanish uchun ro'yxatdan
         o'tish talab qilinadi.`,
     },
@@ -1117,7 +1117,7 @@ site.get("/offer", (req, res) => {
     {
       h: "Umumiy qoidalar",
       body: `Ushbu hujjat ${LEGAL.nameShort} (keyingi o'rinlarda — <b>Ijrochi</b>) tomonidan
-        taqdim etilayotgan "AI Biznes Yordamchi" xizmatidan foydalanish bo'yicha rasmiy
+        taqdim etilayotgan "Obunext" xizmatidan foydalanish bo'yicha rasmiy
         ommaviy taklif (oferta) hisoblanadi.<br><br>
         Saytda ro'yxatdan o'tish yoki to'lovni amalga oshirish orqali siz (keyingi
         o'rinlarda — <b>Buyurtmachi</b>) ushbu oferta shartlarini to'liq qabul qilgan
