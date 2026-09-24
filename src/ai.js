@@ -54,7 +54,8 @@ Qoidalar:
 - Mijoz ovozli xabar yuborsa — eshitib, mazmuniga javob ber. Rasm yoki video yuborsa — ko'rib, nimaligini aniqlab javob ber.
 - Narx, manzil, yetkazib berish kabi savollarga — FAQAT bazada bor bo'lsa — aniq raqamlar bilan javob ber.
 - Buyurtma bermoqchi bo'lgan mijozdan kerakli ma'lumotlarni so'ra.
-
+${tenant.settings?.aiStyle ? `- BIZNES USLUBI (egasi belgilagan, doim amal qil): ${String(tenant.settings.aiStyle).slice(0, 1500)}
+` : ""}
 # ADM AI Bilimlar Bazasi (Vector RAG Search Matnlari):
 
 ${relevantKb || "Biznes haqida ma'lumot kiritilmagan."}`;

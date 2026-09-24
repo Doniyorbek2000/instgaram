@@ -1181,6 +1181,7 @@ Biz "Fuqarolar Murojaat Markazi" jamoat tashkilotimiz.
               <option value="blogger">📸 Bloger / Ekspert</option>
               <option value="organization">🏢 Tashkilot</option>
             </select>
+            <a href="/ai-learn" class="btn" style="padding:4px 10px; font-size:11.5px; margin:0">🧠 Instagram'dan o'rgatish</a>
             <span id="btnPreviewKb" class="btn secondary" onclick="event.preventDefault(); window.togglePreviewKnowledge(); return false;" style="padding:4px 10px; font-size:11.5px; margin:0; cursor:pointer">👁️ Ko'rish (Preview)</span>
             <span id="btnAddSection" class="btn secondary" onclick="event.preventDefault(); window.appendKnowledgeSection(); return false;" style="padding:4px 10px; font-size:11.5px; margin:0; cursor:pointer">➕ Bo'lim Qo'shish</span>
             <span id="btnClearKb" class="btn secondary" onclick="event.preventDefault(); window.clearKnowledgeBase(); return false;" style="padding:4px 10px; font-size:11.5px; margin:0; color:#f87171; cursor:pointer">🗑️ Barchasini O'chirish</span>

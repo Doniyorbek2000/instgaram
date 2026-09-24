@@ -23,6 +23,7 @@ import { formsRouter } from "./web/forms_ui.js";
 import { integrationsRouter } from "./web/integrations_ui.js";
 import { contentRouter } from "./web/content_ui.js";
 import { mediaRouter } from "./web/media_ui.js";
+import { aiLearnRouter } from "./web/ai_learn_ui.js";
 import { teamContext } from "./team.js";
 import { telegramRouter } from "./telegram.js";
 import { reportsBotRouter, reportsBotAvailable, setupReportsBotWebhook, checkAndSendDailyReports } from "./reportsBot.js";
@@ -128,6 +129,7 @@ app.use(formsRouter);
 app.use(integrationsRouter);
 app.use(contentRouter);
 app.use(mediaRouter);
+app.use(aiLearnRouter);
 app.use(telegramRouter);
 app.use(reportsBotRouter);
 
