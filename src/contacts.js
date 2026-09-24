@@ -51,6 +51,39 @@ export function allTags(tenant) {
   return Object.entries(counts).sort((a, b) => b[1] - a[1]);
 }
 
+const WINDOW_MS = 24 * 60 * 60 * 1000;
+
+/** Kontaktning oxirgi yozgan vaqti (ms) — Meta'ning 24 soatlik oynasi uchun. */
+export function lastInboundAt(tenant, key) {
+  let last = 0;
+  for (const m of tenant.chats?.[key] || []) {
+    if (m.role === "user" && m.at) last = Math.max(last, Date.parse(m.at) || 0);
+  }
+  const lead = (tenant.leads || []).find((l) => l.chatKey === key);
+  if (lead?.lastAt) last = Math.max(last, Date.parse(lead.lastAt) || 0);
+  return last;
+}
+
+/**
+ * Suhbat oynasi holati: Instagram/Messenger/WhatsApp erkin xabarni faqat mijoz
+ * oxirgi 24 soatda yozgan bo'lsa qabul qiladi. Telegram'da cheklov yo'q
+ * (faqat mijoz botni bloklamagan bo'lsa).
+ * Qaytaradi: { open, msLeft, label }
+ */
+export function windowStatus(tenant, key, now = Date.now()) {
+  const chan = String(key).split(":")[0];
+  if (chan === "tg") {
+    const blocked = Boolean(tenant.contactMeta?.[key]?.blocked);
+    return { open: !blocked, msLeft: blocked ? 0 : Infinity, label: blocked ? "Botni bloklagan" : "Doim ochiq" };
+  }
+  const last = lastInboundAt(tenant, key);
+  const left = last ? last + WINDOW_MS - now : 0;
+  if (left <= 0) return { open: false, msLeft: 0, label: "Oyna yopiq" };
+  const h = Math.floor(left / 3600000);
+  const m = Math.floor((left % 3600000) / 60000);
+  return { open: true, msLeft: left, label: h ? `${h} soat ${m} daq qoldi` : `${m} daq qoldi` };
+}
+
 /** Kontaktning ko'rinadigan nomi: forma ismi > IG username > ID. */
 export function displayName(tenant, key) {
   const m = tenant.contactMeta?.[key];

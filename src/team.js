@@ -42,7 +42,8 @@ export function canAccess(role, method, path) {
   if (matches(path, ALWAYS)) return true;
   if (matches(path, OWNER_ONLY)) return false;
   if (role === "admin") return true;
-  if (role === "operator") return matches(path, OPERATOR);
+  // Operator mijozlar bilan ishlaydi, lekin kontakt ma'lumotlarini o'chira olmaydi
+  if (role === "operator") return matches(path, OPERATOR) && !path.endsWith("/delete");
   if (role === "viewer") return method === "GET" && matches(path, VIEWER_GET);
   return false;
 }

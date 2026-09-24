@@ -12,7 +12,7 @@ import { persist, listUsers } from "./db.js";
 import { sendReply, sendMedia, splitKey } from "./outbound.js";
 import { sanitizeMedia } from "./mediaStore.js";
 import { renderTemplate } from "./templating.js";
-import { getContactMeta } from "./contacts.js";
+import { getContactMeta, lastInboundAt } from "./contacts.js";
 import { isActive } from "./subscription.js";
 
 const CHANNELS = new Set(["ig", "fb", "wa", "tg"]);
@@ -32,16 +32,7 @@ export function allContacts(tenant) {
   return [...keys].filter((k) => CHANNELS.has(splitKey(k).chan) && k.indexOf(":") > 0 && splitKey(k).id);
 }
 
-/** Kontaktning oxirgi yozgan vaqti (ms) — 24 soatlik oyna uchun. */
-export function lastInboundAt(tenant, key) {
-  let last = 0;
-  for (const m of tenant.chats?.[key] || []) {
-    if (m.role === "user" && m.at) last = Math.max(last, Date.parse(m.at) || 0);
-  }
-  const lead = (tenant.leads || []).find((l) => l.chatKey === key);
-  if (lead?.lastAt) last = Math.max(last, Date.parse(lead.lastAt) || 0);
-  return last;
-}
+export { lastInboundAt };
 
 const normTag = (t) => String(t || "").trim().toLowerCase().replace(/\s+/g, "-");
 const tagList = (v) => (Array.isArray(v) ? v : String(v || "").split(",")).map(normTag).filter(Boolean);
