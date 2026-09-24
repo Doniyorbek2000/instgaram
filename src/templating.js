@@ -6,6 +6,7 @@
  *   {username}        — Instagram username (@ belgisisiz)
  *   {points}          — geymifikatsiya ballari
  *   {business}        — biznes nomi
+ *   {ig_profile}      — biznesning Instagram profili havolasi (instagram.com/...)
  *   {date} / {time}   — bugungi sana / hozirgi vaqt (biznes vaqt mintaqasida)
  *   {phone}, {email}, {har_qanday_maydon} — kontakt kartasidagi (flow "input" bloki
  *                       yoki forma orqali yig'ilgan) qiymatlar
@@ -58,6 +59,8 @@ export function contactVars(tenant, key) {
     username: profile.username || "",
     points: String(participant?.points ?? 0),
     business: tenant.businessName || "",
+    ig_username: tenant.meta?.igUsername || "",
+    ig_profile: tenant.meta?.igUsername ? `instagram.com/${tenant.meta.igUsername}` : "",
     date: now.date,
     time: now.time,
   });

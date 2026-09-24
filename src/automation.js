@@ -33,7 +33,11 @@ export function resolvePayload(tenant, key, text) {
   if (!saved || Date.now() - saved.at > OPTIONS_TTL_MS) return "";
   const t = String(text || "").trim();
   if (/^\d{1,2}$/.test(t)) return saved.opts[Number(t) - 1]?.payload || "";
-  const byTitle = saved.opts.find((o) => String(o.title).toLowerCase() === t.toLowerCase());
+  // Tugma nomini qo'lda yozsa ham (emoji, tinish belgilarisiz) taniymiz: "obuna boldim" → "Obuna bo'ldim ✅"
+  const norm = (v) => String(v).toLowerCase().replace(/[^\p{L}\p{N}]+/gu, "");
+  const nt = norm(t);
+  if (!nt) return "";
+  const byTitle = saved.opts.find((o) => norm(o.title) === nt);
   return byTitle?.payload || "";
 }
 

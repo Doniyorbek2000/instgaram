@@ -4,6 +4,7 @@ import { classifyIntent } from "../ai.js";
 import { ruleReplyOptions, onRuleDelivered, onGateBlocked } from "../ruleActions.js";
 import { findFlowTrigger, aiFlowCandidates, startFlow, pickPublicReply as pickFlowPublicReply } from "../flows.js";
 import { renderTemplate } from "../templating.js";
+import { resolvePayload, rememberOptions } from "../automation.js";
 import { award, confirmPendingReferral } from "../gamification.js";
 import { processMessage } from "../respond.js";
 import { botEnabled } from "../credits.js";
@@ -23,8 +24,8 @@ import {
   replyToComment,
   privateReplyToComment,
   sendDirectMessage,
-  sendDirectQuickReplies,
   checkFollowerStatus,
+  getFollowStatus,
   showTyping,
   getUserProfile,
   likeComment,
@@ -85,8 +86,12 @@ export async function handleInstagramEntry(tenant, entry) {
     if (!senderId) continue;
     if (senderId === tenant.meta.igUserId) continue;
 
-    // Postback yoki Quick Reply bosilganda
-    const qrPayload = message?.quick_reply?.payload || postback?.payload || "";
+    // Postback yoki Quick Reply bosilganda. Tugmalar o'rniga raqamli variant
+    // yuborilgan bo'lsa, mijoz "1" yoki tugma nomini yozadi — uni ham tugma deb olamiz.
+    const typedGate = !message?.quick_reply && !postback && message?.text && !message.is_echo
+      ? resolvePayload(tenant, `ig:${senderId}`, message.text)
+      : "";
+    const qrPayload = message?.quick_reply?.payload || postback?.payload || (typedGate.startsWith("CHECK_FOLLOW") ? typedGate : "");
     // ig.me/m/<username>?ref=... havolasi orqali kelganda (auditoriya referal tizimi)
     const refParam = event.referral?.ref || message?.referral?.ref || postback?.referral?.ref || "";
     if (qrPayload.startsWith("CHECK_FOLLOW")) {
@@ -112,10 +117,12 @@ export async function handleInstagramEntry(tenant, entry) {
         confirmPendingReferral(tenant, `ig:${senderId}`).catch(() => {});
       } else {
         console.log(`[IG Follower Gate] ❌ ${senderId} hali obuna bo'lmagan`);
-        const warnText = "Siz hali sahifamizga obuna bo'lmabsiz 🥺 Iltimos, profilimizga obuna bo'ling va so'ng quyidagi tugmani bosing:";
+        const profile = tenant.meta?.igUsername ? `\n\n👉 instagram.com/${tenant.meta.igUsername}` : "";
+        const warnText = `Siz hali sahifamizga obuna bo'lmabsiz 🥺 Iltimos, profilimizga obuna bo'ling va so'ng quyidagi tugmani bosing:${profile}`;
         const btnText = rule?.notFollowingButton || "Obuna bo'ldim ✅";
         const gateOptions = [{ title: btnText, payload: qrPayload }];
-        await sendDirectQuickReplies(tenant, senderId, warnText, gateOptions);
+        await sendReply(tenant, "instagram", senderId, warnText, gateOptions);
+        rememberOptions(tenant, `ig:${senderId}`, gateOptions);
         onGateBlocked(tenant, rule, `ig:${senderId}`, gateOptions);
       }
       continue;
@@ -303,25 +310,27 @@ export async function handleInstagramEntry(tenant, entry) {
       console.log(`[IG Komment] ochiq javob (${publicText.slice(0, 30)}...): ${pub ? "OK" : "XATO"}`);
     }
 
-    // 2. Follower Gate (Obunani tekshirish)
+    // 2. Follower Gate (Obunani tekshirish).
+    // Meta komment egasining profilini (obuna holatini) u Direct'da javob bermaguncha
+    // odatda ko'rsatmaydi. Shuning uchun: aniq obunachi bo'lsa — darhol material;
+    // aks holda BITTA private reply: salom + "obuna bo'ling" + tugma. Tugma bosilganda
+    // (endi suhbat ochiq) obuna aniq tekshiriladi — CHECK_FOLLOW yuqorida.
     if (commentRule && commentRule.requireFollow) {
       const fromId = comment.from?.id;
-      const isFollowing = fromId ? await checkFollowerStatus(tenant, fromId) : false;
-
-      if (!isFollowing) {
-        console.log(`[IG Follower Gate] @${comment.from?.username} obuna bo'lmagan — ogohlantirish yuborilmoqda`);
-        const warnMsg = commentRule.notFollowingMessage || "Sovg'ani olish uchun avval sahifamizga obuna bo'ling! 👇";
+      const status = fromId ? await getFollowStatus(tenant, fromId) : null;
+      if (status !== true) {
+        console.log(`[IG Follower Gate] @${comment.from?.username}: obuna ${status === false ? "yo'q" : "hali noma'lum"} — tugmali xabar yuborilmoqda`);
+        const key = fromId ? `ig:${fromId}` : "";
+        const rawMsg = commentRule.notFollowingMessage || "Assalomu alaykum! 👋 Materialni olish uchun sahifamizga obuna bo'ling va quyidagi tugmani bosing 👇";
+        const warnMsg = key ? renderTemplate(rawMsg, tenant, key) : rawMsg;
         const btnTitle = commentRule.notFollowingButton || "Obuna bo'ldim ✅";
-        
-        // Private Reply orqali Quick Reply tugmali ogohlantirish yuboramiz
         const gateOptions = [{ title: btnTitle, payload: `CHECK_FOLLOW:${commentRule.id}` }];
-        await privateReplyToComment(tenant, comment.id, warnMsg);
-        if (fromId) {
-          await sendDirectQuickReplies(tenant, fromId, warnMsg, gateOptions);
-          onGateBlocked(tenant, commentRule, `ig:${fromId}`, gateOptions);
-        } else {
-          commentRule.stats.gateBlocked = (commentRule.stats.gateBlocked || 0) + 1;
-          persist(tenant);
+        const sent = await privateReplyToComment(tenant, comment.id, warnMsg, gateOptions);
+        console.log(`[IG Follower Gate] tugmali private reply: ${sent && !sent.error ? "OK" : "XATO"}`);
+        if (key) {
+          rememberOptions(tenant, key, gateOptions);
+          if (status === false) onGateBlocked(tenant, commentRule, key, gateOptions);
+          else persist(tenant);
         }
         continue;
       }
