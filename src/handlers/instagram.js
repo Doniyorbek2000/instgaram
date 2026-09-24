@@ -6,7 +6,7 @@ import { findFlowTrigger, aiFlowCandidates, startFlow, pickPublicReply as pickFl
 import { renderTemplate } from "../templating.js";
 import { award, confirmPendingReferral } from "../gamification.js";
 import { processMessage } from "../respond.js";
-import { isActive } from "../subscription.js";
+import { botEnabled } from "../credits.js";
 import { isDuplicate } from "../dedup.js";
 import { fetchAsBase64 } from "../media.js";
 import { persist } from "../db.js";
@@ -228,7 +228,7 @@ export async function handleInstagramEntry(tenant, entry) {
     if (!comment?.id) continue;
     if (comment.from?.id === tenant.meta.igUserId) continue;
     if (isDuplicate(`c:${comment.id}`)) continue;
-    if (!isActive(tenant)) continue;
+    if (!botEnabled(tenant)) continue;
 
     const mediaId = comment.media?.id || "";
     console.log(

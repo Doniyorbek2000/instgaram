@@ -25,6 +25,7 @@ import { contentRouter } from "./web/content_ui.js";
 import { mediaRouter } from "./web/media_ui.js";
 import { aiLearnRouter } from "./web/ai_learn_ui.js";
 import { mcpHandler } from "./mcp.js";
+import { loadPlatformSettings } from "./credits.js";
 import { teamContext } from "./team.js";
 import { telegramRouter } from "./telegram.js";
 import { reportsBotRouter, reportsBotAvailable, setupReportsBotWebhook, checkAndSendDailyReports } from "./reportsBot.js";
@@ -330,6 +331,8 @@ const server = app.listen(config.port, () => {
 
   // Rejalashtirilgan Instagram postlarini nashr qilish — vaqtga aniqroq mos kelishi
   // kerak bo'lgani uchun kunlik hisobotdan tezroq (har 5 daqiqada) tekshiriladi
+  loadPlatformSettings().catch((err) => console.error("[Platforma] sozlamalar:", err.message));
+
   // Eski (maxfiy kalitsiz) Telegram webhook'larini xavfsiz holatga o'tkazamiz
   setTimeout(() => {
     listUsers().then(refreshTelegramWebhooks).catch((err) => console.error("[Telegram] webhook yangilash:", err.message));

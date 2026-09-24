@@ -10,6 +10,7 @@ import { allTags } from "../contacts.js";
 import { ensureFlows } from "../flows.js";
 import { resolveAudience, sanitizeBroadcast, createBroadcast, runBroadcast, allContacts } from "../broadcasts.js";
 import { aiAvailable } from "../ai.js";
+import { isActive } from "../subscription.js";
 
 export const broadcastsRouter = Router();
 
@@ -195,6 +196,7 @@ broadcastsRouter.post("/broadcasts/create", requireAuth, (req, res) => {
     only24h: [].concat(req.body?.only24h || "false")[0],
     media: libItem ? { type: libItem.type, url: libItem.url, name: libItem.name } : null,
   };
+  if (!isActive(user)) return res.redirect("/broadcasts?error=" + encodeURIComponent("Ommaviy xabarlar pullik tariflarda ishlaydi — Obuna & Tariflar sahifasiga o'ting"));
   const data = sanitizeBroadcast(body);
   if (!data.name) return res.redirect("/broadcasts?error=" + encodeURIComponent("Nomini kiriting"));
   if (data.flowId && !ensureFlows(user).list.some((f) => f.id === data.flowId)) data.flowId = "";

@@ -387,6 +387,22 @@ export async function setPlanPrices(prices) {
   return rows[0]?.value || prices;
 }
 
+export async function getPlatformSettings() {
+  if (!pgReady) return {};
+  const { rows } = await pgPool.query("SELECT value FROM platform WHERE key='settings'");
+  return rows[0]?.value || {};
+}
+
+export async function setPlatformSettings(patch) {
+  if (!pgReady) return {};
+  const { rows } = await pgPool.query(
+    `INSERT INTO platform(key, value) VALUES('settings', $1::jsonb)
+     ON CONFLICT (key) DO UPDATE SET value = platform.value || $1::jsonb RETURNING value`,
+    [JSON.stringify(patch || {})]
+  );
+  return rows[0]?.value || {};
+}
+
 export async function getPlatformGeminiKey() {
   if (!pgReady) return process.env.GEMINI_API_KEY || "";
   const { rows } = await pgPool.query("SELECT value FROM platform WHERE key='gemini_key'");

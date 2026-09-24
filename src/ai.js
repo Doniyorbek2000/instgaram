@@ -1,5 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { persist, getPlatformGeminiKey } from "./db.js";
+import { canUseAi, consumeAi, warnCreditsOut } from "./credits.js";
 
 // Global (zaxira) kalitlar — foydalanuvchi o'z kalitini kiritmagan bo'lsa ishlatiladi
 const globalGeminiKey = process.env.GEMINI_API_KEY || "";
@@ -294,6 +295,11 @@ export async function generateReply(tenant, chatKey, { text = "", media = [] } =
   if (provider === "none") {
     return smartFallbackReply(tenant, text);
   }
+  // AI kvotasi/kreditlari tugagan — bot kalit so'z rejimida javob beradi
+  if (!canUseAi(tenant)) {
+    warnCreditsOut(tenant).catch(() => {});
+    return smartFallbackReply(tenant, text);
+  }
 
   tenant.chats ||= {};
   const history = tenant.chats[chatKey] || [];
@@ -306,6 +312,7 @@ export async function generateReply(tenant, chatKey, { text = "", media = [] } =
         : await askClaude(systemPrompt, history, text, media);
 
     if (!reply) return smartFallbackReply(tenant, text);
+    consumeAi(tenant);
 
     const nowIso = new Date().toISOString();
     const summary = text || (media.length ? "[Media xabar]" : "...");
@@ -384,6 +391,8 @@ export async function aiAvailable(tenant) {
 export async function generateText(tenant, systemPrompt, prompt, { maxOutputTokens = 2048, json = false, temperature } = {}) {
   const key = await resolveGeminiKey(tenant);
   if (!key) throw new Error("AI kaliti sozlanmagan. Admin paneldan Gemini kalitini kiriting.");
+  if (!canUseAi(tenant)) throw new Error("AI kreditlari tugadi — Obuna & Tariflar sahifasida kredit paketi oling.");
+  consumeAi(tenant);
   const out = await askGemini(key, systemPrompt, [], prompt, [], { maxOutputTokens, json, temperature, timeoutMs: 30000 });
   if (!json) return out;
   const cleaned = String(out).replace(/^```(?:json)?\s*/i, "").replace(/```\s*$/, "").trim();

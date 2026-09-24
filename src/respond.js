@@ -1,5 +1,5 @@
 import { generateReply } from "./ai.js";
-import { isActive } from "./subscription.js";
+import { botEnabled } from "./credits.js";
 import { notifyHandoff, notifyHotLead } from "./notify.js";
 import { findKeywordRule, aiRules } from "./rules.js";
 import { classifyIntent } from "./ai.js";
@@ -60,7 +60,7 @@ function normOptions(options) {
  */
 export async function processMessage(tenant, channel, chatKey, { text = "", media = [], payload = "", ref = "", profile = {}, messageId = "" }) {
   // 1. Obuna faol emasmi — bot javob bermaydi
-  if (!isActive(tenant)) {
+  if (!botEnabled(tenant)) {
     console.log(
       `[${channel}] ${tenant.businessName}: obuna faol emas — javob berilmadi`
     );

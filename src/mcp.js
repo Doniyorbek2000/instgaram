@@ -15,6 +15,7 @@ import { autoLayout, AI_FLOW_PROMPT } from "./flowTemplates.js";
 import { allTags, displayName, windowStatus, getContactMeta } from "./contacts.js";
 import { allContacts, sanitizeBroadcast, createBroadcast, runBroadcast, resolveAudience } from "./broadcasts.js";
 import { splitKey } from "./outbound.js";
+import { isActive } from "./subscription.js";
 
 export const PROTOCOL_VERSIONS = ["2025-06-18", "2025-03-26", "2024-11-05"];
 const SERVER_INFO = { name: "adm-ai", title: "ADM AI — Instagram/Telegram avtomatlashtirish", version: "1.0.0" };
@@ -264,6 +265,7 @@ export const TOOLS = [
       const data = sanitizeBroadcast({ ...a, only24h: "true" });
       const audience = resolveAudience(t, data.filter).length;
       if (a.dryRun) return { audience };
+      if (!isActive(t)) throw new Error("Broadcasts require a paid plan");
       if (!data.message) throw new Error("message is empty");
       const b = createBroadcast(t, data);
       if (!data.scheduledAt) runBroadcast(t, b.id).catch((err) => console.error("[MCP broadcast]", err.message));

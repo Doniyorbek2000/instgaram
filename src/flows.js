@@ -30,6 +30,7 @@ import { fireEvent } from "./integrations.js";
 import { startHandoff } from "./engagement.js";
 import { sendTelegram } from "./notify.js";
 import * as game from "./gamification.js";
+import { isFlowAllowed } from "./credits.js";
 
 export const TRIGGER_TYPES = {
   keyword: "✉️ Direct'da kalit so'z",
@@ -264,7 +265,8 @@ function triggerMatches(trigger, { text = "", mediaId = "", ref = "" }) {
  * aks holda u AI suhbatni butunlay to'sib qo'yardi.
  */
 export function findFlowTrigger(tenant, type, ctx = {}) {
-  const enabled = ensureFlows(tenant).list.filter((f) => f.enabled && f.start);
+  const all = ensureFlows(tenant).list;
+  const enabled = all.filter((f) => f.enabled && f.start && isFlowAllowed(tenant, f, all));
   const hits = [];
   for (const flow of enabled) {
     for (const trigger of flow.triggers || []) {
@@ -281,8 +283,9 @@ export function findFlowTrigger(tenant, type, ctx = {}) {
 /** AI triggerli flow'lar — ai.classifyIntent'ga beriladigan nomzodlar. */
 export function aiFlowCandidates(tenant, type, mediaId = "") {
   const out = [];
-  for (const flow of ensureFlows(tenant).list) {
-    if (!flow.enabled || !flow.start) continue;
+  const all = ensureFlows(tenant).list;
+  for (const flow of all) {
+    if (!flow.enabled || !flow.start || !isFlowAllowed(tenant, flow, all)) continue;
     for (const trigger of flow.triggers || []) {
       if (trigger.type !== type || trigger.matchType !== "ai") continue;
       if (trigger.mediaId && trigger.mediaId !== "*" && mediaId && trigger.mediaId !== mediaId) continue;
@@ -700,7 +703,7 @@ export async function handleFlowInbound(tenant, key, { text = "", payload = "" }
     const [, flowId, nodeId] = payload.split(":");
     const flow = findFlow(tenant, flowId);
     setSession(tenant, key, null);
-    if (!flow || !flow.enabled) return false;
+    if (!flow || !flow.enabled || !isFlowAllowed(tenant, flow, ensureFlows(tenant).list)) return false;
     if (nodeId === "_end" || !flow.nodes[nodeId]) {
       bumpDaily(tenant, flow, "completed");
       persist(tenant);

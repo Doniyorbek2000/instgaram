@@ -143,12 +143,21 @@ test("juda eskirgan vazifa yuborilmaydi, obunasi tugagan biznesga ham yuborilmay
   await runTenantFollowUps(t, Date.now() + 8 * 60 * 60 * 1000, fakeSend);
   assert.strictEqual(calls, 0);
 
+  // Obuna tugagan va bepul tarif o'chirilgan — yuborilmaydi
+  const { savePlatformSettings } = await import("../src/credits.js");
+  await savePlatformSettings({ freePlan: false });
   const t2 = await newTenant("inactive@x.uz");
   t2.subscription.trialEndsAt = new Date(Date.now() - 86400000).toISOString();
   scheduleFollowUp(t2, { key: "ig:4", kind: "followup", text: "X", delayMin: 1 });
   await runTenantFollowUps(t2, Date.now() + 2 * 60 * 1000, fakeSend);
   assert.strictEqual(calls, 0);
   assert.strictEqual(t2.followUps.length, 0);
+
+  // Bepul tarif yoqilgan — bot (va eslatmalar) ishlashda davom etadi
+  await savePlatformSettings({ freePlan: true });
+  scheduleFollowUp(t2, { key: "ig:4", kind: "followup", text: "X", delayMin: 1 });
+  await runTenantFollowUps(t2, Date.now() + 2 * 60 * 1000, fakeSend);
+  assert.strictEqual(calls, 1);
 });
 
 test("obuna darvozasi eslatma qo'yadi, sovg'a yetkazilgach u bekor bo'lib follow-up qo'yiladi", async () => {

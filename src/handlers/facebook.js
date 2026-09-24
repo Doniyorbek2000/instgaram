@@ -1,6 +1,6 @@
 import { commentReplyText } from "../autoReply.js";
 import { processMessage } from "../respond.js";
-import { isActive } from "../subscription.js";
+import { botEnabled } from "../credits.js";
 import { isDuplicate } from "../dedup.js";
 import { loadAttachments } from "./instagram.js";
 import { findCommentRule, pickPublicReply } from "../rules.js";
@@ -54,7 +54,7 @@ export async function handleFacebookEntry(tenant, entry) {
     if (value?.item !== "comment" || value?.verb !== "add") continue;
     if (value.from?.id === pageId) continue;
     if (isDuplicate(`c:${value.comment_id}`)) continue;
-    if (!isActive(tenant)) continue; // obuna faol emas
+    if (!botEnabled(tenant)) continue; // obuna faol emas
 
     console.log(
       `[FB Komment] ${tenant.businessName}: ${value.from?.name || "?"}: "${value.message}"`
