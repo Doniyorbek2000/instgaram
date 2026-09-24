@@ -152,9 +152,13 @@ async function main() {
         const health = await execCommand(conn, 'curl -s http://localhost:3015/health');
         console.log("Health Check (localhost:3015):\n", health.stdout || health.stderr);
 
-        // Setup Nginx for obunext.uz
+        // Setup Nginx for obunext.uz (preserve SSL if already configured)
         console.log("\n🌐 obunext.uz uchun Nginx sozlanmoqda...");
-        const nginxSetupCmd = `cat << 'EOF' > /etc/nginx/sites-available/obunext.uz
+        const nginxSetupCmd = `if grep -q "ssl_certificate" /etc/nginx/sites-available/obunext.uz 2>/dev/null; then
+    echo "✅ SSL allaqachon sozlangan, Nginx qayta yuklanmoqda..."
+    nginx -t && systemctl reload nginx
+else
+    cat << 'EOF' > /etc/nginx/sites-available/obunext.uz
 server {
     listen 80;
     listen [::]:80;
@@ -179,8 +183,10 @@ server {
     }
 }
 EOF
-ln -sf /etc/nginx/sites-available/obunext.uz /etc/nginx/sites-enabled/
-nginx -t && systemctl reload nginx
+    ln -sf /etc/nginx/sites-available/obunext.uz /etc/nginx/sites-enabled/
+    nginx -t && systemctl reload nginx
+    certbot --nginx -d obunext.uz -d www.obunext.uz --non-interactive --agree-tos -m doniyorbekabdujabborov45@gmail.com --redirect
+fi
 `;
         const nginxSetupRes = await execCommand(conn, nginxSetupCmd);
         console.log("Nginx Setup:\n", nginxSetupRes.stdout || nginxSetupRes.stderr);

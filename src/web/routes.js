@@ -217,11 +217,11 @@ web.get("/dashboard", requireAuth, (req, res) => {
           (h) =>
             `<div style="display:flex; justify-content:space-between; align-items:center; padding:10px; background:#0f172a; border-radius:8px; margin-bottom:8px; border:1px solid rgba(255,255,255,0.05)">
               <div>
-                <b style="color:#fff; font-size:13.5px">${esc(h.channel.toUpperCase())}</b> · <code style="font-size:11.5px">${esc(h.chatKey)}</code>
-                <div style="font-size:11px; color:#64748b">${new Date(h.at).toLocaleString("uz")}</div>
+                <b style="color:#fff; font-size:13.5px">${esc(String(h?.channel || "chat").toUpperCase())}</b> · <code style="font-size:11.5px">${esc(String(h?.chatKey || ""))}</code>
+                <div style="font-size:11px; color:#64748b">${h?.at ? new Date(h.at).toLocaleString("uz") : ""}</div>
               </div>
               <form method="post" action="/handoff/resolve" style="margin:0">
-                <input type="hidden" name="id" value="${esc(h.id)}">
+                <input type="hidden" name="id" value="${esc(String(h?.id || ""))}">
                 <button type="submit" class="secondary" style="margin:0; padding:6px 12px; font-size:12px">Hal qilindi</button>
               </form>
             </div>`
@@ -402,18 +402,23 @@ web.get("/dashboard", requireAuth, (req, res) => {
           ${
             leads.length
               ? leads
-                  .map(
-                    (l) =>
-                      `<div style="display:flex; justify-content:space-between; padding:10px 0; border-bottom:1px solid rgba(255,255,255,0.05); font-size:13px">
+                  .map((l) => {
+                    const ch = String(l?.channel || (l?.key ? l.key.split(":")[0] : "chat")).toUpperCase();
+                    const keyStr = String(l?.chatKey || l?.key || l?.contact || "");
+                    const text = String(l?.lastText || l?.contact || l?.name || "Muloqot");
+                    const timeStr = l?.lastAt || l?.at
+                      ? new Date(l.lastAt || l.at).toLocaleTimeString("uz", { hour: "2-digit", minute: "2-digit" })
+                      : "";
+                    return `<div style="display:flex; justify-content:space-between; padding:10px 0; border-bottom:1px solid rgba(255,255,255,0.05); font-size:13px">
                         <div>
-                          <b style="color:#a78bfa">${esc(l.channel.toUpperCase())}</b> · <code style="font-size:11px">${esc(l.chatKey.slice(0, 14))}</code>
-                          <div style="color:#94a3b8; font-size:12px; margin-top:2px">${esc(l.lastText)}</div>
+                          <b style="color:#a78bfa">${esc(ch)}</b> · <code style="font-size:11px">${esc(keyStr.slice(0, 14))}</code>
+                          <div style="color:#94a3b8; font-size:12px; margin-top:2px">${esc(text)}</div>
                         </div>
                         <div style="text-align:right; color:#64748b; font-size:11px">
-                          ${new Date(l.lastAt).toLocaleTimeString("uz", { hour: "2-digit", minute: "2-digit" })}
+                          ${timeStr}
                         </div>
-                      </div>`
-                  )
+                      </div>`;
+                  })
                   .join("")
               : `<p class="hint">Hali mijozlar murojaat qilmagan.</p>`
           }
