@@ -105,6 +105,7 @@ export async function login(email, password) {
   }
 
   loginAttempts.delete(key);
+  if (user.meta?.blocked) return { error: "Akkaunt vaqtincha bloklangan. Qo'llab-quvvatlash xizmatiga murojaat qiling." };
   const token = await createSession(user.id);
   return { user, token };
 }
@@ -146,7 +147,9 @@ export function parseSid(req) {
 
 /** Kirgan foydalanuvchini req.user ga qo'yadi (bo'lmasa null) */
 export async function attachUser(req, _res, next) {
-  req.user = await getSessionUser(parseSid(req));
+  const user = await getSessionUser(parseSid(req));
+  // Admin bloklagan biznes panelga kira olmaydi
+  req.user = user?.meta?.blocked ? null : user;
   next();
 }
 

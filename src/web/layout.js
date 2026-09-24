@@ -2,6 +2,7 @@ import { logoMark } from "./brand.js";
 import { isAdmin } from "../auth.js";
 import { currentActor, canAccess } from "../team.js";
 import { icon } from "./icons.js";
+import { platformSettings } from "../credits.js";
 
 /** Barcha ilova sahifalari uchun Obunext uslubidagi to'q-binafsha Glassmorphism HTML qobig'i */
 export function page(title, body, { user, active = "" } = {}) {
@@ -272,7 +273,7 @@ ${
               <a class="btn secondary" style="padding:6px 14px; font-size:13px; margin:0; gap:6px" href="/" target="_blank">${icon("globe", { size: 15 })} Sayt</a>
             </div>
           </div>
-          <main class="app">${body}</main>
+          <main class="app">${announcementBanner()}${body}</main>
           <script src="/assets/push-client.js" defer></script>
         </div>
       </div>`
@@ -338,6 +339,15 @@ function navSections(active, admin) {
 
 function sideLink(href, key, iconName, label, active) {
   return `<a href="${href}" class="${active === key ? "active" : ""}"><span class="i">${icon(iconName, { size: 18 })}</span> ${label}</a>`;
+}
+
+/** Admin paneldan berilgan umumiy e'lon (barcha biznes panellarida). */
+function announcementBanner() {
+  const a = platformSettings().announcement;
+  if (!a?.enabled || !a.text) return "";
+  if (a.until && new Date().toISOString().slice(0, 10) > a.until) return "";
+  const cls = a.level === "warn" ? "error" : a.level === "ok" ? "ok" : "info";
+  return `<div class="${cls}" style="margin-bottom:16px">📣 ${esc(a.text)}${a.link ? ` <a href="${esc(a.link)}"${a.link.startsWith("http") ? ' target="_blank" rel="noopener"' : ""}>Batafsil →</a>` : ""}</div>`;
 }
 
 /** HTML belgilarini xavfsiz qiladi (XSS oldini olish) */
