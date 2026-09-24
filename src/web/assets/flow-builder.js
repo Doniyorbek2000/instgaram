@@ -215,6 +215,18 @@
     renderSide();
   }
 
+  /** Mobil: inspektor varag'i blok tanlanganda ochiladi, bo'sh joyga bosilganda yopiladi. */
+  var sheetPinned = false; // "⚙️" orqali ochilgan flow sozlamalari tahrirlash paytida yopilmasin
+  function syncSheet() {
+    side.classList.toggle("open", Boolean(selected || sheetPinned));
+  }
+  var settingsBtn = document.getElementById("fbSettingsBtn");
+  if (settingsBtn) settingsBtn.addEventListener("click", function () {
+    selected = null;
+    sheetPinned = true;
+    renderAll();
+  });
+
   // ---------- sichqoncha / sensor ----------
 
   var drag = null;
@@ -224,8 +236,46 @@
     return { x: (e.clientX - c.left) / view.k, y: (e.clientY - c.top) / view.k };
   }
 
+  // Ikki barmoq bilan zoom (pinch) — sensorli ekranlar uchun
+  var touches = {};
+  var pinch = null;
+  function touchCount() { return Object.keys(touches).length; }
+  function pinchInfo() {
+    var p = Object.keys(touches).map(function (k) { return touches[k]; });
+    return { d: Math.hypot(p[0].x - p[1].x, p[0].y - p[1].y), cx: (p[0].x + p[1].x) / 2, cy: (p[0].y + p[1].y) / 2 };
+  }
+  wrap.addEventListener("pointerdown", function (e) {
+    if (e.pointerType !== "touch") return;
+    touches[e.pointerId] = { x: e.clientX, y: e.clientY };
+    if (touchCount() === 2) {
+      drag = null; // ikkinchi barmoq — sudrash o'rniga zoom
+      edges.querySelectorAll("path.drag").forEach(function (p) { p.remove(); });
+      pinch = pinchInfo();
+    }
+  }, true);
+  wrap.addEventListener("pointermove", function (e) {
+    if (!touches[e.pointerId]) return;
+    touches[e.pointerId] = { x: e.clientX, y: e.clientY };
+    if (pinch && touchCount() === 2) {
+      var now = pinchInfo();
+      if (pinch.d > 0) zoomAt(now.cx, now.cy, now.d / pinch.d);
+      view.x += now.cx - pinch.cx;
+      view.y += now.cy - pinch.cy;
+      applyView();
+      renderEdges();
+      pinch = now;
+    }
+  }, true);
+  function touchEnd(e) {
+    delete touches[e.pointerId];
+    if (touchCount() < 2) pinch = null;
+  }
+  wrap.addEventListener("pointerup", touchEnd, true);
+  wrap.addEventListener("pointercancel", touchEnd, true);
+
   wrap.addEventListener("pointerdown", function (e) {
     if (e.button !== 0) return;
+    if (pinch) return;
     if (e.target.closest(".fb-toolbar, .fb-zoom")) return;
     var port = e.target.closest(".port");
     var nodeEl = e.target.closest(".fb-node");
@@ -248,7 +298,7 @@
   });
 
   wrap.addEventListener("pointermove", function (e) {
-    if (!drag) return;
+    if (!drag || pinch) return;
     if (drag.kind === "node") {
       var n = flow.nodes[drag.id];
       var dx = (e.clientX - drag.sx) / view.k;
@@ -280,8 +330,9 @@
     var d = drag;
     drag = null;
     if (d.kind === "node" && d.moved) markDirty();
-    if (d.kind === "pan" && !d.moved && selected) {
+    if (d.kind === "pan" && !d.moved && (selected || sheetPinned)) {
       selected = null;
+      sheetPinned = false;
       renderAll();
     }
     if (d.kind === "link") {
@@ -530,6 +581,7 @@
 
   function renderSide() {
     side.innerHTML = "";
+    syncSheet();
     if (!selected || !flow.nodes[selected]) {
       renderFlowSettings();
       return;

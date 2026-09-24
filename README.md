@@ -38,6 +38,12 @@ Instagram, Facebook va WhatsApp uchun **veb-platforma ko'rinishidagi AI avtomatl
 | 👋 **Ice Breakers** | Instagram salomlashuv tugmalari API orqali, har biri flow'ga ulanadi |
 | 👥 **Jamoa** | Xodimni havola orqali taklif qilish, rollar: administrator / operator / kuzatuvchi (`/team`) |
 | 🎬 **AI Kontent studiya** | Reels ssenariy, karusel (PNG), post matni, kontent reja, g'oyalar; Reels'dan bir bosishda komment flow (`/content`) |
+| 📎 **Media xabarlar** | Rasm, video, audio, PDF/Office va Instagram postini flow va ommaviy xabarlarda yuborish; media kutubxona (`/media`) |
+| 🪪 **Mijoz kartochkasi** | 24 soatlik oyna holati, teglar, o'zgaruvchilar, eslatma, ballar, arizalar, flow'ni qo'lda ishga tushirish (`/clients/c/...`); CRM va Inbox'da teg/oyna filtrlari |
+| 💼 **Telegram Business** | AI egasining shaxsiy Telegram akkauntidan javob beradi; egasi yozsa bot jim bo'ladi |
+| 🧠 **Instagram'dan o'rganish** | AI profil va postlardan mahsulot, narx, FAQ va yozish uslubini ajratib bilim bazasiga qo'shadi (`/ai-learn`) |
+| 🤖 **Claude (MCP)** | Claude'ni ulab, flow'larni suhbat orqali yaratish/tahrirlash, statistika va ommaviy xabar (`/mcp/<token>`) |
+| 🆓 **Bepul tarif va AI kreditlari** | Oylik AI limiti, Payme orqali kredit paketlari, bepul tarifda flow/qoidalar ishlashda davom etadi |
 
 ## Qanday ishlaydi
 

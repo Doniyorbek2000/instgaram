@@ -271,7 +271,25 @@ flowsRouter.get("/flows/:id", requireAuth, async (req, res) => {
         .ai-btn { font-size:11.5px; padding:3px 9px; margin:4px 0 0; border-radius:7px }
         .fb-zoom { position:absolute; right:12px; bottom:12px; z-index:5; display:flex; gap:4px }
         .fb-zoom button { margin:0; padding:6px 11px }
-        @media (max-width: 960px) { .fb { grid-template-columns: 1fr; height:auto } .fb-canvas-wrap { height:65vh } .fb-side { border-left:0; border-top:1px solid var(--border) } }
+        .fb-mobile-only { display:none }
+        @media (max-width: 960px) {
+          /* Telefonda builder butun ekranni egallaydi (o'z "←" tugmasi bor) */
+          .fb { display:block; position:fixed; inset:0; z-index:30; background:#0a0e18 }
+          .fb-canvas-wrap { height:100%; min-height:0 }
+          .fb-toolbar { flex-wrap:nowrap; overflow-x:auto; right:8px; left:8px; padding-bottom:4px }
+          .fb-add-group { flex-wrap:nowrap }
+          .fb-status { display:none }
+          .fb-mobile-only { display:inline-flex }
+          /* Inspektor — pastdan chiqadigan varaq (bottom sheet) */
+          .fb-side { position:fixed; left:0; right:0; bottom:0; max-height:72vh; z-index:50; border-left:0; border-top:1px solid var(--border);
+            border-radius:18px 18px 0 0; box-shadow:0 -12px 40px rgba(0,0,0,.6); transform:translateY(105%); transition:transform .22s ease; padding-top:22px }
+          .fb-side.open { transform:none }
+          .fb-side::before { content:""; position:absolute; top:8px; left:50%; width:44px; height:5px; margin-left:-22px; border-radius:99px; background:rgba(255,255,255,.25) }
+          .fb-zoom { position:fixed; right:12px; bottom:16px }
+          /* Saqlash va sozlamalar — doim ko'rinadigan joyda (pastki chap burchak) */
+          #fbSave { position:fixed; left:12px; bottom:16px; z-index:6; padding:10px 16px !important; font-size:14px !important }
+          #fbSettingsBtn { position:fixed; left:132px; bottom:16px; z-index:6; padding:10px 14px !important; font-size:14px !important }
+        }
       </style>
       <div class="fb">
         <div class="fb-canvas-wrap" id="fbWrap">
@@ -280,6 +298,7 @@ flowsRouter.get("/flows/:id", requireAuth, async (req, res) => {
             <span class="fb-add-group">
               ${Object.entries(SHORT_LABELS).map(([k, label]) => `<button class="secondary" data-add="${k}" title="${esc(NODE_TYPES[k])} blokini qo'shish">${label}</button>`).join("")}
             </span>
+            <button class="secondary fb-mobile-only" id="fbSettingsBtn" title="Flow sozlamalari">⚙️</button>
             <span class="fb-status" id="fbStatus">Saqlangan</span>
             <button id="fbSave" class="btn">💾 Saqlash</button>
           </div>
