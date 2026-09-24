@@ -1,0 +1,176 @@
+import { generateReply } from "./ai.js";
+import { isActive } from "./subscription.js";
+import { notifyHandoff, notifyHotLead } from "./notify.js";
+import { findKeywordRule } from "./rules.js";
+import { persist } from "./db.js";
+import { runAutomations, rememberOptions, gateMessage, passesGate } from "./automation.js";
+import { fireEvent } from "./integrations.js";
+import { chanShort } from "./outbound.js";
+import {
+  recordMessage,
+  isHandoffRequest,
+  isManual,
+  startHandoff,
+} from "./engagement.js";
+
+const HANDOFF_REPLY =
+  "Iltimos, biroz kuting 🙏 Sizni jonli operatorimizga uladik — tez orada javob berishadi.";
+
+/**
+ * Inbox uchun chat key formatini yaratadi: "kanal:userId"
+ * Bu format inbox.js da kanal va ID ni avtomatik ajratib oladi.
+ */
+function inboxKey(channel, chatKey) {
+  const short = chanShort(channel);
+  // Agar allaqachon "kanal:" prefiksi bo'lsa — qayta qo'shmaylik
+  if (chatKey.startsWith(short + ":")) return chatKey;
+  return `${short}:${chatKey}`;
+}
+
+/** Avtomatik (AI bo'lmagan) javobni Live Inbox'da ko'rinishi uchun suhbat tarixiga yozadi. */
+function logExchange(tenant, fullKey, userText, reply) {
+  tenant.chats ||= {};
+  const list = (tenant.chats[fullKey] ||= []);
+  const at = new Date().toISOString();
+  if (userText) list.push({ role: "user", text: userText, at });
+  if (reply) list.push({ role: "assistant", text: reply, at });
+  tenant.chats[fullKey] = list.slice(-16);
+  persist(tenant);
+}
+
+/** Variantlarni yagona {title, payload|url} ko'rinishiga keltiradi (icebreaker stringlari ham). */
+function normOptions(options) {
+  return (options || [])
+    .map((o) => (typeof o === "string" ? { title: o, payload: o } : o))
+    .filter((o) => o && o.title);
+}
+
+/**
+ * Kiruvchi xabarni to'liq qayta ishlaydi:
+ * obuna tekshiruvi → operator rejimi → handoff → interaktiv avtomatlashtirish
+ * (referal, formalar, geymifikatsiya) → kalit so'z qoidalari → AI javob.
+ *
+ * Qaytaradi: { reply, quickReplies } yoki reply=null (javob yubormaslik kerak).
+ * channel: "instagram" | "facebook" | "whatsapp" | "telegram"
+ * payload — bosilgan tugma qiymati; ref — referal parametri; profile — {username, name}
+ */
+export async function processMessage(tenant, channel, chatKey, { text = "", media = [], payload = "", ref = "", profile = {} }) {
+  // 1. Obuna faol emasmi — bot javob bermaydi
+  if (!isActive(tenant)) {
+    console.log(
+      `[${channel}] ${tenant.businessName}: obuna faol emas — javob berilmadi`
+    );
+    return { reply: null };
+  }
+
+  // Inbox da ko'rsatish uchun kanal prefiksi bilan key
+  const fullKey = inboxKey(channel, chatKey);
+  const isNewContact = !tenant.stats?.customers?.[fullKey];
+  const shownText = text || (payload ? `🔘 ${payload}` : "");
+
+  // 2. Statistika va mijozlar tarixiga yozish
+  recordMessage(tenant, channel, fullKey, shownText);
+  if (isNewContact) fireEvent(tenant, "new_contact", { contact: fullKey, channel, username: profile.username || "", name: profile.name || "" });
+
+  // 3. Chat qo'lda rejimda bo'lsa (operator boshqarmoqda) — bot jim
+  if (isManual(tenant, fullKey)) {
+    console.log(`[${channel}] ${tenant.businessName}: ${fullKey} operator rejimida`);
+    return { reply: null };
+  }
+
+  // 4. Mijoz operatorni chaqirdimi
+  if (isHandoffRequest(text)) {
+    startHandoff(tenant, channel, fullKey);
+    notifyHandoff(tenant, channel, fullKey).catch(() => {});
+    console.log(`[${channel}] ${tenant.businessName}: ${fullKey} operator chaqirdi`);
+    return { reply: HANDOFF_REPLY };
+  }
+
+  // 5. Interaktiv avtomatlashtirish: referal, lid formalari, geymifikatsiya, tugmalar
+  let prefix = "";
+  try {
+    const auto = await runAutomations(tenant, fullKey, { text, payload, ref, profile, isNewContact });
+    if (auto?.reply) {
+      const options = normOptions(auto.options);
+      rememberOptions(tenant, fullKey, options);
+      logExchange(tenant, fullKey, shownText, auto.reply);
+      return { reply: auto.reply, quickReplies: options };
+    }
+    prefix = auto?.prefix || "";
+  } catch (err) {
+    console.error(`[Automation] ${tenant.businessName}: xato:`, err.message);
+  }
+
+  // Tugma bosildi-yu, hech qaysi avtomatlashtirish uni tanimadi (eski tugma va h.k.) —
+  // AI'ga bo'sh matn yubormaymiz.
+  if (!text && !media.length) return { reply: prefix || null };
+
+  // 6. Kalit so'z bo'yicha avtomatlashtirish qoidasi (Rule Engine)
+  const rule = findKeywordRule(tenant, text);
+  if (rule) {
+    console.log(`[${channel}] ${tenant.businessName}: Qoida ishga tushdi ("${rule.name}")`);
+    rule.stats ||= {};
+    rule.stats.triggered = (rule.stats.triggered || 0) + 1;
+    if (rule.privateReply) {
+      const short = chanShort(channel);
+      if (rule.requireFollow && (short === "ig" || short === "tg")) {
+        const ok = await passesGate(tenant, short, fullKey.slice(fullKey.indexOf(":") + 1));
+        if (ok === false) {
+          rule.stats.gateBlocked = (rule.stats.gateBlocked || 0) + 1;
+          const gm = gateMessage(tenant, short, rule);
+          const options = normOptions(gm.options);
+          rememberOptions(tenant, fullKey, options);
+          logExchange(tenant, fullKey, shownText, gm.reply);
+          return { reply: gm.reply, quickReplies: options };
+        }
+      }
+      rule.stats.sent = (rule.stats.sent || 0) + 1;
+      const options = rule.formId ? [{ title: rule.formButton || "📝 Ariza qoldirish", payload: `FORM:${rule.formId}` }] : [];
+      rememberOptions(tenant, fullKey, options);
+      logExchange(tenant, fullKey, shownText, rule.privateReply);
+      return { reply: rule.privateReply, quickReplies: options };
+    }
+  }
+
+  // 7. Harid niyati (Hot Lead / Buyer) yoki Telefon raqam/email qoldirilganda aniqlash
+  const lowerText = text.toLowerCase();
+  const isBuyIntent = ["sotib", "olmoqchi", "zakaz", "buyurtma", "karta", "to'lov", "rekvizit", "dastavka", "olaman"].some((k) => lowerText.includes(k));
+
+  // Telefon raqami tekshiruvi (+998901234567, 90 123 45 67, etc.)
+  const phoneMatch = text.match(/(?:\+?998|8)?[\s-]?\(?\d{2}\)?[\s-]?\d{3}[\s-]?\d{2}[\s-]?\d{2}/);
+  const emailMatch = text.match(/[\w.-]+@[\w.-]+\.[a-z]{2,}/i);
+
+  if (phoneMatch || emailMatch || isBuyIntent) {
+    tenant.leads ||= [];
+    const leadContact = phoneMatch ? phoneMatch[0].trim() : (emailMatch ? emailMatch[0].trim() : "");
+    if (leadContact && !tenant.leads.some((l) => l.key === fullKey && l.contact === leadContact)) {
+      tenant.leads.unshift({
+        id: `lead_${Date.now()}`,
+        key: fullKey,
+        channel,
+        contact: leadContact,
+        lastMessage: text.slice(0, 120),
+        status: "new",
+        createdAt: new Date().toISOString(),
+      });
+      persist(tenant);
+      fireEvent(tenant, "lead", { contact: fullKey, channel, phoneOrEmail: leadContact, message: text.slice(0, 300) });
+    }
+    notifyHotLead(tenant, channel, fullKey, text + (leadContact ? `\n📞 Kontakt: ${leadContact}` : "")).catch(() => {});
+  }
+
+  // 8. AI javob — fullKey bilan saqlanadi (inbox ko'ra olsin)
+  // Mijozning shu chatKey bo'yicha BIRINCHI xabari ekanini generateReply chaqirilishidan
+  // OLDIN aniqlaymiz — chunki generateReply o'zi tarixga yozib qo'yadi.
+  const isFirstMessage = !(tenant.chats?.[fullKey]?.length > 0);
+  let reply = await generateReply(tenant, fullKey, { text, media });
+  if (prefix && reply) reply = `${prefix}\n\n${reply}`;
+
+  // 9. Instagram'da birinchi xabarga — sozlangan bo'lsa — tezkor savol tugmalari qo'shiladi
+  const icebreakers = channel === "instagram" ? (tenant.settings?.icebreakers || []).filter(Boolean) : [];
+  if (isFirstMessage && icebreakers.length) {
+    return { reply, quickReplies: normOptions(icebreakers) };
+  }
+  return { reply };
+
+}

@@ -1,0 +1,29 @@
+{
+  "name": "meta-avtomatlashtirish",
+  "version": "1.0.0",
+  "description": "Instagram, Facebook Messenger va WhatsApp uchun avtomatik javob beruvchi bot (Meta Graph API)",
+  "main": "src/index.js",
+  "type": "module",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "node --watch src/index.js",
+    "test": "node --test test/*.test.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.39.0",
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
+    "mammoth": "^1.12.1",
+    "multer": "^2.2.0",
+    "pdf-parse": "^1.1.1",
+    "pg": ">=8.0.0",
+    "ssh2": "^1.17.0"
+  },
+  "devDependencies": {
+    "sharp": "^0.35.3"
+  },
+  "license": "MIT"
+}

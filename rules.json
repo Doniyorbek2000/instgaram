@@ -1,0 +1,27 @@
+{
+  "defaultReply": "Assalomu alaykum! Xabaringiz uchun rahmat 🙌 Tez orada operatorlarimiz siz bilan bog'lanadi.",
+  "commentReply": "Rahmat! 🙏 Batafsil ma'lumotni Direct'ga yubordik 📩",
+  "commentPrivateReply": "Assalomu alaykum! Kommentingiz uchun rahmat. Sizga qanday yordam bera olamiz?",
+  "rules": [
+    {
+      "keywords": ["narx", "narxi", "qancha", "price", "цена", "сколько"],
+      "reply": "Narxlar bilan tanishish uchun katalogimizni yuboramiz 📋 Qaysi mahsulot qiziqtiryapti?"
+    },
+    {
+      "keywords": ["manzil", "adres", "qayerda", "lokatsiya", "адрес", "где"],
+      "reply": "Manzilimiz: Toshkent sh., Amir Temur ko'chasi 1-uy 📍 Ish vaqti: 9:00–18:00"
+    },
+    {
+      "keywords": ["yetkazib berish", "dostavka", "доставка", "yetkazish"],
+      "reply": "Yetkazib berish xizmatimiz bor 🚚 Toshkent bo'ylab 1 kunda, viloyatlarga 2–3 kunda."
+    },
+    {
+      "keywords": ["salom", "assalomu", "hello", "привет", "salam"],
+      "reply": "Assalomu alaykum! 👋 Sizga qanday yordam bera olamiz?"
+    },
+    {
+      "keywords": ["rahmat", "raxmat", "спасибо", "thanks"],
+      "reply": "Arzimaydi! 😊 Yana savollaringiz bo'lsa, bemalol yozing."
+    }
+  ]
+}
