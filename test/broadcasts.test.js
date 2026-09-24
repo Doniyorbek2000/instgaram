@@ -53,7 +53,7 @@ test("broadcast har bir kontaktga o'zgaruvchilar bilan yuboriladi va natija saql
   const sent = [];
   const fakeSend = async (_t, chan, id, text, options) => { sent.push({ chan, id, text, options }); return chan !== "tg"; };
   await bc.runBroadcast(t, b.id, { send: fakeSend, delayMs: 0 });
-  assert.deepStrictEqual(sent.map((s) => `${s.chan}:${s.id}:${s.text}`).sort(), ["ig:1:Salom, Ali!", "tg:3:Salom, do'stim!"]);
+  assert.deepStrictEqual(sent.map((s) => `${s.chan}:${s.id}:${s.text}`).sort(), ["ig:1:Salom, Ali!\n\n— Chiqish uchun STOP deb yozing", "tg:3:Salom, do'stim!\n\n— Chiqish uchun STOP deb yozing"]);
   assert.deepStrictEqual(sent[0].options, [{ title: "Katalog", url: "https://a.uz" }]);
   assert.strictEqual(b.status, "completed");
   assert.strictEqual(b.total, 2);

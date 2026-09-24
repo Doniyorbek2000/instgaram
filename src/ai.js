@@ -304,16 +304,26 @@ export async function generateReply(tenant, chatKey, { text = "", media = [] } =
 
   tenant.chats ||= {};
   const history = tenant.chats[chatKey] || [];
-  const systemPrompt = buildSystemPrompt(tenant, text, history.length === 0);
+  const { actionsPrompt, extractActions, executeAiActions } = await import("./aiActions.js");
+  const { shopPrompt } = await import("./shop.js");
+  const systemPrompt = buildSystemPrompt(tenant, text, history.length === 0) + shopPrompt(tenant) + actionsPrompt(tenant, chatKey);
 
   try {
-    const reply =
+    let reply =
       provider === "gemini"
         ? await askGemini(geminiKey, systemPrompt, history, text, media)
         : await askClaude(systemPrompt, history, text, media);
 
     if (!reply) return smartFallbackReply(tenant, text);
     consumeAi(tenant);
+    // Yashirin amallar bloki mijozga ketmaydi — ajratib, bajaramiz
+    const parsed = extractActions(reply);
+    reply = parsed.text;
+    if (parsed.actions) {
+      const chanName = { ig: "instagram", fb: "facebook", wa: "whatsapp", tg: "telegram" }[String(chatKey).split(":")[0]] || "";
+      executeAiActions(tenant, chatKey, parsed.actions, { channel: chanName }).catch((err) => console.error("[AI amallar]", err.message));
+    }
+    if (!reply) return smartFallbackReply(tenant, text);
 
     const nowIso = new Date().toISOString();
     const summary = text || (media.length ? "[Media xabar]" : "...");

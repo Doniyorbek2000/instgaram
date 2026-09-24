@@ -193,3 +193,34 @@ test("MCP: xatoli flow yoqilmaydi, get_flow versiyasiz", async () => {
   await tool("set_flow_enabled").run(tenant, { flowId: id, enabled: true });
   assert.strictEqual(findFlow(tenant, id).enabled, true);
 });
+
+test("validateFlow: START noto'g'ri blokda bo'lsa — tuzatish taklifi", async () => {
+  const { buildTemplate } = await import("../src/flowTemplates.js");
+  const f = buildTemplate("plus_gate");
+  assert.deepStrictEqual(validateFlow(f, []).warnings, []);
+  f.start = "m2";
+  const w = validateFlow(f, []).warnings;
+  assert.deepStrictEqual(w[0].fix, { start: "m1" });
+  assert.match(w[0].msg, /START .*#m2.*#m1/);
+});
+
+test("komment trigger: barcha postlar, bitta yoki bir nechta tanlangan post", async () => {
+  const { findFlowTrigger, mediaIdList } = await import("../src/flows.js");
+  const { user: t2 } = await register("posts@test.uz", "parol123", "Posts");
+  const mk = (name, mediaId) => {
+    const f = sanitizeFlow({ name, enabled: true, start: "a", triggers: [{ type: "comment", keyword: "+", matchType: "contains", mediaId }], nodes: [{ id: "a", type: "message", text: "hi" }] });
+    ensureFlows(t2).list.push(f);
+    return f;
+  };
+  assert.deepStrictEqual(mediaIdList("*"), []);
+  assert.deepStrictEqual(mediaIdList("111, 222,111 bad/id"), ["111", "222"]);
+  const all = mk("Hammasi", "");
+  const reels = mk("Reels", "111,222");
+  assert.strictEqual(sanitizeFlow({ triggers: [{ type: "comment", mediaId: " 111 , 222 " }] }).triggers[0].mediaId, "111,222");
+  // Tanlangan post — aniq post uchun flow ustun
+  assert.strictEqual(findFlowTrigger(t2, "comment", { text: "+", mediaId: "222" }).flow.id, reels.id);
+  // Boshqa post — faqat "barcha postlar" flow'i
+  assert.strictEqual(findFlowTrigger(t2, "comment", { text: "+", mediaId: "999" }).flow.id, all.id);
+  all.enabled = false;
+  assert.strictEqual(findFlowTrigger(t2, "comment", { text: "+", mediaId: "999" }), null);
+});

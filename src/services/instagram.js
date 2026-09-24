@@ -110,6 +110,29 @@ export async function privateReplyToComment(tenant, commentId, text, quickReplie
 }
 
 /**
+ * Doimiy menyu (Persistent Menu) — Direct'ning pastki qismidagi menyu.
+ * items: [{ title, payload } | { title, url }] (5 tagacha). Bo'sh ro'yxat — o'chiradi.
+ * platform: "instagram" (IG token) yoki "messenger" (Facebook sahifa tokeni).
+ */
+export async function setPersistentMenu(tenant, items = [], platform = "instagram") {
+  const token = platform === "instagram" ? igToken(tenant) : tenant?.meta?.pageAccessToken || "";
+  if (!token) return { error: { message: platform === "instagram" ? "Instagram ulanmagan" : "Facebook sahifa ulanmagan" } };
+  const list = (items || []).filter((i) => i && i.title).slice(0, 5).map((i) =>
+    i.url
+      ? { type: "web_url", title: String(i.title).slice(0, 30), url: String(i.url) }
+      : { type: "postback", title: String(i.title).slice(0, 30), payload: String(i.payload || i.title).slice(0, 1000) }
+  );
+  const extra = platform === "instagram" ? { platform: "instagram" } : {};
+  if (!list.length) {
+    return platform === "instagram"
+      ? igGraphDelete("me/messenger_profile", { fields: ["persistent_menu"], platform: "instagram" }, token)
+      : { ok: true }; // Messenger'da bo'sh menyu yuborilmaydi — eski menyu sahifa sozlamasidan o'chiriladi
+  }
+  const body = { ...extra, persistent_menu: [{ locale: "default", composer_input_disabled: false, call_to_actions: list }] };
+  return platform === "instagram" ? igGraphPost("me/messenger_profile", body, token) : graphPost("me/messenger_profile", body, token);
+}
+
+/**
  * Instagram "Salomlashuv tugmalari" (Ice Breakers) — mijoz birinchi marta Direct
  * ochganda, hali hech narsa yozmasidan OLDIN ko'rinadigan savollar.
  * items: [{ question, payload }] (maksimal 4 ta). Bo'sh ro'yxat — o'chiradi.
@@ -132,11 +155,14 @@ export async function setIceBreakers(tenant, items = []) {
 }
 
 /** Instagram Direct (DM) xabariga oddiy matnli javob yuboradi. */
-export async function sendDirectMessage(tenant, igsid, text) {
+export async function sendDirectMessage(tenant, igsid, text, { humanAgent = false } = {}) {
   const token = igToken(tenant);
   if (!token || !igsid || !text) return null;
 
   const payload = { recipient: { id: igsid }, message: { text: String(text) } };
+  // Operator (inson) javobi: 24 soatdan keyin 7 kungacha Meta HUMAN_AGENT belgisiga ruxsat beradi.
+  // Faqat Inbox'dan qo'lda yozilgan javoblar uchun — avtomatik xabarlarda ishlatilmaydi.
+  if (humanAgent) Object.assign(payload, { messaging_type: "MESSAGE_TAG", tag: "HUMAN_AGENT" });
 
   const res1 = await igGraphPost("me/messages", payload, token);
   if (res1 && !res1.error) return res1;
@@ -388,11 +414,13 @@ export async function createCarouselContainer(tenant, { mediaUrls, caption = "" 
 }
 
 /** Akkauntning so'nggi postlari — "Tasodifiy G'olib" uchun post tanlash ro'yxati. */
-export function getRecentMedia(tenant, limit = 12) {
+export function getRecentMedia(tenant, limit = 12, after = "") {
   const igUserId = tenant?.meta?.igUserId;
   const token = igToken(tenant);
   if (!igUserId || !token) return Promise.resolve({ error: { message: "Instagram ulanmagan" } });
-  return igGraphGet(`${igUserId}/media`, { fields: "id,caption,thumbnail_url,media_type,permalink,timestamp", limit }, token);
+  const params = { fields: "id,caption,thumbnail_url,media_url,media_type,media_product_type,permalink,timestamp", limit };
+  if (after) params.after = after;
+  return igGraphGet(`${igUserId}/media`, params, token);
 }
 
 /** Bitta post ostidagi kommentlar ro'yxati — g'olibni tasodifiy tanlash uchun. Javob: { data: [...] }. */

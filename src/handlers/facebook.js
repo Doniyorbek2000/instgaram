@@ -1,5 +1,5 @@
 import { commentReplyText } from "../autoReply.js";
-import { processMessage } from "../respond.js";
+import { processMessage, commentAiReply } from "../respond.js";
 import { botEnabled } from "../credits.js";
 import { isDuplicate } from "../dedup.js";
 import { loadAttachments } from "./instagram.js";
@@ -75,9 +75,7 @@ export async function handleFacebookEntry(tenant, entry) {
       const priv = await privateReplyToFacebookComment(tenant, value.comment_id, privateText);
       console.log(`[FB Komment] Messenger shaxsiy javob: ${priv ? "OK" : "XATO"}`);
     } else if (value.message) {
-      const { reply } = await processMessage(tenant, "facebook", `comment:${value.from?.id || value.comment_id}`, {
-        text: value.message,
-      });
+      const reply = value.from?.id ? await commentAiReply(tenant, "facebook", value.from.id, value.message) : "";
       if (reply) await privateReplyToFacebookComment(tenant, value.comment_id, reply);
     }
   }

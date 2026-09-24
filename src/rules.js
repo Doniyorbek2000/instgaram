@@ -145,7 +145,8 @@ export function matchesRule(rule, text) {
 }
 
 function targetsMedia(rule, mediaId) {
-  return !rule.targetMediaId || rule.targetMediaId === "*" || !mediaId || rule.targetMediaId === mediaId;
+  const ids = String(rule.targetMediaId || "").split(/[\s,]+/).filter((x) => x && x !== "*");
+  return !ids.length || !mediaId || ids.includes(String(mediaId));
 }
 
 /** Komment yozilganda mos keluvchi qoidani topadi (post ID va kalit so'z bo'yicha) */

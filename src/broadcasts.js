@@ -9,7 +9,8 @@
  */
 import crypto from "node:crypto";
 import { persist, listUsers } from "./db.js";
-import { sendReply, sendMedia, splitKey } from "./outbound.js";
+import { sendReply, sendMedia, splitKey, isInternalKey } from "./outbound.js";
+import { trackedUrl } from "./links.js";
 import { sanitizeMedia } from "./mediaStore.js";
 import { renderTemplate } from "./templating.js";
 import { getContactMeta, lastInboundAt } from "./contacts.js";
@@ -29,7 +30,7 @@ export function allContacts(tenant) {
     ...Object.keys(tenant.stats?.customers || {}),
     ...Object.keys(tenant.contactMeta || {}),
   ]);
-  return [...keys].filter((k) => CHANNELS.has(splitKey(k).chan) && k.indexOf(":") > 0 && splitKey(k).id);
+  return [...keys].filter((k) => CHANNELS.has(splitKey(k).chan) && k.indexOf(":") > 0 && splitKey(k).id && !isInternalKey(k));
 }
 
 export { lastInboundAt };
@@ -47,16 +48,22 @@ export function resolveAudience(tenant, filter = {}, now = Date.now()) {
 
   return allContacts(tenant).filter((key) => {
     const { chan } = splitKey(key);
-    if (channel && chan !== channel) return false;
+    const fields = tenant.contactMeta?.[key]?.fields || {};
+    // SMS / Email kanali — kanal emas, kontaktning telefon/email maydoni bo'yicha
+    if (channel === "sms" && !fields.phone) return false;
+    if (channel === "email" && !fields.email) return false;
+    if (channel && channel !== "sms" && channel !== "email" && chan !== channel) return false;
     const have = getContactMeta(tenant, key).tags;
     if (tags.length) {
       const ok = tagMode === "all" ? tags.every((t) => have.includes(t)) : tags.some((t) => have.includes(t));
       if (!ok) return false;
     }
     if (exclude.some((t) => have.includes(t))) return false;
+    // STOP yozgan mijozlarga ommaviy xabar yuborilmaydi
+    if (tenant.contactMeta?.[key]?.optOut) return false;
     // Meta (Instagram, Messenger, WhatsApp) erkin xabarni faqat mijoz oxirgi 24 soatda
     // yozgan bo'lsa qabul qiladi. Telegram'da bunday cheklov yo'q.
-    if (only24h && chan !== "tg" && now - lastInboundAt(tenant, key) > WINDOW_MS) return false;
+    if (only24h && chan !== "tg" && channel !== "sms" && channel !== "email" && now - lastInboundAt(tenant, key) > WINDOW_MS) return false;
     return true;
   });
 }
@@ -81,12 +88,13 @@ export function sanitizeBroadcast(body = {}) {
     media: sanitizeMedia(body.media),
     buttons,
     filter: {
-      channel: ["ig", "fb", "wa", "tg"].includes(body.channel) ? body.channel : "all",
+      channel: ["ig", "fb", "wa", "tg", "sms", "email"].includes(body.channel) ? body.channel : "all",
       tags: tagList(body.tags),
       tagMode: body.tagMode === "all" ? "all" : "any",
       excludeTags: tagList(body.excludeTags),
       only24h: body.only24h !== "false",
     },
+    stopFooter: body.stopFooter !== "false" && body.stopFooter !== false,
     scheduledAt: Number.isFinite(scheduledAt) && scheduledAt > Date.now() + 30000 ? new Date(scheduledAt).toISOString() : "",
   };
 }
@@ -138,13 +146,21 @@ export async function runBroadcast(tenant, broadcastId, { send = sendReply, send
       const { chan, id } = splitKey(key);
       try {
         let ok;
-        if (flow) {
+        if (b.filter?.channel === "sms" || b.filter?.channel === "email") {
+          const { sendSms, sendEmail } = await import("./messaging.js");
+          const fields = tenant.contactMeta?.[key]?.fields || {};
+          const text = renderTemplate(b.message, tenant, key) + (b.filter.channel === "sms" ? "" : "\n\n—\nObunadan chiqish uchun bizga STOP deb yozing.");
+          const r = b.filter.channel === "sms" ? await sendSms(tenant, fields.phone, text) : await sendEmail(tenant, fields.email, b.name || tenant.businessName, text);
+          ok = r.ok;
+        } else if (flow) {
           const { startFlow } = await import("./flows.js");
           const r = await startFlow(tenant, key, flow, send === sendReply ? {} : { send: async (m) => send(tenant, chan, id, m.text, m.options) });
           ok = r.status !== "empty";
         } else {
           if (b.media) await sendMediaFn(tenant, chan, id, b.media);
-          ok = b.message ? await send(tenant, chan, id, renderTemplate(b.message, tenant, key), b.buttons || []) : Boolean(b.media);
+          const buttons = (b.buttons || []).map((x) => (x.url ? { ...x, url: trackedUrl(tenant, x.url, { key, title: x.title, source: `broadcast:${b.id}` }) } : x));
+          const footer = b.stopFooter === false ? "" : "\n\n— Chiqish uchun STOP deb yozing";
+          ok = b.message ? await send(tenant, chan, id, renderTemplate(b.message, tenant, key) + footer, buttons) : Boolean(b.media);
         }
         if (ok) b.sentCount++;
         else b.failedCount++;

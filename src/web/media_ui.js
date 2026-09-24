@@ -37,15 +37,19 @@ mediaRouter.get("/media/library", requireAuth, (req, res) => {
 });
 
 mediaRouter.get("/media/ig-posts", requireAuth, async (req, res) => {
-  const r = await getRecentMedia(req.user, 24);
+  const after = /^[\w=-]{1,400}$/.test(String(req.query.after || "")) ? String(req.query.after) : "";
+  const r = await getRecentMedia(req.user, 30, after);
   if (!r || r.error) return res.json({ ok: false, error: r?.error?.message || "Instagram postlarini olib bo'lmadi", items: [] });
   res.json({
     ok: true,
+    next: r.paging?.next ? r.paging?.cursors?.after || "" : "",
     items: (r.data || []).map((m) => ({
       id: m.id,
       caption: String(m.caption || "").slice(0, 120),
-      thumb: m.thumbnail_url || "",
+      // Video/Reels uchun muqova, rasm/karusel uchun rasmning o'zi
+      thumb: m.thumbnail_url || (m.media_type !== "VIDEO" ? m.media_url || "" : ""),
       type: m.media_type,
+      reels: m.media_product_type === "REELS",
       permalink: m.permalink || "",
       at: m.timestamp,
     })),

@@ -5,6 +5,7 @@
  *  - Kartochka: 24 soatlik oyna holati, teglar, o'zgaruvchilar, eslatma, ballar,
  *    arizalar, faol flow, flow'ni qo'lda ishga tushirish, so'nggi xabarlar
  */
+import { ensureSequences, subscriptionsOf, subscribe, unsubscribe } from "../sequences.js";
 import { Router } from "express";
 import { requireAuth } from "../auth.js";
 import { page, esc } from "./layout.js";
@@ -274,15 +275,31 @@ contactsRouter.get("/clients/c/:key", requireAuth, (req, res) => {
                 ${brandIcon(CHAN[chan][0], { size: 15 })} ${esc(CHAN[chan][1])} · ID ${esc(id)}
                 ${profile.username && chan === "ig" ? ` · <a href="https://instagram.com/${esc(profile.username)}" target="_blank" rel="noopener">@${esc(profile.username)} ↗</a>` : ""}
               </div>
-              <div style="margin-top:6px">${winBadge(win)} ${manual ? `<span style="color:#f87171; font-weight:700; font-size:12px">· 👤 Operator rejimi</span>` : ""}</div>
+              <div style="margin-top:6px">${winBadge(win)} ${manual ? `<span style="color:#f87171; font-weight:700; font-size:12px">· 👤 Operator rejimi</span>` : ""} ${meta.optOut ? `<span style="color:#fbbf24; font-weight:700; font-size:12px">· 🚫 Ommaviy xabarlardan chiqqan</span>` : ""}</div>
             </div>
             <div style="display:flex; gap:8px; flex-wrap:wrap">
               <form method="post" action="${cardUrl(key)}/ai" style="margin:0">
                 <input type="hidden" name="on" value="${meta.aiOff ? "1" : "0"}">
                 <button class="secondary" style="margin:0; ${meta.aiOff ? "color:#f87171" : "color:#34d399"}">${meta.aiOff ? "🧠 AI shu chatda o'chiq — yoqish" : "🧠 AI yoqilgan — o'chirish"}</button>
               </form>
+              <form method="post" action="${cardUrl(key)}/optout" style="margin:0">
+                <input type="hidden" name="out" value="${meta.optOut ? "0" : "1"}">
+                <button class="secondary" style="margin:0" title="Ommaviy xabarlar va ketma-ketliklar">${meta.optOut ? "📣 Ommaviy xabarlarga qaytarish" : "🚫 Ommaviy xabarlardan chiqarish"}</button>
+              </form>
               <a class="btn" href="/inbox?chat=${encodeURIComponent(key)}" style="margin:0">💬 Suhbatni ochish</a>
             </div>
+          </div>
+
+          <div class="card">
+            <h3 style="margin-top:0">📅 Ketma-ketliklar</h3>
+            ${subscriptionsOf(u, key).map((x) => `<div style="display:flex; justify-content:space-between; align-items:center; gap:8px; padding:6px 0; border-bottom:1px solid var(--border); font-size:13.5px">
+                <span><b>${esc(x.seq.name)}</b> <span class="hint">· ${x.step + 1}/${x.seq.steps.length}-qadam · ${esc(new Date(x.nextAt).toLocaleString("uz-UZ", { timeZone: u.settings?.timezone || "Asia/Tashkent" }).slice(0, 17))}</span></span>
+                <form method="post" action="${cardUrl(key)}/sequence" style="margin:0"><input type="hidden" name="remove" value="${esc(x.seq.id)}"><button class="secondary" style="margin:0; padding:3px 10px; font-size:12px; color:#f87171">Chiqarish</button></form>
+              </div>`).join("") || `<p class="hint" style="margin:0 0 8px">Hech qaysi ketma-ketlikda emas</p>`}
+            ${ensureSequences(u).list.length ? `<form method="post" action="${cardUrl(key)}/sequence" style="display:flex; gap:8px; margin:10px 0 0">
+              <select name="add" style="margin:0">${ensureSequences(u).list.map((q) => `<option value="${esc(q.id)}">${esc(q.name)}${q.enabled ? "" : " (o'chiq)"}</option>`).join("")}</select>
+              <button class="secondary" style="margin:0; white-space:nowrap">+ Qo'shish</button>
+            </form>` : `<a href="/sequences" class="hint">Ketma-ketlik yaratish →</a>`}
           </div>
 
           <div class="card">
@@ -375,6 +392,18 @@ function withContact(handler) {
 }
 
 const back = (req, key, extra = "saved=1") => safeBack(req.body?.back, `${cardUrl(key)}?${extra}`);
+
+contactsRouter.post("/clients/c/:key/sequence", requireAuth, withContact((req, res, key) => {
+  if (req.body?.remove) unsubscribe(req.user, key, String(req.body.remove));
+  if (req.body?.add) subscribe(req.user, key, String(req.body.add));
+  res.redirect(cardUrl(key));
+}));
+
+contactsRouter.post("/clients/c/:key/optout", requireAuth, withContact(async (req, res, key) => {
+  const { setOptOut } = await import("../optout.js");
+  setOptOut(req.user, key, req.body?.out === "1");
+  res.redirect(cardUrl(key));
+}));
 
 contactsRouter.post("/clients/c/:key/tags", requireAuth, withContact((req, res, key) => {
   if (req.body?.remove) removeTag(req.user, key, req.body.remove);

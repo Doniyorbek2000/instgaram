@@ -73,6 +73,14 @@ export async function processMessage(tenant, channel, chatKey, { text = "", medi
 
   // Instagram salomlashuv tugmasi (ice breaker) bosildi — savol matni mijoz
   // xabari sifatida ishlanadi (AI yoki kalit so'z qoidasi javob beradi)
+  if (payload?.startsWith("MENU:")) {
+    // Doimiy menyudagi "AI javob beradi" bandi — sarlavhasi mijoz savoli sifatida
+    const item = tenant.settings?.persistentMenu?.[Number(payload.slice(5))];
+    if (item?.title) {
+      text = item.title;
+      payload = "";
+    }
+  }
   if (payload?.startsWith("IB:")) {
     const ib = tenant.settings?.icebreakers?.[Number(payload.slice(3))];
     const question = typeof ib === "string" ? ib : ib?.question;
@@ -103,6 +111,30 @@ export async function processMessage(tenant, channel, chatKey, { text = "", medi
     notifyHandoff(tenant, channel, fullKey).catch(() => {});
     console.log(`[${channel}] ${tenant.businessName}: ${fullKey} operator chaqirdi`);
     return { reply: HANDOFF_REPLY };
+  }
+
+  // 4b. Ommaviy xabarlardan chiqish / qaytish (STOP / START) — Meta siyosati talabi
+  if (text && !payload) {
+    const { handleOptOutText } = await import("./optout.js");
+    const opt = await handleOptOutText(tenant, fullKey, text);
+    if (opt) {
+      fireEvent(tenant, "opt_out", { contact: fullKey, channel, subscribed: !tenant.contactMeta?.[fullKey]?.optOut });
+      logExchange(tenant, fullKey, shownText, opt.reply);
+      return { reply: opt.reply };
+    }
+  }
+
+  // 4c. Do'kon tugmalari: katalog, "🛒 Buyurtma"
+  if (payload?.startsWith("SHOP:")) {
+    const { handleShopPayload } = await import("./shop.js");
+    const r = await handleShopPayload(tenant, fullKey, payload);
+    if (r) {
+      const options = normOptions(r.options);
+      rememberOptions(tenant, fullKey, options);
+      if (r.reply) logExchange(tenant, fullKey, shownText, r.reply);
+      persist(tenant);
+      return { reply: r.reply, quickReplies: options };
+    }
   }
 
   // 5a. Flow builder: tugma bosilishi, "ma'lumot yig'ish" blokiga javob,
@@ -219,8 +251,23 @@ export async function processMessage(tenant, channel, chatKey, { text = "", medi
       });
       persist(tenant);
       fireEvent(tenant, "lead", { contact: fullKey, channel, phoneOrEmail: leadContact, message: text.slice(0, 300) });
+      const { autoPushCrm } = await import("./crm.js");
+      autoPushCrm(tenant, "leads", {
+        key: fullKey, phone: phoneMatch ? leadContact : "", email: emailMatch && !phoneMatch ? leadContact : "",
+        name: tenant.contactMeta?.[fullKey]?.fields?.name || "", note: text.slice(0, 500),
+      });
     }
     notifyHotLead(tenant, channel, fullKey, text + (leadContact ? `\n📞 Kontakt: ${leadContact}` : "")).catch(() => {});
+  }
+
+  // 7b. "katalog" deb yozsa — mahsulotlar karuseli (katalog to'ldirilgan bo'lsa)
+  if (/^(katalog|каталог|catalog|menyu|меню|menu|mahsulotlar|товары|products)[!?.]*$/i.test(text.trim())) {
+    const { activeProducts, sendCatalog } = await import("./shop.js");
+    if (activeProducts(tenant).length) {
+      await sendCatalog(tenant, fullKey);
+      logExchange(tenant, fullKey, shownText, "🛍️ Katalog yuborildi");
+      return { reply: null };
+    }
   }
 
   // 8a. AI avtomatik javob o'chirilgan (umumiy, kanal, jadval yoki shu chat uchun) —
@@ -258,4 +305,24 @@ export async function processMessage(tenant, channel, chatKey, { text = "", medi
   }
   return { reply };
 
+}
+
+/**
+ * Kommentga Direct'da yuboriladigan AI shaxsiy javobi (private reply matni).
+ * Suhbat mijozning haqiqiy chatiga (masalan "ig:<id>") yoziladi — Inbox va CRM'da
+ * shu odam ostida ko'rinadi. AI o'chiq bo'lsa yoki bot faol bo'lmasa "" qaytadi.
+ */
+export async function commentAiReply(tenant, channel, fromId, commentText) {
+  const text = String(commentText || "").trim();
+  if (!fromId || !text || !botEnabled(tenant)) return "";
+  const fullKey = inboxKey(channel, String(fromId));
+  if (isManual(tenant, fullKey)) return "";
+  if (!aiAllowed(tenant, chanShort(channel), fullKey).allowed) return "";
+  recordMessage(tenant, channel, fullKey, `💬 Komment: ${text}`);
+  const before = tenant.chats?.[fullKey]?.length || 0;
+  const reply = await generateReply(tenant, fullKey, { text });
+  // AI bo'lmagan zaxira javob tarixga o'zi yozilmaydi — Inbox'da ko'rinishi uchun yozamiz
+  if ((tenant.chats?.[fullKey]?.length || 0) === before) logExchange(tenant, fullKey, `💬 Komment: ${text}`, reply || "");
+  persist(tenant);
+  return reply || "";
 }

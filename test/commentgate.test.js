@@ -162,3 +162,30 @@ test("Tezkor qoida (obuna shart): bitta tugmali private reply, bosilganda tekshi
   const direct = sentTexts().find((b) => b.recipient.comment_id);
   assert.match(direct.message.text, /example\.uz\/kurs/);
 });
+
+test("qoidasiz kommentga AI javobi mijozning o'z chatiga yoziladi, \"comment:\" mijoz paydo bo'lmaydi", async () => {
+  ensureFlows(tenant).list = [];
+  tenant.rules = [];
+  calls = [];
+  await comment("u9", "Narxi qancha?");
+  const dm = sentTexts().find((b) => b.recipient.comment_id);
+  assert.ok(dm && dm.message.text, "private reply yuborildi");
+  assert.ok(tenant.chats["ig:u9"]?.length, "suhbat ig:u9 ostida");
+  assert.ok(!Object.keys(tenant.chats).some((k) => k.includes("comment:")));
+  assert.ok(!Object.keys(tenant.stats.customers).some((k) => k.includes("comment:")));
+});
+
+test("eski \"ig:comment:*\" yozuvlar tozalanadi va ro'yxatlarda ko'rinmaydi", async () => {
+  const { purgeInternalKeys, isInternalKey } = await import("../src/outbound.js");
+  const { allContacts } = await import("../src/broadcasts.js");
+  tenant.chats["ig:comment:1784"] = [{ role: "user", text: "eski", at: new Date().toISOString() }];
+  tenant.stats.customers["ig:comment:1784"] = true;
+  tenant.contactMeta["fb:comment:55"] = { tags: [] };
+  tenant.leads = [...(tenant.leads || []), { chatKey: "ig:comment:1784", channel: "instagram" }];
+  assert.ok(isInternalKey("ig:comment:1784") && isInternalKey("comment:1") && !isInternalKey("ig:1784"));
+  assert.ok(!allContacts(tenant).some((k) => k.includes("comment:")), "CRM/ommaviy xabarda ko'rinmaydi");
+  assert.strictEqual(purgeInternalKeys(tenant), 4);
+  assert.ok(!tenant.chats["ig:comment:1784"] && !tenant.stats.customers["ig:comment:1784"] && !tenant.contactMeta["fb:comment:55"]);
+  assert.ok(tenant.chats["ig:u9"], "haqiqiy mijozlar joyida");
+  assert.strictEqual(purgeInternalKeys(tenant), 0);
+});

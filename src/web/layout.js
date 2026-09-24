@@ -16,6 +16,11 @@ export function page(title, body, { user, active = "" } = {}) {
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>${esc(title)} — Obunext Automation Studio</title>
 <link rel="icon" href="/favicon.png" type="image/png">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<meta name="theme-color" content="#7c3aed">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Obunext">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
@@ -262,11 +267,13 @@ ${
           <div class="topbar">
             <h1>${esc(title)}</h1>
             <div class="topbar-right">
+              <button type="button" class="btn secondary" id="obxPush" style="padding:6px 12px; font-size:13px; margin:0; display:none" title="Telefoningiz yoki kompyuteringizda bildirishnoma: operator chaqirildi, yangi lid, buyurtma">🔔 Bildirishnoma</button>
               <div class="status-tag"><span class="dot"></span> Tizim Faol</div>
               <a class="btn secondary" style="padding:6px 14px; font-size:13px; margin:0; gap:6px" href="/" target="_blank">${icon("globe", { size: 15 })} Sayt</a>
             </div>
           </div>
           <main class="app">${body}</main>
+          <script src="/assets/push-client.js" defer></script>
         </div>
       </div>`
     : `<header class="pub">
@@ -302,6 +309,9 @@ const NAV = [
   ["O'sish", [
     ["/game", "game", "trophy", "Geymifikatsiya"],
     ["/broadcasts", "broadcasts", "megaphone", "Ommaviy xabarlar"],
+    ["/sequences", "sequences", "calendar", "Ketma-ketliklar"],
+    ["/shop", "shop", "card", "Do'kon"],
+    ["/growth-tools", "growth-tools", "grid", "QR va vidjet"],
     ["/content", "content", "film", "AI Kontent studiya"],
     ["/growth", "growth", "trending", "O'sish vositalari"],
     ["/scheduler", "scheduler", "calendar", "Scheduler"],

@@ -62,7 +62,7 @@ function questionFor(field) {
   return { text: q + hint, options: field.required === false ? [{ title: "⏭ O'tkazib yuborish", payload: "FORMSKIP" }] : [] };
 }
 
-function normalizePhone(raw) {
+export function normalizePhone(raw) {
   const digits = String(raw || "").replace(/\D/g, "");
   if (digits.length === 9) return "+998" + digits;
   if (digits.length === 12 && digits.startsWith("998")) return "+" + digits;
@@ -201,6 +201,12 @@ function finishForm(tenant, key, form, s) {
   persist(tenant);
 
   fireEvent(tenant, "form_submitted", { form: form.name, contact: key, channel: sub.channel, ...s.answers });
+  import("./crm.js").then(({ autoPushCrm }) =>
+    autoPushCrm(tenant, "forms", {
+      key, title: `${form.name}: ${s.name || s.phone || key}`, name: s.name, phone: s.phone, email: s.email,
+      note: Object.entries(s.answers).map(([k, v]) => `${k}: ${v}`).join("\n"), tags: [form.tag].filter(Boolean),
+    })
+  ).catch(() => {});
 
   const chatId = tenant.settings?.telegramChatId;
   if (chatId && form.notify !== false) {

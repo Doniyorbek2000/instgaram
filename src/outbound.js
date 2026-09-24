@@ -33,6 +33,38 @@ export function splitKey(fullKey) {
   return { chan: s.slice(0, i), id: s.slice(i + 1) };
 }
 
+/**
+ * Ichki (mijoz bo'lmagan) kalitmi: eski versiyalar komment AI javobi tarixini
+ * "comment:<id>" / "ig:comment:<id>" kaliti bilan saqlagan — ular Inbox, CRM va
+ * ommaviy xabarlarda ko'rinmasligi kerak.
+ */
+export function isInternalKey(key) {
+  const s = String(key || "");
+  return s.startsWith("comment:") || /^[a-z]{2}:comment:/.test(s);
+}
+
+/**
+ * Bazadan ichki "comment:" yozuvlarini o'chiradi (suhbatlar, statistika, CRM, lidlar).
+ * Qaytaradi: o'chirilgan yozuvlar soni (0 — o'zgarish yo'q).
+ */
+export function purgeInternalKeys(tenant) {
+  let removed = 0;
+  for (const obj of [tenant.chats, tenant.stats?.customers, tenant.contactMeta]) {
+    for (const k of Object.keys(obj || {})) {
+      if (isInternalKey(k)) {
+        delete obj[k];
+        removed++;
+      }
+    }
+  }
+  if (Array.isArray(tenant.leads)) {
+    const before = tenant.leads.length;
+    tenant.leads = tenant.leads.filter((l) => !isInternalKey(l?.chatKey) && !isInternalKey(l?.key));
+    removed += before - tenant.leads.length;
+  }
+  return removed;
+}
+
 /** WhatsApp/matnli kanallar uchun variantlarni raqamlangan ro'yxatga aylantiradi. */
 export function optionsAsText(text, options = []) {
   const payloadOpts = options.filter((o) => !o.url);
@@ -205,6 +237,58 @@ export async function sendReply(tenant, channel, recipientId, text, options = []
     return Boolean(r && !r.error);
   } catch (err) {
     console.error(`[Outbound] ${chan}:${recipientId} ga yuborishda xato:`, err.message);
+    return false;
+  }
+}
+
+/**
+ * Mahsulot kartochkalari (karusel): Instagram/Messenger — generic template (10 tagacha),
+ * Telegram — rasm + tugma, WhatsApp — raqamli ro'yxat.
+ * items: [{ title, subtitle, image, buttons: [{ title, payload } | { title, url }] }]
+ */
+export async function sendCarousel(tenant, channel, recipientId, items = []) {
+  const chan = chanShort(channel);
+  const list = (items || []).filter((x) => x && x.title).slice(0, 10);
+  if (!list.length) return false;
+  try {
+    if (chan === "ig" || chan === "fb") {
+      const elements = list.map((it) => ({
+        title: String(it.title).slice(0, 80),
+        ...(it.subtitle ? { subtitle: String(it.subtitle).slice(0, 80) } : {}),
+        ...(it.image && /^https:\/\//i.test(it.image) ? { image_url: it.image } : {}),
+        buttons: (it.buttons || []).slice(0, 3).map((b) =>
+          b.url ? { type: "web_url", url: b.url, title: String(b.title).slice(0, 20) } : { type: "postback", payload: String(b.payload).slice(0, 1000), title: String(b.title).slice(0, 20) }
+        ),
+      }));
+      const body = { recipient: { id: recipientId }, message: { attachment: { type: "template", payload: { template_type: "generic", elements } } } };
+      const r = chan === "ig"
+        ? await igGraphPost("me/messages", body, tenant.meta?.igAccessToken || tenant.meta?.pageAccessToken || "")
+        : await graphPost("me/messages", { ...body, messaging_type: "RESPONSE" }, tenant.meta?.pageAccessToken || "");
+      if (r && !r.error) return true;
+      // Shablon qabul qilinmasa — oddiy matn + tugmalar
+      const opts = list.flatMap((it) => (it.buttons || []).filter((b) => b.payload).slice(0, 1).map((b) => ({ title: `${it.title}`.slice(0, 20), payload: b.payload })));
+      return sendReply(tenant, channel, recipientId, list.map((it, i) => `${i + 1}. ${it.title}${it.subtitle ? ` — ${it.subtitle}` : ""}`).join("\n"), opts);
+    }
+    if (chan === "tg") {
+      const token = telegramToken(tenant);
+      if (!token) return false;
+      let ok = false;
+      for (const it of list) {
+        const keyboard = { inline_keyboard: (it.buttons || []).slice(0, 3).map((b) => [b.url ? { text: String(b.title).slice(0, 64), url: b.url } : { text: String(b.title).slice(0, 64), callback_data: String(b.payload).slice(0, 64) }]) };
+        const caption = `<b>${String(it.title).replace(/[<>&]/g, "")}</b>${it.subtitle ? `\n${String(it.subtitle).replace(/[<>&]/g, "")}` : ""}`;
+        const extra = telegramBusinessExtra(tenant, recipientId);
+        const r = it.image
+          ? await callTelegramApi(token, "sendPhoto", { chat_id: recipientId, photo: it.image, caption, parse_mode: "HTML", reply_markup: keyboard, ...extra })
+          : await callTelegramApi(token, "sendMessage", { chat_id: recipientId, text: caption, parse_mode: "HTML", reply_markup: keyboard, ...extra });
+        ok = ok || Boolean(r?.ok);
+      }
+      return ok;
+    }
+    // WhatsApp va boshqalar — raqamli ro'yxat (optionsAsText raqamlaydi)
+    const opts = list.flatMap((it) => (it.buttons || []).filter((b) => b.payload).slice(0, 1).map((b) => ({ title: `${it.title}${it.subtitle ? ` — ${it.subtitle}` : ""}`, payload: b.payload })));
+    return sendReply(tenant, channel, recipientId, "🛍️ Katalog:", opts);
+  } catch (err) {
+    console.error(`[Outbound] karusel ${chan}:${recipientId}:`, err.message);
     return false;
   }
 }

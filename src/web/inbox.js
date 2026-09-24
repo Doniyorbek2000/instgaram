@@ -1,5 +1,9 @@
 import { Router } from "express";
-import { allTags, normTag, windowStatus, getContactMeta } from "../contacts.js";
+import { isInternalKey } from "../outbound.js";
+import { allTags, normTag, windowStatus, getContactMeta, lastInboundAt } from "../contacts.js";
+
+const HOURS_24 = 24 * 60 * 60 * 1000;
+const DAYS_7 = 7 * HOURS_24;
 import { aiAllowed, aiSettings } from "../aiControl.js";
 import { requireAuth } from "../auth.js";
 import { page, esc } from "./layout.js";
@@ -124,7 +128,7 @@ inboxRouter.get("/inbox", requireAuth, (req, res) => {
     };
   });
   // Ichki yozuvlar (komment AI tarixi "comment:..." va h.k.) Inbox'da ko'rinmasin
-  chatList = chatList.filter((c) => /^(ig|fb|wa|tg):/.test(c.key));
+  chatList = chatList.filter((c) => /^(ig|fb|wa|tg):/.test(c.key) && !isInternalKey(c.key));
 
   chatList.sort((a, b) => b.lastTime - a.lastTime);
 
@@ -393,6 +397,7 @@ inboxRouter.get("/inbox", requireAuth, (req, res) => {
     page(
       "Live Inbox",
       `
+      ${req.query.err ? `<div class="error" style="margin:12px">${esc(req.query.err)}</div>` : ""}
       <style>
         /* Live Inbox — mobil/planshetda 3 ustunli grid emas, bitta panel ko'rinadi:
            chat tanlanmagan bo'lsa kontaktlar ro'yxati, tanlansa suhbat oynasi.
@@ -506,21 +511,30 @@ inboxRouter.post("/inbox/send", requireAuth, async (req, res) => {
   const chan = (chat.channel || "ig").toLowerCase();
   const recipient = chat.recipientId || chat.chatId || chatKey.replace(/^[a-z]+:/i, "");
 
+  // 24 soatlik oyna yopilgan bo'lsa (7 kungacha) — operator javobi HUMAN_AGENT belgisi bilan
+  const sinceLast = Date.now() - lastInboundAt(user, chatKey);
+  const humanAgent = sinceLast > HOURS_24 && sinceLast <= DAYS_7;
+  let result = null;
   try {
     if (chan === "tg" || chan === "telegram") {
-      await sendTelegramMessage(user, recipient, text);
+      result = await sendTelegramMessage(user, recipient, text);
     } else if (chan === "wa" || chan === "whatsapp") {
-      await sendWhatsAppMessage(user, recipient, text);
+      result = await sendWhatsAppMessage(user, recipient, text);
     } else if (chan === "fb" || chan === "facebook") {
-      await sendMessengerMessage(user, recipient, text);
+      result = await sendMessengerMessage(user, recipient, text, { humanAgent });
     } else if (chan === "ig" || chan === "instagram") {
-      await sendDirectMessage(user, recipient, text);
+      result = await sendDirectMessage(user, recipient, text, { humanAgent });
     }
   } catch (err) {
     console.error("[Inbox Send] Xabar yuborishda xato:", err.message);
   }
-
-  res.redirect(`/inbox?chat=${encodeURIComponent(chatKey)}`);
+  const failed = !result || result.error || result.ok === false;
+  const note = failed
+    ? (sinceLast > DAYS_7 && chan !== "tg" && chan !== "telegram"
+        ? "Xabar yetkazilmadi: mijoz 7 kundan beri yozmagan — Meta bunday xabarni qabul qilmaydi"
+        : "Xabar yetkazilmadi (kanal xatosi yoki 24 soatlik oyna yopiq)")
+    : "";
+  res.redirect(`/inbox?chat=${encodeURIComponent(chatKey)}${note ? `&err=${encodeURIComponent(note)}` : ""}`);
 });
 
 // Bot / Operator rejimini almashtirish

@@ -10,6 +10,8 @@
  *   delay     — N daqiqa kutish (navbat orqali, server qayta ishga tushsa ham saqlanadi)
  *   ai        — AI javobi (biznes bilim bazasi asosida)
  *   redirect  — boshqa flow'ga o'tish
+ *   split     — A/B test: mijozlar variantlarga ulush bo'yicha tasodifiy taqsimlanadi
+ *   http      — tashqi API'ga so'rov, javobdan o'zgaruvchilarga yozish (Muvaffaqiyat / Xato)
  *
  * Triggerlar: DM kalit so'z, komment, jonli efir kommenti, story javobi,
  * story mention, yangi kontakt, referal havola (ig.me/m/<user>?ref=...).
@@ -31,6 +33,8 @@ import { startHandoff } from "./engagement.js";
 import { sendTelegram } from "./notify.js";
 import * as game from "./gamification.js";
 import { isFlowAllowed } from "./credits.js";
+import { trackedUrl } from "./links.js";
+import { isSafeUrl } from "./integrations.js";
 
 export const TRIGGER_TYPES = {
   keyword: "✉️ Direct'da kalit so'z",
@@ -59,8 +63,13 @@ export const NODE_TYPES = {
   delay: "⏱️ Kutish",
   ai: "🧠 AI javob",
   redirect: "↪️ Boshqa flow",
+  split: "🎲 A/B test",
+  http: "🌐 HTTP so'rov",
+  catalog: "🛍️ Katalog",
   note: "🗒️ Izoh",
 };
+
+export const HTTP_METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE"];
 
 export const CONDITION_KINDS = {
   tag: "Teg",
@@ -85,6 +94,14 @@ export const ACTION_KINDS = {
   webhook: "Webhook / CRM ga yuborish",
   run_flow: "Boshqa flow'ni ishga tushirish",
   react: "❤️ Xabarga reaksiya",
+  math: "🧮 Hisoblash (o'zgaruvchi)",
+  crm_lead: "📇 CRM'da lid ochish (amoCRM / Bitrix24)",
+  payment_link: "💳 Buyurtma va to'lov havolasi",
+  send_sms: "📱 SMS yuborish (Eskiz)",
+  send_email: "✉️ Email yuborish",
+  seq_subscribe: "📅 Ketma-ketlikka qo'shish",
+  seq_unsubscribe: "📅 Ketma-ketlikdan chiqarish",
+  opt_out: "🚫 Ommaviy xabarlardan chiqarish",
 };
 
 export const INPUT_VALIDATIONS = { text: "Matn", name: "Ism", phone: "Telefon", email: "Email", number: "Raqam" };
@@ -129,7 +146,7 @@ function sanitizeTrigger(t = {}) {
     keyword: str(t.keyword, 500).trim(),
     matchType,
     aiIntent: str(t.aiIntent, 300).trim(),
-    mediaId: str(t.mediaId, 60).trim(),
+    mediaId: mediaIdList(t.mediaId).join(","),
     publicReplies: (Array.isArray(t.publicReplies) ? t.publicReplies : String(t.publicReplies || "").split("\n"))
       .map((x) => str(x, 300).trim())
       .filter(Boolean)
@@ -192,6 +209,35 @@ function sanitizeNode(n, ids) {
       return { ...base, prompt: str(n.prompt, 1000), next: ref(n.next) };
     case "redirect":
       return { ...base, flowId: str(n.flowId, 60) };
+    case "split": {
+      const variants = (Array.isArray(n.variants) ? n.variants : [])
+        .slice(0, 5)
+        .map((v, i) => ({
+          id: ID_RE.test(v?.id || "") ? v.id : newId("v"),
+          label: str(v?.label, 30).trim() || `Variant ${String.fromCharCode(65 + i)}`,
+          weight: num(v?.weight, 0, 100, 50),
+          next: ref(v?.next),
+        }));
+      return { ...base, variants };
+    }
+    case "catalog":
+      return {
+        ...base,
+        text: str(n.text, 1000),
+        productIds: (Array.isArray(n.productIds) ? n.productIds : []).map((x) => str(x, 40)).filter((x) => ID_RE.test(x)).slice(0, 10),
+        next: ref(n.next),
+      };
+    case "http":
+      return {
+        ...base,
+        method: HTTP_METHODS.includes(String(n.method).toUpperCase()) ? String(n.method).toUpperCase() : "GET",
+        url: str(n.url, 1000).trim(),
+        headers: str(n.headers, 1000),
+        body: str(n.body, 4000),
+        map: str(n.map, 1000),
+        next: ref(n.next),
+        fail: ref(n.fail),
+      };
     case "note":
       return { ...base, text: str(n.text, 2000), color: ["yellow", "blue", "pink", "green"].includes(n.color) ? n.color : "yellow" };
     default:
@@ -248,8 +294,18 @@ function bumpNode(flow, nodeId) {
 // Triggerlar
 // ============================================================
 
+/** Trigger'dagi post ID'lari ("" yoki "*" — barcha postlar). */
+export function mediaIdList(v) {
+  return [...new Set(String(v || "").split(/[\s,]+/).map((x) => x.trim()).filter((x) => /^[\w-]{1,40}$/.test(x)))].slice(0, 30);
+}
+
+const mediaAllowed = (trigger, mediaId) => {
+  const ids = mediaIdList(trigger.mediaId);
+  return !ids.length || !mediaId || ids.includes(String(mediaId));
+};
+
 function triggerMatches(trigger, { text = "", mediaId = "", ref = "" }) {
-  if (trigger.mediaId && trigger.mediaId !== "*" && mediaId && trigger.mediaId !== mediaId) return false;
+  if (!mediaAllowed(trigger, mediaId)) return false;
   if (trigger.type === "ref") {
     const want = normalizeText(trigger.keyword);
     return Boolean(ref) && (!want || want === "*" || normalizeText(ref) === want);
@@ -274,10 +330,12 @@ export function findFlowTrigger(tenant, type, ctx = {}) {
       const kw = normalizeText(trigger.keyword);
       const catchAll = trigger.matchType === "any" || !kw || kw === "*";
       if (type === "keyword" && catchAll) continue;
-      hits.push({ flow, trigger, catchAll });
+      hits.push({ flow, trigger, catchAll, specificPost: mediaIdList(trigger.mediaId).length > 0 });
     }
   }
-  return hits.find((h) => !h.catchAll) || hits[0] || null;
+  // Aniq kalit so'z > "hamma matn"; teng bo'lsa aniq post uchun trigger barcha postlarnikidan ustun
+  const rank = (h) => (h.catchAll ? 0 : 2) + (h.specificPost ? 1 : 0);
+  return hits.sort((a, b) => rank(b) - rank(a))[0] || null;
 }
 
 /** AI triggerli flow'lar — ai.classifyIntent'ga beriladigan nomzodlar. */
@@ -288,7 +346,7 @@ export function aiFlowCandidates(tenant, type, mediaId = "") {
     if (!flow.enabled || !flow.start || !isFlowAllowed(tenant, flow, all)) continue;
     for (const trigger of flow.triggers || []) {
       if (trigger.type !== type || trigger.matchType !== "ai") continue;
-      if (trigger.mediaId && trigger.mediaId !== "*" && mediaId && trigger.mediaId !== mediaId) continue;
+      if (!mediaAllowed(trigger, mediaId)) continue;
       out.push({ id: `${flow.id}`, name: flow.name, aiIntent: trigger.aiIntent || flow.name, flow, trigger });
     }
   }
@@ -342,6 +400,12 @@ export async function evaluateCondition(tenant, key, c, ctx = {}) {
       if (c.op === "not_exists") return !val;
       if (c.op === "eq") return normalizeText(val) === normalizeText(c.value);
       if (c.op === "contains") return normalizeText(val).includes(normalizeText(c.value));
+      if (["gt", "gte", "lt", "lte"].includes(c.op)) {
+        const a = toNumber(val);
+        const b = toNumber(renderTemplate(c.value, tenant, key));
+        if (a === null || b === null) return false;
+        return c.op === "gt" ? a > b : c.op === "gte" ? a >= b : c.op === "lt" ? a < b : a <= b;
+      }
       return Boolean(val);
     }
     case "follows": {
@@ -366,6 +430,12 @@ export async function evaluateCondition(tenant, key, c, ctx = {}) {
     default:
       return false;
   }
+}
+
+/** "12 500", "12,5", "12.5 so'm" → 12500 / 12.5; son bo'lmasa null. */
+export function toNumber(v) {
+  const m = String(v ?? "").replace(/\s+/g, "").replace(",", ".").match(/-?\d+(\.\d+)?/);
+  return m ? Number(m[0]) : null;
 }
 
 async function defaultTgMember(tenant, channel, id) {
@@ -448,6 +518,75 @@ async function runActions(tenant, key, flow, node, ctx) {
       case "react":
         await reactToMessage(tenant, key, ctx);
         break;
+      case "math": {
+        // value: "+10", "-5", "*2", "/4", "=100" (o'zgaruvchi bilan: "+{narx}")
+        if (!a.key) break;
+        const field = a.key.toLowerCase();
+        const m = String(value).trim().match(/^([+\-*/=])?\s*(.+)$/);
+        const n = m ? toNumber(m[2]) : null;
+        if (n === null) break;
+        const cur = toNumber(getContactMeta(tenant, key).fields[field]) ?? 0;
+        const op = m[1] || "=";
+        let res = op === "+" ? cur + n : op === "-" ? cur - n : op === "*" ? cur * n : op === "/" ? (n ? cur / n : cur) : n;
+        res = Math.round(res * 100) / 100;
+        setFields(tenant, key, { [field]: String(res) });
+        break;
+      }
+      case "send_sms": {
+        const { sendSms } = await import("./messaging.js");
+        const phone = getContactMeta(tenant, key).fields.phone;
+        if (phone && value) {
+          const r = await sendSms(tenant, phone, value);
+          if (!r.ok) console.error(`[Flow SMS] ${tenant.businessName}: ${r.error}`);
+        }
+        break;
+      }
+      case "send_email": {
+        const { sendEmail } = await import("./messaging.js");
+        const email = getContactMeta(tenant, key).fields.email;
+        if (email && value) {
+          const r = await sendEmail(tenant, email, renderTemplate(a.key, tenant, key) || flow.name, value);
+          if (!r.ok) console.error(`[Flow Email] ${tenant.businessName}: ${r.error}`);
+        }
+        break;
+      }
+      case "payment_link": {
+        // key: summa ({o'zgaruvchi} mumkin), value: nima uchun to'lov
+        const { createOrder, orderMessage } = await import("./shop.js");
+        const amount = toNumber(renderTemplate(a.key, tenant, key));
+        if (!amount || amount <= 0) break;
+        const order = createOrder(tenant, key, [{ name: value || flow.name, price: amount, qty: 1 }], { source: `flow:${flow.name}` });
+        if (order) {
+          const msg = orderMessage(tenant, order);
+          await deliver(tenant, key, ctx, msg.text, msg.options);
+        }
+        break;
+      }
+      case "crm_lead": {
+        const { pushCrmLead } = await import("./crm.js");
+        const f = getContactMeta(tenant, key).fields;
+        pushCrmLead(tenant, {
+          key, title: value || `${flow.name}: ${f.name || f.phone || key}`, name: f.name, phone: f.phone, email: f.email,
+          price: f.summa || f.price || "", note: `Flow: ${flow.name}`, tags: getContactMeta(tenant, key).tags,
+        }).then((r) => { if (!r.ok) console.error(`[CRM] ${r.error}`); }).catch(() => {});
+        break;
+      }
+      case "seq_subscribe": {
+        const { subscribe } = await import("./sequences.js");
+        if (a.key) subscribe(tenant, key, a.key);
+        break;
+      }
+      case "seq_unsubscribe": {
+        const { unsubscribe, unsubscribeAll } = await import("./sequences.js");
+        if (!a.key || a.key === "all") unsubscribeAll(tenant, key);
+        else unsubscribe(tenant, key, a.key);
+        break;
+      }
+      case "opt_out": {
+        const { setOptOut } = await import("./optout.js");
+        setOptOut(tenant, key, value !== "in");
+        break;
+      }
       case "webhook":
         fireEvent(
           tenant,
@@ -593,7 +732,9 @@ export async function runFrom(tenant, key, flow, nodeId, ctx = {}, depth = 0) {
     if (node.type === "message") {
       const buttons = node.buttons || [];
       const options = buttons.map((b) =>
-        b.url ? { title: b.title, url: b.url } : { title: b.title, payload: `FLOW:${flow.id}:${b.next || "_end"}` }
+        b.url
+          ? { title: b.title, url: trackedUrl(tenant, renderTemplate(b.url, tenant, key), { key, flowId: flow.id, nodeId: node.id, buttonId: b.id, title: b.title, next: b.next || "" }) }
+          : { title: b.title, payload: `FLOW:${flow.id}:${b.next || "_end"}` }
       );
       let text = renderTemplate(node.text, tenant, key);
       if (node.media) {
@@ -670,6 +811,32 @@ export async function runFrom(tenant, key, flow, nodeId, ctx = {}, depth = 0) {
       continue;
     }
 
+    if (node.type === "split") {
+      const v = pickVariant(node.variants || []);
+      if (v) {
+        const st = ((flow.stats ||= {}).split ||= {});
+        const row = (st[node.id] ||= {});
+        row[v.id] = (row[v.id] || 0) + 1;
+      }
+      current = v?.next || null;
+      continue;
+    }
+
+    if (node.type === "catalog") {
+      const { sendCatalog } = await import("./shop.js");
+      if (node.text) await deliver(tenant, key, ctx, renderTemplate(node.text, tenant, key));
+      await sendCatalog(tenant, key, node.productIds || [], ctx.send ? { send: ctx.send } : {});
+      logToInbox(tenant, key, ctx, "🛍️ Katalog");
+      current = node.next;
+      continue;
+    }
+
+    if (node.type === "http") {
+      const ok = await runHttpNode(tenant, key, node, ctx);
+      current = ok ? node.next : node.fail;
+      continue;
+    }
+
     if (node.type === "redirect") {
       const target = findFlow(tenant, node.flowId);
       setSession(tenant, key, null);
@@ -687,6 +854,87 @@ export async function runFrom(tenant, key, flow, nodeId, ctx = {}, depth = 0) {
   bumpDaily(tenant, flow, "completed");
   persist(tenant);
   return { status: "completed" };
+}
+
+/** A/B test: ulush (weight) bo'yicha tasodifiy variant. */
+export function pickVariant(variants, rnd = Math.random) {
+  const list = (variants || []).filter((v) => v.weight > 0);
+  const total = list.reduce((s, v) => s + v.weight, 0);
+  if (!total) return null;
+  let r = rnd() * total;
+  for (const v of list) {
+    if ((r -= v.weight) < 0) return v;
+  }
+  return list[list.length - 1];
+}
+
+/** JSON yo'li: "data.items.0.name" */
+export function jsonPath(obj, path) {
+  let cur = obj;
+  for (const part of String(path || "").split(".").map((x) => x.trim()).filter(Boolean)) {
+    if (cur === null || cur === undefined) return undefined;
+    cur = cur[/^\d+$/.test(part) && Array.isArray(cur) ? Number(part) : part];
+  }
+  return cur;
+}
+
+const HTTP_TIMEOUT_MS = 8000;
+const HTTP_MAX_BYTES = 256 * 1024;
+
+/**
+ * Tashqi API'ga so'rov. URL, sarlavha va tanada {o'zgaruvchi}lar ishlatiladi.
+ * Javob JSON bo'lsa "o'zgaruvchi = yo'l" qatorlari bo'yicha kontakt kartasiga yoziladi.
+ * {http_status} har doim saqlanadi. Qaytaradi: true — 2xx javob.
+ */
+export async function runHttpNode(tenant, key, node, ctx = {}) {
+  const url = renderTemplate(node.url, tenant, key, {}, { encode: true });
+  if (!isSafeUrl(url)) {
+    setFields(tenant, key, { http_status: "blocked" });
+    return false;
+  }
+  const headers = { "User-Agent": "Obunext-Flow/1.0" };
+  for (const line of String(node.headers || "").split("\n")) {
+    const i = line.indexOf(":");
+    if (i > 0) {
+      const name = line.slice(0, i).trim();
+      if (/^[\w-]{1,60}$/.test(name) && !/^(host|content-length|connection)$/i.test(name)) headers[name] = renderTemplate(line.slice(i + 1).trim(), tenant, key);
+    }
+  }
+  const method = node.method || "GET";
+  let body;
+  if (method !== "GET" && node.body) {
+    body = renderTemplate(node.body, tenant, key);
+    if (!Object.keys(headers).some((h) => h.toLowerCase() === "content-type")) {
+      headers["Content-Type"] = /^\s*[[{]/.test(body) ? "application/json" : "text/plain";
+    }
+  }
+  const fetchFn = ctx.fetch || fetch;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), HTTP_TIMEOUT_MS);
+  try {
+    const res = await fetchFn(url, { method, headers, body, signal: controller.signal, redirect: "manual" });
+    const raw = (await res.text()).slice(0, HTTP_MAX_BYTES);
+    let data = null;
+    try { data = JSON.parse(raw); } catch { data = null; }
+    const fields = { http_status: String(res.status) };
+    for (const line of String(node.map || "").split("\n")) {
+      const i = line.indexOf("=");
+      if (i <= 0) continue;
+      const name = line.slice(0, i).trim().toLowerCase().replace(/[^a-z0-9_]/g, "_");
+      const path = line.slice(i + 1).trim();
+      if (!name) continue;
+      const v = data !== null ? jsonPath(data, path) : path === "" || path === "." ? raw : undefined;
+      if (v !== undefined && v !== null) fields[name] = typeof v === "object" ? JSON.stringify(v).slice(0, 1000) : String(v).slice(0, 1000);
+    }
+    setFields(tenant, key, fields);
+    return res.status >= 200 && res.status < 300;
+  } catch (err) {
+    console.error(`[Flow HTTP] ${tenant.businessName}: ${method} ${url.slice(0, 80)} — ${err.message}`);
+    setFields(tenant, key, { http_status: err.name === "AbortError" ? "timeout" : "error" });
+    return false;
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 /** Flow'ni boshidan ishga tushiradi (trigger ishlaganda). */
@@ -840,7 +1088,24 @@ export function validateFlow(flow, allFlows = []) {
     if (reach.has(id) || !nodes[id]) continue;
     reach.add(id);
     const n = nodes[id];
-    [n.next, n.yes, n.no, ...(n.buttons || []).map((b) => b.next)].filter(Boolean).forEach((x) => stack.push(x));
+    targetsOf(n).forEach((x) => stack.push(x));
+  }
+
+  // START noto'g'ri blokka qo'yilgan bo'lsa (unga boshqa bloklardan kirish bor, flow'ning
+  // haqiqiy boshi esa boshqa blok) — aniq maslahat va bir tugmali tuzatish
+  const incoming = new Set();
+  for (const n of Object.values(nodes)) {
+    targetsOf(n).filter((x) => x !== n.id).forEach((x) => incoming.add(x));
+  }
+  if (flow.start && nodes[flow.start] && incoming.has(flow.start)) {
+    const roots = ids.filter((id) => id !== flow.start && nodes[id].type !== "note" && !incoming.has(id));
+    if (roots.length === 1 && !reach.has(roots[0])) {
+      warnings.unshift({
+        nodeId: roots[0],
+        msg: `START ${label(nodes[flow.start])} blokida turibdi, lekin flow ${label(nodes[roots[0]])} dan boshlanishi kerak — START'ni o'sha blokka o'tkazing`,
+        fix: { start: roots[0] },
+      });
+    }
   }
 
   for (const n of Object.values(nodes)) {
@@ -870,7 +1135,21 @@ export function validateFlow(flow, allFlows = []) {
         if (a.kind === "run_flow" && (!a.key || !flowIds.has(a.key))) errors.push({ nodeId: n.id, msg: `${label(n)}: ishga tushiriladigan flow topilmadi` });
         if ((a.kind === "add_tag" || a.kind === "remove_tag") && !a.value) errors.push({ nodeId: n.id, msg: `${label(n)}: teg yozilmagan` });
         if (a.kind === "set_var" && !a.key) errors.push({ nodeId: n.id, msg: `${label(n)}: o'zgaruvchi nomi yozilmagan` });
+        if (a.kind === "math" && !a.key) errors.push({ nodeId: n.id, msg: `${label(n)}: hisoblash uchun o'zgaruvchi nomi yozilmagan` });
+        if (a.kind === "payment_link" && !toNumber(a.key) && !String(a.key || "").includes("{")) errors.push({ nodeId: n.id, msg: `${label(n)}: to'lov summasi yozilmagan` });
+        if (a.kind === "seq_subscribe" && !a.key) errors.push({ nodeId: n.id, msg: `${label(n)}: ketma-ketlik tanlanmagan` });
       });
+    }
+    if (n.type === "split") {
+      const vs = n.variants || [];
+      if (vs.length < 2) warnings.push({ nodeId: n.id, msg: `${label(n)}: A/B test uchun kamida 2 ta variant kerak` });
+      if (vs.length && !vs.some((v) => v.weight > 0)) errors.push({ nodeId: n.id, msg: `${label(n)}: barcha variantlar ulushi 0%` });
+      vs.forEach((v) => { if (!v.next) warnings.push({ nodeId: n.id, msg: `${label(n)}: "${v.label}" varianti ulanmagan (flow tugaydi)` }); });
+    }
+    if (n.type === "http") {
+      if (!n.url) errors.push({ nodeId: n.id, msg: `${label(n)}: so'rov manzili (URL) yozilmagan` });
+      else if (!/^https?:\/\//i.test(n.url)) errors.push({ nodeId: n.id, msg: `${label(n)}: URL http:// yoki https:// bilan boshlanishi kerak` });
+      if (!n.next && !n.fail) warnings.push({ nodeId: n.id, msg: `${label(n)}: Muvaffaqiyat/Xato chiqishlari ulanmagan` });
     }
     if (n.type === "delay" && !n.next) warnings.push({ nodeId: n.id, msg: `${label(n)}: kutishdan keyin hech narsa yo'q` });
     if (n.type === "redirect" && (!n.flowId || !flowIds.has(n.flowId) || n.flowId === flow.id)) {
@@ -878,6 +1157,11 @@ export function validateFlow(flow, allFlows = []) {
     }
   }
   return { errors, warnings };
+}
+
+/** Blokdan chiqadigan barcha ulanishlar. */
+export function targetsOf(n) {
+  return [n.next, n.yes, n.no, n.fail, ...(n.buttons || []).map((b) => b.next), ...(n.variants || []).map((v) => v.next)].filter(Boolean);
 }
 
 /** Versiyalar tarixi uchun flow'ning tahrirlanadigan qismi. */

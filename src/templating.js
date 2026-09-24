@@ -68,12 +68,14 @@ export function contactVars(tenant, key) {
 }
 
 /** Matndagi {o'zgaruvchi} va {o'zgaruvchi|zaxira} larni almashtiradi. */
-export function renderTemplate(text, tenant, key, extra = {}) {
+export function renderTemplate(text, tenant, key, extra = {}, { encode = false } = {}) {
   const src = String(text ?? "");
   if (!src.includes("{")) return src;
   const vars = { ...contactVars(tenant, key), ...extra };
+  // encode — URL ichiga qo'yiladigan qiymatlar (HTTP so'rov bloki) kodlanadi
+  const out = (v) => (encode ? encodeURIComponent(v) : v);
   return src.replace(/\{([a-z0-9_]{1,40})(?:\|([^{}]{0,80}))?\}/gi, (_m, name, fallback = "") => {
     const value = vars[name.toLowerCase()];
-    return value !== undefined && String(value).trim() !== "" ? String(value) : fallback;
+    return value !== undefined && String(value).trim() !== "" ? out(String(value)) : out(fallback);
   });
 }

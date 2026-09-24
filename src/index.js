@@ -16,6 +16,10 @@ import { broadcastsRouter } from "./web/broadcasts_ui.js";
 import { growthRouter } from "./web/growth_ui.js";
 import { settingsRouter } from "./web/settings_ui.js";
 import { flowsRouter } from "./web/flows_ui.js";
+import { sequencesRouter } from "./web/sequences_ui.js";
+import { shopRouter } from "./web/shop_ui.js";
+import { growthToolsRouter } from "./web/growth_tools_ui.js";
+import { pushRouter } from "./web/push_ui.js";
 import { teamRouter } from "./web/team_ui.js";
 import { analyticsRouter } from "./web/analytics_ui.js";
 import { gameRouter } from "./web/game_ui.js";
@@ -37,6 +41,10 @@ import { refreshTelegramWebhooks } from "./telegram.js";
 import { listUsers } from "./db.js";
 import { page } from "./web/layout.js";
 import { findUserByPlatformId, persist } from "./db.js";
+import { purgeInternalKeys } from "./outbound.js";
+import { linkRedirectHandler } from "./links.js";
+import { runDueSequences } from "./sequences.js";
+import { runDueShop } from "./shop.js";
 import { handleInstagramEntry } from "./handlers/instagram.js";
 import { handleFacebookEntry } from "./handlers/facebook.js";
 import { handleWhatsAppEntry } from "./handlers/whatsapp.js";
@@ -132,6 +140,12 @@ app.get("/apple-touch-icon.png", (_req, res) => {
 });
 
 // Publik marketing sayti (ko'p tilli: /, /features, /pricing, /faq, /contact)
+// PWA (manifest, service worker) va Web Push
+app.use(pushRouter);
+
+// Kuzatiladigan qisqa havolalar (tugmalardagi havolalar bosilishi)
+app.get("/l/:tenantId/:linkId", linkRedirectHandler);
+
 app.use(site);
 
 // Veb admin-panel (ro'yxat, kirish, sozlamalar)
@@ -145,6 +159,9 @@ app.use(growthRouter);
 app.use(settingsRouter);
 app.use(schedulerRouter);
 app.use(flowsRouter);
+app.use(sequencesRouter);
+app.use(shopRouter);
+app.use(growthToolsRouter);
 app.use(teamRouter);
 app.use(analyticsRouter);
 app.use(gameRouter);
@@ -358,12 +375,27 @@ const server = app.listen(config.port, () => {
   // Eski (maxfiy kalitsiz) Telegram webhook'larini xavfsiz holatga o'tkazamiz
   setTimeout(() => {
     listUsers().then(refreshTelegramWebhooks).catch((err) => console.error("[Telegram] webhook yangilash:", err.message));
+    // Eski versiyalar komment AI tarixini "ig:comment:<id>" kabi alohida "mijoz" qilib
+    // saqlagan — Inbox/CRM'dan bir marta tozalaymiz
+    listUsers()
+      .then((users) => {
+        for (const u of users) {
+          const n = purgeInternalKeys(u);
+          if (n) {
+            persist(u);
+            console.log(`[Tozalash] ${u.businessName || u.email}: ${n} ta ichki "comment:" yozuv o'chirildi`);
+          }
+        }
+      })
+      .catch((err) => console.error("[Tozalash] xato:", err.message));
   }, 5000);
 
   // Obuna eslatmalari va follow-up xabarlar — daqiqa aniqligida
   setInterval(() => {
     runDueFollowUps().catch((err) => console.error("[FollowUp] xato:", err.message));
     runDueBroadcasts().catch((err) => console.error("[Broadcast] xato:", err.message));
+    runDueSequences().catch((err) => console.error("[Ketma-ketlik] xato:", err.message));
+    runDueShop().catch((err) => console.error("[Do'kon] xato:", err.message));
   }, 60 * 1000);
 
   setInterval(() => {

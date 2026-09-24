@@ -1,12 +1,13 @@
 import { graphPost } from "../graph.js";
 
 /** Facebook Messenger orqali xabar yuboradi. */
-export function sendMessengerMessage(tenant, psid, text) {
+export function sendMessengerMessage(tenant, psid, text, { humanAgent = false } = {}) {
   return graphPost(
     "me/messages",
     {
       recipient: { id: psid },
-      messaging_type: "RESPONSE",
+      // Operator javobi 24 soatdan keyin 7 kungacha — HUMAN_AGENT belgisi bilan
+      ...(humanAgent ? { messaging_type: "MESSAGE_TAG", tag: "HUMAN_AGENT" } : { messaging_type: "RESPONSE" }),
       message: { text },
     },
     tenant.meta.pageAccessToken

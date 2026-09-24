@@ -71,6 +71,10 @@ function normalizeUser(u) {
   u.tgBusiness ||= {}; // Telegram Business ulanishi: {connectionId, ownerId, enabled, chats}
   u.apiTokens ||= []; // MCP/API tokenlari (sha256 xesh)
   u.aiUsage ||= {}; // AI kreditlari: {month, used, bonus}
+  u.sequences ||= {}; // ketma-ketliklar: {list, subs}
+  u.shop ||= {}; // katalog va buyurtmalar: {products, orders}
+  u.trackedLinks ||= {}; // kuzatiladigan havolalar: {id: {...}}
+  u.pushSubs ||= []; // operatorlar Web Push obunalari
   return u;
 }
 
