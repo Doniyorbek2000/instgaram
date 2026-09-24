@@ -701,6 +701,15 @@ web.post("/settings/telegram-bot", requireAuth, async (req, res) => {
   res.redirect(ok ? "/account?saved=1&tg=ok" : token ? "/account?tg=err" : "/account?saved=1");
 });
 
+// Telegram Business: avtomatik javobni yoqish/o'chirish
+web.post("/settings/telegram-business", requireAuth, async (req, res) => {
+  const u = req.user;
+  u.tgBusiness ||= {};
+  u.tgBusiness.autoReply = req.body?.autoReply === "on";
+  persist(u);
+  res.redirect("/account?saved=1#tg-business");
+});
+
 // WhatsApp Business API sozlamalarini saqlash
 web.post("/settings/whatsapp", requireAuth, async (req, res) => {
   const { whatsappPhoneId, whatsappToken, whatsappBusinessId } = req.body || {};
@@ -1253,6 +1262,32 @@ Biz "Fuqarolar Murojaat Markazi" jamoat tashkilotimiz.
         <button type="submit" class="btn" style="margin-top:14px; background:linear-gradient(135deg, #229ED9 0%, #0088cc 100%)">
           ⚡ Webhookni O'rnatish & Saqlash
         </button>
+      </form>
+    </div>
+
+    <!-- Telegram Business (egasining shaxsiy akkauntidan AI javob) -->
+    <div class="card" id="tg-business" style="border:1px solid rgba(34,158,217,0.5)">
+      <div style="display:flex; justify-content:space-between; align-items:center; gap:10px; flex-wrap:wrap">
+        <div>
+          <h2 style="margin:0">💼 Telegram Business — shaxsiy akkauntingizdan AI javob</h2>
+          <p class="hint" style="margin:4px 0 0">Mijozlar sizning shaxsiy Telegram'ingizga yozadi, AI esa sizning nomingizdan javob beradi. Siz o'zingiz yozsangiz, bot shu chatda 2 soat jim turadi.</p>
+        </div>
+        ${u.tgBusiness?.enabled
+          ? `<span class="status-tag">✅ Ulangan${u.tgBusiness.ownerName ? `: ${esc(u.tgBusiness.ownerName)}` : ""}</span>`
+          : `<span class="badge-warn">Ulanmagan</span>`}
+      </div>
+      ${u.tgBusiness?.enabled && !u.tgBusiness.canReply ? `<div class="error" style="margin-top:10px">Botga "Xabarlarga javob berish" ruxsati berilmagan — Telegram → Business → Chatbots'da yoqing.</div>` : ""}
+      <ol class="hint" style="font-size:13px; line-height:1.8; padding-left:18px; margin:12px 0">
+        <li>Yuqorida Telegram botingizni ulang (webhook o'rnatilgan bo'lishi kerak).</li>
+        <li>Telegram → <b>Sozlamalar → Telegram Business → Chatbotlar</b> (Telegram Premium talab qilinadi).</li>
+        <li>Bot username'ini kiriting${u.settings?.telegramBotUsername ? `: <b>@${esc(u.settings.telegramBotUsername)}</b>` : ""} va <b>"Xabarlarga javob berish"</b> ruxsatini yoqing.</li>
+        <li>Qaysi chatlarga javob berishini tanlang (hammasi yoki tanlanganlar) — shu sahifada holat "Ulangan" bo'ladi.</li>
+      </ol>
+      <form method="post" action="/settings/telegram-business" style="margin:0">
+        <label style="display:flex; gap:8px; align-items:center; cursor:pointer; text-transform:none; letter-spacing:0; font-size:14px; font-weight:600">
+          <input type="checkbox" name="autoReply" ${u.tgBusiness?.autoReply !== false ? "checked" : ""} style="width:auto; margin:0"> AI avtomatik javob bersin
+        </label>
+        <button class="btn" style="margin-top:10px">💾 Saqlash</button>
       </form>
     </div>
 

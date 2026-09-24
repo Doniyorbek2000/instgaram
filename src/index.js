@@ -29,6 +29,8 @@ import { reportsBotRouter, reportsBotAvailable, setupReportsBotWebhook, checkAnd
 import { checkAndPublishScheduledPosts } from "./postPublisher.js";
 import { runDueFollowUps } from "./followups.js";
 import { runDueBroadcasts } from "./broadcasts.js";
+import { refreshTelegramWebhooks } from "./telegram.js";
+import { listUsers } from "./db.js";
 import { page } from "./web/layout.js";
 import { findUserByPlatformId, persist } from "./db.js";
 import { handleInstagramEntry } from "./handlers/instagram.js";
@@ -316,6 +318,11 @@ const server = app.listen(config.port, () => {
 
   // Rejalashtirilgan Instagram postlarini nashr qilish — vaqtga aniqroq mos kelishi
   // kerak bo'lgani uchun kunlik hisobotdan tezroq (har 5 daqiqada) tekshiriladi
+  // Eski (maxfiy kalitsiz) Telegram webhook'larini xavfsiz holatga o'tkazamiz
+  setTimeout(() => {
+    listUsers().then(refreshTelegramWebhooks).catch((err) => console.error("[Telegram] webhook yangilash:", err.message));
+  }, 5000);
+
   // Obuna eslatmalari va follow-up xabarlar — daqiqa aniqligida
   setInterval(() => {
     runDueFollowUps().catch((err) => console.error("[FollowUp] xato:", err.message));
