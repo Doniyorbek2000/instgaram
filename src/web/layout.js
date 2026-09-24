@@ -1,10 +1,14 @@
 import { logoMark } from "./brand.js";
 import { isAdmin } from "../auth.js";
+import { currentActor, canAccess } from "../team.js";
 import { icon } from "./icons.js";
 
 /** Barcha ilova sahifalari uchun ADM AI uslubidagi to'q-binafsha Glassmorphism HTML qobig'i */
 export function page(title, body, { user, active = "" } = {}) {
-  const admin = isAdmin(user);
+  // Admin menyusi faqat haqiqiy kirgan shaxs admin bo'lsa ko'rinadi (jamoa a'zosi
+  // admin egasining ish maydoniga o'tganda ko'rinmaydi)
+  const actor = currentActor();
+  const admin = isAdmin(actor ? actor.user : user);
   return `<!DOCTYPE html>
 <html lang="uz">
 <head>
@@ -76,8 +80,10 @@ export function page(title, body, { user, active = "" } = {}) {
     padding: 20px 16px; display: flex; flex-direction: column; position: sticky; top: 0; height: 100vh; z-index: 30;
   }
   .sidebar .brand { display: flex; align-items: center; gap: 12px; font-weight: 800; font-size: 18px; padding: 4px 8px 20px; color: #fff; text-decoration: none; border-bottom: 1px solid var(--border); margin-bottom: 18px; }
-  .side-nav { display: flex; flex-direction: column; gap: 6px; flex: 1; }
-  .side-nav a { display: flex; align-items: center; gap: 12px; padding: 11px 14px; border-radius: 10px; color: var(--text-muted); font-weight: 600; font-size: 14px; transition: 0.15s; }
+  .side-nav { display: flex; flex-direction: column; gap: 3px; flex: 1; overflow-y: auto; }
+  .side-sec { font-size: 10.5px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; color: #64748b; padding: 12px 14px 4px; }
+  .side-sec:first-child { padding-top: 0; }
+  .side-nav a { display: flex; align-items: center; gap: 12px; padding: 8px 14px; border-radius: 10px; color: var(--text-muted); font-weight: 600; font-size: 14px; transition: 0.15s; }
   .side-nav a:hover { background: rgba(255,255,255,0.05); color: #fff; }
   .side-nav a.active { background: var(--grad-primary); color: #fff; font-weight: 700; box-shadow: 0 4px 15px rgba(139, 92, 246, 0.4); }
   .side-nav a .i { display: inline-flex; align-items: center; justify-content: center; width: 22px; color: inherit; }
@@ -205,6 +211,7 @@ export function page(title, body, { user, active = "" } = {}) {
       gap: 8px;
     }
     .side-nav a { flex: none; padding: 9px 14px; font-size: 13px; white-space: nowrap; background: rgba(255,255,255,0.04); }
+    .side-sec { display: none; }
     .side-foot { display: none; }
     main.app { padding: 0 16px; margin: 16px auto; }
     .grid.cols-3, .grid.cols-4 { grid-template-columns: repeat(2, 1fr); }
@@ -237,27 +244,17 @@ ${
         <aside class="sidebar">
           <a class="brand" href="/dashboard">${logoMark(32)}<span>ADM AI</span></a>
           <nav class="side-nav">
-            ${sideLink("/dashboard", "dashboard", "grid", "Dashboard", active)}
-            ${sideLink("/inbox", "inbox", "chat", "Live Inbox", active)}
-            ${sideLink("/clients", "contacts", "users", "Kontaktlar CRM", active)}
-            ${sideLink("/broadcasts", "broadcasts", "megaphone", "Ommaviy Xabarlar", active)}
-            ${sideLink("/triggers", "triggers", "bolt", "Flows & Triggers", active)}
-            ${sideLink("/templates", "templates", "layout", "Shablonlar Hubi", active)}
-            ${sideLink("/growth", "growth", "trending", "O'sish Vositalari", active)}
-            ${sideLink("/scheduler", "scheduler", "calendar", "Scheduler", active)}
-            ${sideLink("/billing", "billing", "card", "Obuna & Tariflar", active)}
-            ${sideLink("/account", "account", "spark", "AI Studio & Akkaunt", active)}
-            ${sideLink("/settings", "settings", "gear", "Sozlamalar & Yordam", active)}
-            ${admin ? sideLink("/admin", "admin", "key", "Admin Panel", active) : ""}
+            ${navSections(active, admin)}
           </nav>
           <div class="side-foot">
             <div class="side-user">
               <div class="av">${esc((user.businessName || user.email || "?").trim().charAt(0).toUpperCase())}</div>
               <div style="min-width:0">
                 <div class="nm">${esc(user.businessName || "Biznesim")}</div>
-                <div class="em">${esc(user.email)}</div>
+                <div class="em">${esc(actor ? `${actor.user.email} · ${ROLE_LABELS[actor.role] || actor.role}` : user.email)}</div>
               </div>
             </div>
+            <a class="side-logout" href="/workspace" style="margin-bottom:6px; background:rgba(255,255,255,0.04); color:#cbd5e1"><span>⇄</span> Ish maydoni</a>
             <a class="side-logout" href="/logout"><span>↩</span> Chiqish</a>
           </div>
         </aside>
@@ -280,6 +277,51 @@ ${
 }
 </body>
 </html>`;
+}
+
+/**
+ * Yon menyu bo'limlari. Jamoa a'zosining roli (operator/kuzatuvchi) cheklangan
+ * bo'lsa, ruxsat berilmagan sahifalar menyuda ko'rsatilmaydi.
+ */
+const ROLE_LABELS = { admin: "Administrator", operator: "Operator", viewer: "Kuzatuvchi" };
+
+const NAV = [
+  ["Asosiy", [
+    ["/dashboard", "dashboard", "grid", "Dashboard"],
+    ["/inbox", "inbox", "chat", "Live Inbox"],
+    ["/clients", "contacts", "users", "Kontaktlar CRM"],
+    ["/analytics", "analytics", "chart", "Analitika"],
+  ]],
+  ["Avtomatlashtirish", [
+    ["/flows", "flows", "flow", "Flow Builder"],
+    ["/triggers", "triggers", "bolt", "Tezkor qoidalar"],
+    ["/forms", "forms", "form", "Lid formalari"],
+    ["/templates", "templates", "layout", "Shablonlar Hubi"],
+  ]],
+  ["O'sish", [
+    ["/game", "game", "trophy", "Geymifikatsiya"],
+    ["/broadcasts", "broadcasts", "megaphone", "Ommaviy xabarlar"],
+    ["/content", "content", "film", "AI Kontent studiya"],
+    ["/growth", "growth", "trending", "O'sish vositalari"],
+    ["/scheduler", "scheduler", "calendar", "Scheduler"],
+  ]],
+  ["Sozlamalar", [
+    ["/integrations", "integrations", "plug", "Integratsiyalar"],
+    ["/team", "team", "team", "Jamoa"],
+    ["/billing", "billing", "card", "Obuna & Tariflar"],
+    ["/account", "account", "spark", "AI Studio & Akkaunt"],
+    ["/settings", "settings", "gear", "Sozlamalar & Yordam"],
+  ]],
+];
+
+function navSections(active, admin) {
+  const ctx = currentActor();
+  const allowed = (href) => !ctx || canAccess(ctx.role, "GET", href);
+  const html = NAV.map(([title, items]) => {
+    const links = items.filter(([href]) => allowed(href)).map(([href, key, ic, label]) => sideLink(href, key, ic, label, active)).join("");
+    return links ? `<div class="side-sec">${title}</div>${links}` : "";
+  }).join("");
+  return html + (admin ? `<div class="side-sec">Platforma</div>${sideLink("/admin", "admin", "key", "Admin Panel", active)}` : "");
 }
 
 function sideLink(href, key, iconName, label, active) {

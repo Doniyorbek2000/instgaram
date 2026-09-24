@@ -6,6 +6,12 @@
 
 const PATHS = {
   // ---- Sidebar navigatsiya ----
+  flow: `<rect x="2.5" y="3.5" width="7" height="5" rx="1.4"/><rect x="14.5" y="9.5" width="7" height="5" rx="1.4"/><rect x="2.5" y="15.5" width="7" height="5" rx="1.4"/><path d="M9.5 6h2.5a2 2 0 0 1 2 2v4"/><path d="M9.5 18h2.5a2 2 0 0 0 2-2v-4"/>`,
+  trophy: `<path d="M8 4h8v5a4 4 0 0 1-8 0V4Z"/><path d="M8 6H4.5a3 3 0 0 0 3.5 4"/><path d="M16 6h3.5a3 3 0 0 1-3.5 4"/><line x1="12" y1="13" x2="12" y2="17"/><path d="M8.5 21h7l-1-4h-5l-1 4Z"/>`,
+  form: `<rect x="4" y="3" width="16" height="18" rx="2.2"/><line x1="8" y1="8" x2="16" y2="8"/><line x1="8" y1="12" x2="16" y2="12"/><line x1="8" y1="16" x2="12" y2="16"/>`,
+  plug: `<path d="M9 3v5"/><path d="M15 3v5"/><path d="M6 8h12v3a6 6 0 0 1-12 0V8Z"/><line x1="12" y1="17" x2="12" y2="21"/>`,
+  team: `<circle cx="12" cy="7.5" r="3"/><path d="M6 20c0-3.3 2.7-5.5 6-5.5s6 2.2 6 5.5"/><circle cx="4.8" cy="10" r="2"/><circle cx="19.2" cy="10" r="2"/><path d="M1.8 18c.3-2 1.5-3.3 3.3-3.7"/><path d="M22.2 18c-.3-2-1.5-3.3-3.3-3.7"/>`,
+  film: `<rect x="3" y="3" width="18" height="18" rx="2.5"/><line x1="7.5" y1="3" x2="7.5" y2="21"/><line x1="16.5" y1="3" x2="16.5" y2="21"/><line x1="3" y1="8" x2="7.5" y2="8"/><line x1="3" y1="16" x2="7.5" y2="16"/><line x1="16.5" y1="8" x2="21" y2="8"/><line x1="16.5" y1="16" x2="21" y2="16"/>`,
   grid: `<rect x="3" y="3" width="7" height="7" rx="1.6"/><rect x="14" y="3" width="7" height="7" rx="1.6"/><rect x="3" y="14" width="7" height="7" rx="1.6"/><rect x="14" y="14" width="7" height="7" rx="1.6"/>`,
   chat: `<path d="M21 11.5a8.5 8.5 0 0 1-8.5 8.5c-1.2 0-2.35-.24-3.4-.68L3 21l1.85-4.63A8.46 8.46 0 0 1 3.5 11.5 8.5 8.5 0 0 1 12 3a8.5 8.5 0 0 1 9 8.5Z"/>`,
   users: `<circle cx="9" cy="8" r="3.2"/><path d="M2.5 20c0-3.5 2.9-6 6.5-6s6.5 2.5 6.5 6"/><circle cx="17.5" cy="9" r="2.6"/><path d="M15.2 14.3c2.7.5 4.6 2.4 5.3 4.3"/>`,

@@ -165,7 +165,8 @@ export function isAdmin(user) {
 /** Faqat admin uchun sahifalar */
 export function requireAdmin(req, res, next) {
   if (!req.user) return res.redirect("/login");
-  if (!isAdmin(req.user)) return res.status(403).send("Ruxsat yo'q");
+  // Jamoa a'zosi admin egasining ish maydonida bo'lsa ham admin bo'lib qolmasin
+  if (!isAdmin(req.actor ? req.actor.user : req.user)) return res.status(403).send("Ruxsat yo'q");
   next();
 }
 

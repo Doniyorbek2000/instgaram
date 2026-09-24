@@ -15,6 +15,9 @@ import { contactsRouter } from "./web/contacts_ui.js";
 import { broadcastsRouter } from "./web/broadcasts_ui.js";
 import { growthRouter } from "./web/growth_ui.js";
 import { settingsRouter } from "./web/settings_ui.js";
+import { flowsRouter } from "./web/flows_ui.js";
+import { teamRouter } from "./web/team_ui.js";
+import { teamContext } from "./team.js";
 import { telegramRouter } from "./telegram.js";
 import { reportsBotRouter, reportsBotAvailable, setupReportsBotWebhook, checkAndSendDailyReports } from "./reportsBot.js";
 import { checkAndPublishScheduledPosts } from "./postPublisher.js";
@@ -45,6 +48,8 @@ app.use(
 );
 app.use(express.urlencoded({ extended: false }));
 app.use(attachUser);
+// Jamoa a'zosi egasining ish maydonida bo'lsa — req.user almashtiriladi va roli tekshiriladi
+app.use(teamContext);
 
 // SEO: Robots.txt & XML Sitemap for Google Search Indexing
 app.get("/robots.txt", (_req, res) => {
@@ -106,6 +111,8 @@ app.use(broadcastsRouter);
 app.use(growthRouter);
 app.use(settingsRouter);
 app.use(schedulerRouter);
+app.use(flowsRouter);
+app.use(teamRouter);
 app.use(telegramRouter);
 app.use(reportsBotRouter);
 

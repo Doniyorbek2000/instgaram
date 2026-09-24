@@ -131,7 +131,7 @@ web.post("/login", authRateLimiter, async (req, res) => {
 
 web.get("/logout", async (req, res) => {
   await logout(parseSid(req));
-  res.setHeader("Set-Cookie", "sid=; HttpOnly; Path=/; SameSite=Lax; Max-Age=0");
+  res.setHeader("Set-Cookie", ["sid=; HttpOnly; Path=/; SameSite=Lax; Max-Age=0", "ws=; HttpOnly; Path=/; SameSite=Lax; Max-Age=0"]);
   res.redirect("/login");
 });
 
