@@ -8,6 +8,7 @@ import { page, esc } from "./layout.js";
 import { persist } from "../db.js";
 import { ensureShop, sanitizeProduct, findProduct, findOrder, setOrderStatus, ORDER_STATUSES, formatMoney, paymentLinks } from "../shop.js";
 import { displayName } from "../contacts.js";
+import { config } from "../config.js";
 
 export const shopRouter = Router();
 
@@ -46,7 +47,7 @@ shopRouter.get(["/shop", "/shop/orders"], requireAuth, (req, res) => {
               <b style="font-size:16px">№${o.num}</b> · <span class="hint">${esc(new Date(o.createdAt).toLocaleString("uz-UZ", { timeZone: u.settings?.timezone || "Asia/Tashkent" }).slice(0, 17))}</span>
               ${o.key ? ` · <a href="/clients/c/${encodeURIComponent(o.key)}">${esc(displayName(u, o.key))}</a>` : ""} ${o.customer?.phone ? `· ${esc(o.customer.phone)}` : ""}
               <div style="margin-top:6px; font-size:13.5px">${o.items.map((i) => `${esc(i.name)}${i.qty > 1 ? ` × ${i.qty}` : ""}`).join(", ")}</div>
-              <div style="margin-top:4px; font-weight:800">${esc(formatMoney(u, o.total))} ${o.reminderAt ? `<span class="hint" style="font-weight:400">· eslatma yuborildi</span>` : ""}</div>
+              <div style="margin-top:4px; font-weight:800">${esc(formatMoney(u, o.total))} ${o.paidVia ? `<span class="hint" style="font-weight:400; color:#34d399">· ${esc(o.paidVia)} orqali avtomatik tasdiqlandi</span>` : ""} ${o.reminderAt ? `<span class="hint" style="font-weight:400">· eslatma yuborildi</span>` : ""}</div>
             </div>
             <form method="post" action="/shop/orders/${esc(o.id)}/status" style="display:flex; gap:6px; align-items:center; flex-wrap:wrap; margin:0">
               <select name="status" style="margin:0; width:auto">${Object.entries(ORDER_STATUSES).map(([k, l]) => `<option value="${k}" ${o.status === k ? "selected" : ""}>${l}</option>`).join("")}</select>
@@ -98,12 +99,15 @@ shopRouter.get(["/shop", "/shop/orders"], requireAuth, (req, res) => {
   if (tab === "settings") {
     const st = shop.settings;
     const demo = paymentLinks(u, { total: 1000, num: 1 });
+    const payBase = (config.baseUrl || `${req.protocol}://${req.get("host")}`).replace(/\/$/, "");
     body = `<form method="post" action="/shop/settings" class="grid split-form">
       <div>
         <div class="card">
           <h3 style="margin-top:0">💳 Payme kassasi</h3>
           <label>Merchant ID (Payme Business → Kassa → ID)</label><input name="paymeMerchant" value="${esc(st.payme.merchantId)}" placeholder="24 belgili ID" maxlength="24">
           <label>Hisob maydoni (kassa sozlamasidagi account nomi)</label><input name="paymeAccount" value="${esc(st.payme.account)}" placeholder="order_id">
+          <label>Merchant kaliti — avtomatik tasdiq uchun (Kassa → Kalitlar)</label><input name="paymeKey" type="password" autocomplete="off" value="" placeholder="${st.payme.key ? "•••••••• saqlangan (o'zgartirish uchun yangisini kiriting)" : "kiritilmagan"}" maxlength="200">
+          <p class="hint" style="font-size:12px; margin-bottom:0">Kassa kabinetida <b>Endpoint URL</b>: <code>${esc(payBase)}/pay/payme/${esc(u.id)}</code></p>
         </div>
         <div class="card">
           <h3 style="margin-top:0">💳 Click kassasi</h3>
@@ -111,8 +115,10 @@ shopRouter.get(["/shop", "/shop/orders"], requireAuth, (req, res) => {
             <div style="flex:1"><label>Service ID</label><input name="clickService" value="${esc(st.click.serviceId)}" inputmode="numeric"></div>
             <div style="flex:1"><label>Merchant ID</label><input name="clickMerchant" value="${esc(st.click.merchantId)}" inputmode="numeric"></div>
           </div>
+          <label>Secret key — avtomatik tasdiq uchun</label><input name="clickSecret" type="password" autocomplete="off" value="" placeholder="${st.click.secretKey ? "•••••••• saqlangan (o'zgartirish uchun yangisini kiriting)" : "kiritilmagan"}" maxlength="200">
+          <p class="hint" style="font-size:12px; margin-bottom:0">Click kabinetida <b>Prepare URL</b> va <b>Complete URL</b>: <code>${esc(payBase)}/pay/click/${esc(u.id)}</code></p>
         </div>
-        <p class="hint" style="font-size:12.5px">Mijozga sizning kassangizga to'g'ridan-to'g'ri to'lov havolasi yuboriladi (pul sizning hisobingizga tushadi). To'lov tasdig'ini Payme/Click kabinetida ko'rib, buyurtmani "✅ To'landi" deb belgilang — mijozga avtomatik xabar ketadi. ${demo.length ? `<br>Ulangan: ${demo.map((d) => esc(d.title)).join(", ")} ✓` : ""}</p>
+        <p class="hint" style="font-size:12.5px">Mijozga sizning kassangizga to'g'ridan-to'g'ri to'lov havolasi yuboriladi (pul sizning hisobingizga tushadi). Kalit kiritilgan va kabinetda URL sozlangan bo'lsa, to'lov <b>avtomatik tasdiqlanadi</b>: buyurtma "✅ To'landi" bo'ladi va mijozga xabar ketadi. Kalitsiz — buyurtmani qo'lda belgilaysiz. ${[st.payme.key && "Payme", st.click.secretKey && "Click"].filter(Boolean).length ? `<br>Avtomatik tasdiq: ${[st.payme.key && "Payme", st.click.secretKey && "Click"].filter(Boolean).join(", ")} ✓` : ""} ${demo.length ? `<br>Ulangan: ${demo.map((d) => esc(d.title)).join(", ")} ✓` : ""}</p>
       </div>
       <div>
         <div class="card">
@@ -175,6 +181,11 @@ shopRouter.post("/shop/settings", requireAuth, (req, res) => {
   const cm = String(b.clickMerchant || "").trim();
   if ((cs || cm) && !(/^\d{1,12}$/.test(cs) && /^\d{1,12}$/.test(cm))) errors.push("Click Service ID va Merchant ID raqam bo'lishi kerak");
   else { st.click.serviceId = cs; st.click.merchantId = cm; }
+  const pk = String(b.paymeKey || "").trim();
+  if (pk) st.payme.key = pk.slice(0, 200);
+  const ck = String(b.clickSecret || "").trim();
+  if (ck) st.click.secretKey = ck.slice(0, 200);
+  if (b.clearKeys === "1") { st.payme.key = ""; st.click.secretKey = ""; }
   st.cartReminderMin = Math.max(0, Math.min(1380, Math.round(Number(b.cartReminderMin) || 0)));
   st.cartReminderText = String(b.cartReminderText || st.cartReminderText).slice(0, 1000);
   st.currency = String(b.currency || "so'm").trim().slice(0, 10) || "so'm";

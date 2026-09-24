@@ -172,16 +172,12 @@ src/
   services/             — javob yuborish (matn + ovoz, har biznes tokeni bilan)
 rules.json              — zaxira javob qoidalari
 business.md             — biznes ma'lumotlari namunasi (panelga ko'chirish uchun)
-data/db.json            — baza (avtomatik yaratiladi, git'ga kirmaydi)
-legacy-python/          — eskirgan Python skriptlar (main.py, scheduler.py, dm_autoresponder.py,
-                           analytics.py, refresh_token.py, utils/). Hozirgi Node.js platformasi
-                           (src/) bilan bog'liq emas va ishga tushirilmaydi — faqat tarixiy
-                           referens sifatida saqlanmoqda.
+data/db.json            — JSON baza (PostgreSQL yo'q bo'lsa; avtomatik yaratiladi, git'ga kirmaydi)
+data/messages/          — JSON rejimida to'liq suhbat arxivi (PostgreSQL'da `messages` jadvali)
 ```
 
 ## Kengaytirish g'oyalari
 
-- Payme/Click/Uzum orqali avtomatik to'lov (hozir admin qo'lda tasdiqlaydi)
 - IG/Messenger uchun ovozli javob (hozir TTS faqat WhatsApp'da)
 - Buyurtmalarni alohida ro'yxat sifatida boshqarish (CRM)
 - PostgreSQL'ga o'tish (hozir JSON fayl — kichik/o'rta yuk uchun yetarli)

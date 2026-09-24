@@ -14,7 +14,7 @@ export const PLAN_DEFS = {
     name: "Start",
     defaultPrice: 99000,
     tagline: "Kichik biznes uchun",
-    features: ["Instagram + Messenger", "AI matn javoblari", "Kommentlarga javob", "Asosiy statistika"],
+    features: ["1 000 AI javob / oy", "Instagram, Messenger, WhatsApp, Telegram", "Flow builder va komment → Direct", "Live Inbox, CRM, do'kon"],
   },
   pro: {
     id: "pro",
@@ -22,10 +22,10 @@ export const PLAN_DEFS = {
     defaultPrice: 199000,
     tagline: "O'sayotgan biznes uchun",
     features: [
-      "Start'dagi hammasi",
-      "WhatsApp integratsiyasi",
-      "AI ovoz / rasm / video tahlili",
-      "Suhbat tarixi",
+      "3 000 AI javob / oy",
+      "Barcha imkoniyatlar ochiq",
+      "Ommaviy xabarlar va ketma-ketliklar",
+      "amoCRM / Bitrix24, Google Sheets",
     ],
   },
   business: {
@@ -34,11 +34,10 @@ export const PLAN_DEFS = {
     defaultPrice: 399000,
     tagline: "Yuqori yuklamali biznes uchun",
     features: [
-      "Pro'dagi hammasi",
-      "Ovozli javob (TTS)",
-      "Operator chaqirish rejimi",
-      "Telegram bildirishnoma",
-      "Kengaytirilgan statistika",
+      "10 000 AI javob / oy",
+      "Barcha imkoniyatlar ochiq",
+      "Jamoa a'zolari va operator rejimi",
+      "API / MCP, ovozli javob (TTS)",
     ],
   },
 };

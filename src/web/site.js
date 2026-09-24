@@ -11,6 +11,25 @@ import { I18N, LANGS, LANG_SHORT, pickLang, t } from "./i18n.js";
 import { googleAuthAvailable } from "../googleAuth.js";
 import { HOME_CSS, heroStage, heroTrust, platformsStrip, showcaseSection, bentoSection, channelsSection, casesSection, testimonialAvatar } from "./site_home.js";
 import { home } from "./i18n_home.js";
+import { siteSettings, SITE_DEFAULTS, addContactMessage } from "../siteSettings.js";
+import { listUsers } from "../db.js";
+import { AI_QUOTA } from "../credits.js";
+import { createRateLimiter } from "../rateLimit.js";
+import { sendTelegram } from "../notify.js";
+
+/** Hero ostidagi ishonch qatori: admin matni → haqiqiy bizneslar soni → neutral matn. */
+async function trustLine(h) {
+  const cfg = siteSettings();
+  if (cfg.trustText) return cfg.trustText;
+  if (cfg.showBusinessCount) {
+    const n = (await listUsers()).length;
+    if (n >= cfg.minBusinessCount) {
+      const rounded = n >= 100 ? Math.floor(n / 50) * 50 : Math.floor(n / 10) * 10;
+      return String(h.trustCount || h.trust).replace("{n}", rounded.toLocaleString("ru-RU"));
+    }
+  }
+  return ""; // soxta raqam o'rniga — hech narsa (badge'da allaqachon "3 kun bepul" bor)
+}
 
 export const site = Router();
 
@@ -132,11 +151,7 @@ function siteLayout(lang, path, title, body, { user, active = "" } = {}) {
         "priceCurrency": "USD",
         "availability": "https://schema.org/InStock"
       },
-      "aggregateRating": {
-        "@type": "AggregateRating",
-        "ratingValue": "4.9",
-        "reviewCount": "128"
-      }
+      "provider": { "@id": "https://obunext.uz/#organization" }
     }
   ]
 }
@@ -539,7 +554,7 @@ function footer(lang, path, tr) {
       <div class="foot-legal" style="border-top:1px solid rgba(255,255,255,.09);margin-top:26px;padding-top:20px;font-size:13px;color:#9998a6;line-height:1.7">
         ${esc(LEGAL.nameShort)} · STIR ${esc(LEGAL.stir)}<br>
         ${esc(LEGAL.address)}<br>
-        Tel: ${esc(LEGAL.phone)} · ${esc(LEGAL_EMAIL)}<br>
+        Tel: ${esc(siteSettings().phone || LEGAL.phone)} · ${esc(legalEmail())}<br>
         Narxlar O'zbekiston Respublikasi milliy valyutasida (so'm, UZS) ko'rsatilgan.
       </div>
       <div class="foot-bottom">
@@ -565,7 +580,7 @@ async function pricingCards(tr) {
         <h3>${esc(pl.name)}</h3>
         <p class="tl">${esc(pl.tagline)}</p>
         <div class="price">${esc(priceStr)} <small>${esc(p.currency)}${esc(p.perMonth)}</small></div>
-        <ul>${pl.features.map((x) => `<li>${esc(x)}</li>`).join("")}</ul>
+        <ul>${AI_QUOTA[pl.id] && p.aiPerMonth ? `<li><b>${esc(p.aiPerMonth.replace("{n}", AI_QUOTA[pl.id].toLocaleString("ru-RU")))}</b></li>` : ""}${pl.features.map((x) => `<li>${esc(x)}</li>`).join("")}</ul>
         <a href="/register" class="btn ${i === 1 ? "primary" : "ghost"}">${esc(p.cta)}</a>
       </div>`;
       })
@@ -594,6 +609,8 @@ site.get("/", async (req, res) => {
   const h = tr.hero, how = tr.how, st = tr.stats, ts = tr.testimonials, fq = tr.faq, cta = tr.ctaBand;
 
   const H = home(lang);
+  // Faqat admin panelda kiritilgan haqiqiy fikrlar ko'rsatiladi (namunaviy/o'ylab topilgan emas)
+  const quotes = siteSettings().testimonials;
   const body = `
   <section class="hero hx-hero">
     <div class="wrap hero-grid">
@@ -605,7 +622,7 @@ site.get("/", async (req, res) => {
           <a href="/register" class="btn primary lg">${esc(h.ctaPrimary)} →</a>
           <a href="/#showcase" class="btn ghost lg">${esc(H.heroSecondary)}</a>
         </div>
-        ${heroTrust(lang, h.trust)}
+        ${heroTrust(lang, await trustLine(h), siteSettings().rating)}
       </div>
       ${heroStage(lang)}
     </div>
@@ -636,12 +653,12 @@ site.get("/", async (req, res) => {
     ${await pricingCards(tr)}
   </div></section>
 
-  <section style="background:var(--bg-2);border-top:1px solid var(--line);border-bottom:1px solid var(--line)"><div class="wrap">
+  ${quotes.length ? `<section style="background:var(--bg-2);border-top:1px solid var(--line);border-bottom:1px solid var(--line)"><div class="wrap">
     <div class="sec-head"><h2>${esc(ts.title)}</h2></div>
     <div class="quotes">
-      ${ts.items.map((q, i) => `<div class="quote"><div class="st">★★★★★</div><p>“${esc(q.quote)}”</p><div class="who">${testimonialAvatar(q.name, i)}<div><b>${esc(q.name)}</b><span>${esc(q.role)}</span></div></div></div>`).join("")}
+      ${quotes.map((q, i) => `<div class="quote"><p>“${esc(q.quote)}”</p><div class="who">${testimonialAvatar(q.name, i)}<div><b>${esc(q.name)}</b><span>${esc(q.role)}</span></div></div></div>`).join("")}
     </div>
-  </div></section>
+  </div></section>` : ""}
 
   <section id="faq"><div class="wrap">
     <div class="sec-head"><span class="eyebrow">❓ ${esc(tr.nav.faq)}</span><h2>${esc(fq.title)}</h2><p>${esc(fq.sub)}</p></div>
@@ -835,7 +852,7 @@ export function authPage(lang, kind, { error = "", values = {}, refCode = "" } =
 
 // ==== Huquqiy sahifalar (Meta App Review va Publish uchun majburiy) ====
 
-const LEGAL_EMAIL = "info@admai.uz";
+const legalEmail = () => siteSettings().email || SITE_DEFAULTS.email;
 const LEGAL_UPDATED = "2026-07-18";
 
 // Yuridik rekvizitlar — to'lov tizimlari (Visa/MasterCard) talabi bo'yicha
@@ -867,7 +884,7 @@ const requisites = () => `
       ["MFO", LEGAL.mfo],
       ["QQS stavkasi", LEGAL.vat],
       ["Telefon", LEGAL.phone],
-      ["Email", LEGAL_EMAIL],
+      ["Email", legalEmail()],
     ]
       .map(
         ([k, v]) =>
@@ -927,8 +944,9 @@ site.get("/privacy-policy", (req, res) => {
     },
     {
       h: "5. Saqlash muddati va xavfsizlik",
-      body: `Ma'lumotlar Yevropada joylashgan serverda saqlanadi. Har bir suhbatdan oxirgi bir necha
-        xabar konteksti saqlanadi, eskilari avtomatik o'chiriladi. Ulanish HTTPS orqali shifrlanadi,
+      body: `Ma'lumotlar Yevropada joylashgan serverda saqlanadi. Suhbatlar tarixi biznes o'z panelida
+        ko'rishi uchun akkaunt faol bo'lgan davrda saqlanadi; biznes mijoz kartasini yoki akkauntini
+        o'chirsa — tegishli yozishmalar butunlay o'chiriladi. Ulanish HTTPS orqali shifrlanadi,
         parollar scrypt algoritmi bilan hash qilinadi, Meta webhook so'rovlari kriptografik imzo
         bilan tekshiriladi.`,
     },
@@ -936,7 +954,7 @@ site.get("/privacy-policy", (req, res) => {
       h: "6. Sizning huquqlaringiz",
       body: `Istalgan vaqtda ma'lumotlaringizni ko'rish, tuzatish yoki butunlay o'chirishni talab
         qilishingiz mumkin. Buning uchun <a href="/data-deletion">ma'lumotlarni o'chirish</a>
-        sahifasiga qarang yoki <a href="mailto:${LEGAL_EMAIL}">${LEGAL_EMAIL}</a> ga yozing.
+        sahifasiga qarang yoki <a href="mailto:${esc(legalEmail())}">${esc(legalEmail())}</a> ga yozing.
         Instagram ulanishini dashboarddan yoki Instagram sozlamalaridan istalgan payt uzishingiz mumkin.`,
     },
     {
@@ -952,7 +970,7 @@ site.get("/privacy-policy", (req, res) => {
         IDs. Message content is processed by Obunext to generate a reply. We do not sell or share
         your data. Data is stored on servers in Europe, encrypted in transit. To request access or
         deletion of your data, see <a href="/data-deletion">/data-deletion</a> or email
-        <a href="mailto:${LEGAL_EMAIL}">${LEGAL_EMAIL}</a>.`,
+        <a href="mailto:${esc(legalEmail())}">${esc(legalEmail())}</a>.`,
     },
   ]);
   res.send(
@@ -994,7 +1012,7 @@ site.get("/terms", (req, res) => {
     },
     {
       h: "6. Aloqa",
-      body: `<a href="mailto:${LEGAL_EMAIL}">${LEGAL_EMAIL}</a>`,
+      body: `<a href="mailto:${esc(legalEmail())}">${esc(legalEmail())}</a>`,
     },
   ]);
   res.send(siteLayout(req.lang, "/terms", "Foydalanish shartlari", body, { user: req.user }));
@@ -1044,7 +1062,7 @@ site.get("/offer", (req, res) => {
       h: "4. Pulni qaytarish shartlari",
       body: `Buyurtmachi Ijrochining aybi bilan xizmat ko'rsatilmagan taqdirda
         (platforma 24 soatdan ortiq uzluksiz ishlamagan bo'lsa) to'langan summani
-        qaytarishni talab qilishi mumkin. So'rov <a href="mailto:${LEGAL_EMAIL}">${LEGAL_EMAIL}</a>
+        qaytarishni talab qilishi mumkin. So'rov <a href="mailto:${esc(legalEmail())}">${esc(legalEmail())}</a>
         ga yuboriladi va <b>10 ish kuni</b> ichida ko'rib chiqiladi.<br><br>
         Qaytariladigan summa foydalanilmagan kunlar uchun mutanosib hisoblanadi va
         to'lov amalga oshirilgan usul orqali qaytariladi. Bepul sinov muddati uchun
@@ -1096,7 +1114,7 @@ site.get("/data-deletion", (req, res) => {
         hech qanday xabar ola olmaymiz va yubora olmaymiz.<br><br>
         <b>2-usul — Instagram tomonidan:</b> Instagram akkauntingizda
         Sozlamalar → Ilovalar va saytlar bo'limiga kiring va "Obunext" ilovasini o'chiring.<br><br>
-        <b>3-usul — so'rov yuborish:</b> <a href="mailto:${LEGAL_EMAIL}">${LEGAL_EMAIL}</a> ga
+        <b>3-usul — so'rov yuborish:</b> <a href="mailto:${esc(legalEmail())}">${esc(legalEmail())}</a> ga
         ro'yxatdan o'tgan emailingizdan yozing. So'rovingizni 30 kun ichida bajaramiz va
         tasdiqnoma yuboramiz.`,
     },
@@ -1110,7 +1128,7 @@ site.get("/data-deletion", (req, res) => {
       h: "English",
       body: `To delete your data: (1) remove the connection from your dashboard or delete your
         account; (2) remove the "Obunext" app from Instagram Settings → Apps and Websites; or
-        (3) email <a href="mailto:${LEGAL_EMAIL}">${LEGAL_EMAIL}</a> from your registered address.
+        (3) email <a href="mailto:${esc(legalEmail())}">${esc(legalEmail())}</a> from your registered address.
         We complete deletion requests within 30 days, including backups, and send you a
         confirmation. Deleted data includes your account, business information, stored Meta
         access tokens, all conversation history and statistics.`,
@@ -1121,10 +1139,26 @@ site.get("/data-deletion", (req, res) => {
   );
 });
 
+const contactLimiter = createRateLimiter({ windowMs: 60 * 60 * 1000, max: 5 });
+
+site.post("/contact", contactLimiter, async (req, res) => {
+  const b = req.body || {};
+  if (b.website) return res.redirect("/contact?sent=1"); // bot (yashirin maydon to'ldirilgan)
+  const r = await addContactMessage({ name: b.name, email: b.email, phone: b.phone, message: b.message, lang: b.lang, ip: req.ip });
+  if (!r.ok) return res.redirect("/contact?err=1");
+  const adminChat = process.env.ADMIN_TELEGRAM_CHAT_ID;
+  if (adminChat) {
+    const it = r.item;
+    sendTelegram(adminChat, `📩 <b>Saytdan murojaat</b>\n👤 ${esc(it.name)} ${esc(it.email)} ${esc(it.phone)}\n\n${esc(it.message.slice(0, 1500))}`).catch(() => {});
+  }
+  res.redirect("/contact?sent=1");
+});
+
 site.get("/contact", (req, res) => {
   const lang = req.lang;
   const tr = t(lang);
   const c = tr.contactPage;
+  const cfg = siteSettings();
   const body = `
   <section class="hero" style="padding:56px 0 40px"><div class="wrap" style="text-align:center;max-width:720px;margin:0 auto">
     <span class="eyebrow">💬 ${esc(tr.nav.contact)}</span>
@@ -1133,18 +1167,23 @@ site.get("/contact", (req, res) => {
   </div></section>
   <section style="padding-top:20px"><div class="wrap"><div class="contact-grid">
     <div class="contact-card">
-      <form method="get" action="/register">
-        <label>${esc(c.formName)}</label><input name="name" placeholder="${esc(c.formName)}">
-        <label>${esc(c.formEmail)}</label><input name="email" type="email" placeholder="you@email.com">
-        <label>${esc(c.formMsg)}</label><textarea placeholder="..."></textarea>
+      ${req.query.sent ? `<div class="flash-ok" style="background:#ecfdf5;border:1px solid #a7f3d0;color:#065f46;padding:12px 14px;border-radius:12px;margin-bottom:14px;font-weight:600">${esc(c.sent)}</div>` : ""}
+      ${req.query.err ? `<div style="background:#fef2f2;border:1px solid #fecaca;color:#991b1b;padding:12px 14px;border-radius:12px;margin-bottom:14px;font-weight:600">${esc(c.sendErr)}</div>` : ""}
+      <form method="post" action="/contact">
+        <input type="hidden" name="lang" value="${esc(lang)}">
+        <div style="position:absolute;left:-9999px" aria-hidden="true"><input name="website" tabindex="-1" autocomplete="off"></div>
+        <label>${esc(c.formName)}</label><input name="name" placeholder="${esc(c.formName)}" maxlength="80" required>
+        <label>${esc(c.formEmail)}</label><input name="email" type="email" placeholder="you@email.com" maxlength="120">
+        <label>${esc(c.formPhone)}</label><input name="phone" type="tel" placeholder="+998 __ ___ __ __" maxlength="32">
+        <label>${esc(c.formMsg)}</label><textarea name="message" placeholder="..." required minlength="5" maxlength="3000"></textarea>
         <button class="btn primary" style="width:100%;margin-top:18px">${esc(c.formSend)}</button>
       </form>
     </div>
     <div class="contact-info">
       <p class="muted" style="margin:0 0 12px">${esc(c.or)}</p>
-      <a href="https://t.me/admaiuz" target="_blank" rel="noopener"><span class="ci" style="background:none">${brandIcon("telegram", { size: 42 })}</span><div><b>${esc(c.telegram)}</b><br><span class="muted">@admaiuz</span></div></a>
-      <a href="mailto:info@admai.uz"><span class="ci">✉️</span><div><b>${esc(c.email)}</b><br><span class="muted">info@admai.uz</span></div></a>
-      <a href="tel:+998949392250"><span class="ci">📞</span><div><b>${esc(c.phone)}</b><br><span class="muted">+998 94 939 22 50</span></div></a>
+      ${cfg.telegram ? `<a href="https://t.me/${esc(cfg.telegram)}" target="_blank" rel="noopener"><span class="ci" style="background:none">${brandIcon("telegram", { size: 42 })}</span><div><b>${esc(c.telegram)}</b><br><span class="muted">@${esc(cfg.telegram)}</span></div></a>` : ""}
+      ${cfg.email ? `<a href="mailto:${esc(cfg.email)}"><span class="ci">✉️</span><div><b>${esc(c.email)}</b><br><span class="muted">${esc(cfg.email)}</span></div></a>` : ""}
+      ${cfg.phone ? `<a href="tel:${esc(cfg.phone.replace(/[^\d+]/g, ""))}"><span class="ci">📞</span><div><b>${esc(c.phone)}</b><br><span class="muted">${esc(cfg.phone)}</span></div></a>` : ""}
     </div>
   </div></div></section>`;
   res.send(siteLayout(lang, "/contact", tr.nav.contact, body, { user: req.user, active: "contact" }));

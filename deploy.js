@@ -35,10 +35,7 @@ function collectSrcFiles(dir = 'src') {
 const filesToUpload = [
   'package.json',
   'package-lock.json',
-  // legacy-python/ production serverga yuklanmaydi.
   'rules.json',
-  'auto_reply_rules.json',
-  'scheduled_posts.json',
   'APP_REVIEW.md',
   'DEPLOY.md',
   'README.md',
@@ -103,7 +100,7 @@ async function main() {
 
     try {
       console.log('📦 Loyiha fayllari bitta arxivga yig\'ilmoqda...');
-      execSync(`tar -czf "${bundleName}" package.json package-lock.json rules.json auto_reply_rules.json scheduled_posts.json APP_REVIEW.md DEPLOY.md README.md SETUP.md business.md assets .env docker-compose.yml src`, {
+      execSync(`tar -czf "${bundleName}" package.json package-lock.json rules.json APP_REVIEW.md DEPLOY.md README.md SETUP.md business.md assets .env docker-compose.yml src`, {
         cwd: localBaseDir,
         stdio: 'inherit'
       });

@@ -12,6 +12,7 @@ const NAV = [
   ["/admin/plans", "plans", "chart", "Tariflar va kreditlar"],
   ["/admin/ai", "ai", "spark", "AI va kalitlar"],
   ["/admin/announce", "announce", "megaphone", "E'lonlar"],
+  ["/admin/site", "site", "globe", "Sayt va murojaatlar"],
   ["/admin/audit", "audit", "layout", "Audit jurnali"],
   ["/admin/system", "system", "gear", "Tizim holati"],
   ["/admin/security", "security", "shield", "Xavfsizlik"],

@@ -17,6 +17,7 @@ import { ensureFlows, startFlow, activeFlowSession, findFlow } from "../flows.js
 import { splitKey } from "../outbound.js";
 import * as game from "../gamification.js";
 import { aiAllowed } from "../aiControl.js";
+import { deleteHistory } from "../chatStore.js";
 
 export const contactsRouter = Router();
 
@@ -457,5 +458,6 @@ contactsRouter.post("/clients/c/:key/delete", requireAuth, withContact((req, res
   u.leads = (u.leads || []).filter((l) => l.chatKey !== key && l.key !== key);
   u.followUps = (u.followUps || []).filter((j) => j.key !== key);
   persist(u);
+  deleteHistory(u.id, key).catch((err) => console.error("[Arxiv] o'chirishda xato:", err.message));
   res.redirect("/clients?saved=1");
 }));

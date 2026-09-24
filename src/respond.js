@@ -5,6 +5,7 @@ import { findKeywordRule, aiRules } from "./rules.js";
 import { classifyIntent } from "./ai.js";
 import { ruleReplyOptions, onRuleDelivered, onGateBlocked } from "./ruleActions.js";
 import { persist } from "./db.js";
+import { pushChat, recentHistory } from "./chatStore.js";
 import { runAutomations, rememberOptions, gateMessage, passesGate, resolvePayload } from "./automation.js";
 import { handleFlowInbound, findFlowTrigger, aiFlowCandidates, startFlow, logToInbox } from "./flows.js";
 import { renderTemplate } from "./templating.js";
@@ -37,12 +38,7 @@ function inboxKey(channel, chatKey) {
 
 /** Avtomatik (AI bo'lmagan) javobni Live Inbox'da ko'rinishi uchun suhbat tarixiga yozadi. */
 function logExchange(tenant, fullKey, userText, reply) {
-  tenant.chats ||= {};
-  const list = (tenant.chats[fullKey] ||= []);
-  const at = new Date().toISOString();
-  if (userText) list.push({ role: "user", text: userText, at });
-  if (reply) list.push({ role: "assistant", text: reply, at });
-  tenant.chats[fullKey] = list.slice(-16);
+  pushChat(tenant, fullKey, userText && { role: "user", text: userText }, reply && { role: "assistant", text: reply });
   persist(tenant);
 }
 
@@ -319,10 +315,10 @@ export async function commentAiReply(tenant, channel, fromId, commentText) {
   if (isManual(tenant, fullKey)) return "";
   if (!aiAllowed(tenant, chanShort(channel), fullKey).allowed) return "";
   recordMessage(tenant, channel, fullKey, `💬 Komment: ${text}`);
-  const before = tenant.chats?.[fullKey]?.length || 0;
+  const lastBefore = recentHistory(tenant, fullKey, 1)[0];
   const reply = await generateReply(tenant, fullKey, { text });
   // AI bo'lmagan zaxira javob tarixga o'zi yozilmaydi — Inbox'da ko'rinishi uchun yozamiz
-  if ((tenant.chats?.[fullKey]?.length || 0) === before) logExchange(tenant, fullKey, `💬 Komment: ${text}`, reply || "");
+  if (recentHistory(tenant, fullKey, 1)[0] === lastBefore) logExchange(tenant, fullKey, `💬 Komment: ${text}`, reply || "");
   persist(tenant);
   return reply || "";
 }

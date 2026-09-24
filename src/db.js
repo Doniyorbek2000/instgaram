@@ -105,9 +105,14 @@ function save() {
   }, 40);
 }
 
+/** Baza holati: { mode: "postgres"|"json", fallback, error, ... } */
+export const dbStatus = pg.dbStatus;
+/** PostgreSQL ulanishi (yoki JSON'ga o'tish) tugashini kutish uchun. */
+export const dbReady = pg.pgInit;
+
 /** Boshqa modullar user obyektini o'zgartirgach saqlash uchun */
 export async function persist(user) {
-  save();
+  if (!pg.isPgReady()) save();
   if (user && user.id && pg.isPgReady()) {
     try {
       await pg.updateUser(user.id, user);

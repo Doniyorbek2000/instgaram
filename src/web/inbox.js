@@ -8,6 +8,7 @@ import { aiAllowed, aiSettings } from "../aiControl.js";
 import { requireAuth } from "../auth.js";
 import { page, esc } from "./layout.js";
 import { persist } from "../db.js";
+import { pushChat, loadHistory } from "../chatStore.js";
 import { sendDirectMessage } from "../services/instagram.js";
 import { sendMessengerMessage } from "../services/messenger.js";
 import { sendTelegramMessage } from "../telegram.js";
@@ -64,34 +65,10 @@ function normalizeChatEntry(key, rawChat) {
 }
 
 /**
- * Inbox ga yozuvchi funksiya — xabarni to'g'ri formatda saqlaydi.
- * Bu funksiya ikkala formatni ham to'g'ri qiladi.
- */
-function appendInboxMessage(user, chatKey, msgObj) {
-  user.chats ||= {};
-  const raw = user.chats[chatKey];
-
-  if (!raw) {
-    // Yangi chat — massiv formatida boshlaylik (ai.js bilan mos)
-    user.chats[chatKey] = [msgObj];
-    return;
-  }
-
-  if (Array.isArray(raw)) {
-    raw.push(msgObj);
-    return;
-  }
-
-  // Eski obyekt formati
-  raw.messages ||= [];
-  raw.messages.push(msgObj);
-}
-
-/**
  * Obunext style Ultra-Professional Multi-Channel Live Inbox (/inbox)
  * 3-Column Layout: Contact List | Active Chat Stream | Contact CRM Details
  */
-inboxRouter.get("/inbox", requireAuth, (req, res) => {
+inboxRouter.get("/inbox", requireAuth, async (req, res) => {
   const user = req.user;
   user.chats ||= {};
 
@@ -149,7 +126,14 @@ inboxRouter.get("/inbox", requireAuth, (req, res) => {
 
   if (!activeKey) activeKey = chatList[0]?.key || "";
   const rawActiveChat = activeKey ? user.chats[activeKey] : null;
-  const activeChatObj = rawActiveChat ? normalizeChatEntry(activeKey, rawActiveChat) : null;
+  const activeChatObj = rawActiveChat ? { ...normalizeChatEntry(activeKey, rawActiveChat) } : null;
+  // Faol suhbatning TO'LIQ tarixi arxivdan (keshda faqat oxirgi xabarlar turadi)
+  const histLimit = Math.max(100, Math.min(5000, Number(req.query.more) || 100));
+  let history = null;
+  if (activeChatObj) {
+    history = await loadHistory(user, activeKey, { limit: histLimit });
+    activeChatObj.messages = history.messages;
+  }
   const activeProfile = activeChatObj ? user.contactProfiles[activeChatObj.chatId || activeChatObj.recipientId] : null;
   const activeDisplayName = activeProfile?.username ? `@${activeProfile.username}` : activeProfile?.name || "";
   const activeProfilePic = activeProfile?.profilePic || "";
@@ -279,15 +263,23 @@ inboxRouter.get("/inbox", requireAuth, (req, res) => {
 
       <!-- Messages Scroll Area -->
       <div id="chatScroll" style="flex:1; overflow-y:auto; padding:20px; display:flex; flex-direction:column; background:#0b0f19">
+        ${history?.hasMore ? `<div style="text-align:center; margin-bottom:12px"><a class="secondary" style="display:inline-block; padding:6px 14px; border-radius:8px; font-size:12.5px" href="/inbox?${keepQs({ chat: activeKey, more: String(histLimit + 200) })}">⬆ Oldingi xabarlar (${history.total - history.messages.length} ta)</a></div>` : ""}
         ${messagesListHtml.length ? messagesListHtml : `<div style="text-align:center; color:#64748b; margin:auto">Xabarlar tarixi bo'sh</div>`}
       </div>
 
       <!-- Quick Reply Snippets Bar -->
       <div style="padding:8px 20px; background:#0b0f19; border-top:1px solid var(--border); display:flex; gap:6px; overflow-x:auto">
-        <button type="button" class="secondary" onclick="quickReply('Assalomu alaykum! Narxlarimiz va joriy aksiyalar haqida ma\'lumot:')" style="padding:3px 8px; font-size:11.5px; margin:0">🛍️ Narxlar</button>
-        <button type="button" class="secondary" onclick="quickReply('Manzilimiz: Toshkent sh., Chilonzor 5-daha 12-uy. Metro Chilonzor.')" style="padding:3px 8px; font-size:11.5px; margin:0">📍 Manzil</button>
-        <button type="button" class="secondary" onclick="quickReply('To\'lovni Payme yoki Click orqali amalga oshirishingiz mumkin.')" style="padding:3px 8px; font-size:11.5px; margin:0">💳 To'lov</button>
-        <button type="button" class="secondary" onclick="quickReply('Tirik operatorimiz sizga 5 daqiqa ichida javob beradi. Kuting.')" style="padding:3px 8px; font-size:11.5px; margin:0">👤 Operator</button>
+        ${quickReplies(user).map((q) => `<button type="button" class="secondary qr-btn" data-text="${esc(q.text)}" title="${esc(q.text)}" style="padding:3px 8px; font-size:11.5px; margin:0; white-space:nowrap">${esc(q.title)}</button>`).join("")}
+        <details style="margin-left:auto; flex:none">
+          <summary style="cursor:pointer; font-size:11.5px; color:#94a3b8; padding:4px 6px; list-style:none">⚙️ Tahrirlash</summary>
+          <form method="post" action="/inbox/quick-replies" style="position:absolute; right:20px; bottom:120px; z-index:20; width:min(460px, 92vw); background:#0f172a; border:1px solid var(--border); border-radius:12px; padding:14px; box-shadow:0 12px 40px rgba(0,0,0,.5)">
+            <input type="hidden" name="chat" value="${esc(activeKey)}">
+            <label style="font-size:12px">Har qatorda bitta: <code>tugma nomi | matn</code></label>
+            <textarea name="lines" rows="6" maxlength="6000" style="font-size:13px">${esc(quickReplies(user).map((q) => `${q.title} | ${q.text}`).join("\n"))}</textarea>
+            <p class="hint" style="font-size:11.5px; margin:4px 0 8px">{name} — mijoz ismi bilan almashtiriladi.</p>
+            <button class="btn" style="margin:0; padding:7px 14px">Saqlash</button>
+          </form>
+        </details>
       </div>
 
       <!-- Reply Box -->
@@ -298,10 +290,12 @@ inboxRouter.get("/inbox", requireAuth, (req, res) => {
       </form>
 
       <script>
-        function quickReply(txt) {
-          const inp = document.getElementById('opInput');
-          if (inp) { inp.value = txt; inp.focus(); }
-        }
+        document.querySelectorAll('.qr-btn').forEach(function (b) {
+          b.addEventListener('click', function () {
+            var inp = document.getElementById('opInput');
+            if (inp) { inp.value = b.getAttribute('data-text').split('{name}').join(${JSON.stringify(activeDisplayName.replace(/^@/, "") || "").replace(/</g, "\\u003c")}); inp.focus(); }
+          });
+        });
         // Sahifa yuklanganda chat pastiga auto-scroll
         const el = document.getElementById('chatScroll');
         if (el) el.scrollTop = el.scrollHeight;
@@ -361,7 +355,7 @@ inboxRouter.get("/inbox", requireAuth, (req, res) => {
         <div style="margin-top:20px; font-size:13px; display:flex; flex-direction:column; gap:12px">
           <div style="display:flex; justify-content:space-between">
             <span style="color:#94a3b8">Xabarlar soni:</span>
-            <b style="color:#fff">${msgs.length} ta</b>
+            <b style="color:#fff">${history?.total ?? msgs.length} ta</b>
           </div>
           <div style="display:flex; justify-content:space-between">
             <span style="color:#94a3b8">Rejim:</span>
@@ -481,6 +475,34 @@ inboxRouter.get("/inbox", requireAuth, (req, res) => {
   );
 });
 
+const DEFAULT_QUICK_REPLIES = [
+  { title: "👋 Salom", text: "Assalomu alaykum! Qanday yordam bera olaman?" },
+  { title: "⏳ Kuting", text: "Bir daqiqa, hozir aniqlab javob beraman." },
+  { title: "📞 Telefon", text: "Batafsil gaplashish uchun telefon raqamingizni qoldirsangiz, qo'ng'iroq qilamiz." },
+  { title: "🙏 Rahmat", text: "Murojaatingiz uchun rahmat! Yana savollar bo'lsa, shu yerga yozing." },
+];
+
+function quickReplies(user) {
+  const list = user.settings?.quickReplies;
+  return Array.isArray(list) && list.length ? list : DEFAULT_QUICK_REPLIES;
+}
+
+inboxRouter.post("/inbox/quick-replies", requireAuth, (req, res) => {
+  const list = String(req.body?.lines || "")
+    .split("\n")
+    .map((line) => {
+      const i = line.indexOf("|");
+      return i > 0 ? { title: line.slice(0, i).trim().slice(0, 30), text: line.slice(i + 1).trim().slice(0, 1000) } : null;
+    })
+    .filter((q) => q && q.title && q.text)
+    .slice(0, 20);
+  req.user.settings ||= {};
+  req.user.settings.quickReplies = list;
+  persist(req.user);
+  const chat = String(req.body?.chat || "");
+  res.redirect(`/inbox${chat ? `?chat=${encodeURIComponent(chat)}` : ""}`);
+});
+
 // Operator xabarini yuborish
 inboxRouter.post("/inbox/send", requireAuth, async (req, res) => {
   const user = req.user;
@@ -491,17 +513,11 @@ inboxRouter.post("/inbox/send", requireAuth, async (req, res) => {
   if (!user.chats[chatKey]) return res.redirect("/inbox");
 
   const rawChat = user.chats[chatKey];
-  const msgObj = { role: "operator", text, at: new Date().toISOString() };
-
-  // Massiv formatida saqlangan bo'lsa — to'g'ridan push
+  pushChat(user, chatKey, { role: "operator", text: String(text).slice(0, 4000) });
   if (Array.isArray(rawChat)) {
-    rawChat.push(msgObj);
     // handOff ni alohida saqlaymiz (massiv formatida joyi yo'q, manualChats ishlatamiz)
     user.manualChats ||= {};
     user.manualChats[chatKey] = Date.now() + 2 * 60 * 60 * 1000;
-  } else {
-    rawChat.messages ||= [];
-    rawChat.messages.push(msgObj);
   }
   persist(user);
 

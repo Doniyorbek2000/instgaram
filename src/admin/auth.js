@@ -56,7 +56,23 @@ const safeEqual = (a, b) => {
 };
 
 // ---------- brute-force ----------
+// Xotirada tekshiriladi, platforma sozlamalarida ham saqlanadi — restart blokni bekor qilmaydi.
 const fails = new Map(); // ip -> { count, until }
+let failsLoaded = false;
+
+async function loadFails() {
+  if (failsLoaded) return;
+  failsLoaded = true;
+  const saved = ((await getPlatformSettings()) || {}).adminLocks || {};
+  for (const [ip, r] of Object.entries(saved)) if (!fails.has(ip) && r && (r.until > Date.now() || r.count)) fails.set(ip, r);
+}
+
+async function saveFails() {
+  const now = Date.now();
+  const out = {};
+  for (const [ip, r] of fails) if (r.until > now || (r.count && r.at > now - LOCK_MS)) out[ip] = r;
+  await setPlatformSettings({ adminLocks: out });
+}
 
 export function lockInfo(ip) {
   const r = fails.get(ip);
@@ -65,19 +81,23 @@ export function lockInfo(ip) {
 
 /** Login + parolni tekshiradi. Qaytaradi: { ok } | { error } */
 export async function verifyAdmin(login, password, ip = "") {
+  await loadFails();
   const locked = lockInfo(ip);
   if (locked) return { error: `Juda ko'p noto'g'ri urinish. ${locked} daqiqadan so'ng qayta urinib ko'ring.` };
   const c = await credentials();
   const okLogin = safeEqual(normalizeLogin(login), c.login);
   const okPass = safeEqual(scrypt(password, c.salt), c.hash); // login noto'g'ri bo'lsa ham hisoblanadi (vaqt bo'yicha farq bo'lmasin)
   if (okLogin && okPass) {
-    fails.delete(ip);
+    if (fails.delete(ip)) await saveFails();
     return { ok: true, version: c.version };
   }
   const prev = fails.get(ip);
-  const count = (prev && prev.until > Date.now() ? 0 : prev?.count || 0) + 1;
-  fails.set(ip, { count, until: count >= MAX_FAILS ? Date.now() + LOCK_MS : 0 });
+  // Blok muddati o'tgan yoki oxirgi xato 15 daqiqadan eski bo'lsa — hisob qaytadan
+  const stale = !prev || (prev.until && prev.until <= Date.now()) || (prev.at && prev.at < Date.now() - LOCK_MS);
+  const count = (stale ? 0 : prev.count || 0) + 1;
+  fails.set(ip, { count, at: Date.now(), until: count >= MAX_FAILS ? Date.now() + LOCK_MS : 0 });
   if (fails.size > 10000) fails.delete(fails.keys().next().value);
+  await saveFails();
   return { error: count >= MAX_FAILS ? "Juda ko'p noto'g'ri urinish. 15 daqiqadan so'ng qayta urinib ko'ring." : "Login yoki parol noto'g'ri" };
 }
 

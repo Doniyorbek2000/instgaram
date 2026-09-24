@@ -18,6 +18,7 @@ import { settingsRouter } from "./web/settings_ui.js";
 import { flowsRouter } from "./web/flows_ui.js";
 import { sequencesRouter } from "./web/sequences_ui.js";
 import { shopRouter } from "./web/shop_ui.js";
+import { shopPaymentsRouter } from "./shopPayments.js";
 import { growthToolsRouter } from "./web/growth_tools_ui.js";
 import { pushRouter } from "./web/push_ui.js";
 import { adminRouter } from "./admin/routes.js";
@@ -39,7 +40,9 @@ import { checkAndPublishScheduledPosts } from "./postPublisher.js";
 import { runDueFollowUps } from "./followups.js";
 import { runDueBroadcasts } from "./broadcasts.js";
 import { refreshTelegramWebhooks } from "./telegram.js";
-import { listUsers } from "./db.js";
+import { listUsers, dbReady, dbStatus } from "./db.js";
+import { loadSeenEvents, flushSeenEvents } from "./dedup.js";
+import { securityHeaders } from "./securityHeaders.js";
 import { page } from "./web/layout.js";
 import { findUserByPlatformId, persist } from "./db.js";
 import { purgeInternalKeys } from "./outbound.js";
@@ -52,6 +55,8 @@ import { handleWhatsAppEntry } from "./handlers/whatsapp.js";
 import { handlePayme, checkPaymeAuth } from "./payme.js";
 
 const app = express();
+app.disable("x-powered-by");
+app.use(securityHeaders);
 
 // Server har doim reverse proxy (nginx/docker) orqasida ishlaydi (docker-compose:
 // 127.0.0.1:PORT). Shuning uchun Express'ga bitta ishonchli proksi qatlami borligini
@@ -164,6 +169,7 @@ app.use(schedulerRouter);
 app.use(flowsRouter);
 app.use(sequencesRouter);
 app.use(shopRouter);
+app.use(shopPaymentsRouter);
 app.use(growthToolsRouter);
 app.use(teamRouter);
 app.use(analyticsRouter);
@@ -217,7 +223,9 @@ app.get(["/mcp", "/mcp/:token"], (_req, res) => res.set("Allow", "POST").status(
 
 // Server tirikligini tekshirish (monitoring/uptime uchun)
 app.get("/health", (_req, res) => {
-  res.json({ status: "ok", time: new Date().toISOString() });
+  const db = dbStatus();
+  // PostgreSQL sozlangan-u ulanmagan bo'lsa monitoring buni "degraded" deb ko'rsin
+  res.status(db.fallback ? 503 : 200).json({ status: db.fallback ? "degraded" : "ok", db: db.mode, dbFallback: db.fallback, time: new Date().toISOString() });
 });
 
 // Payme Merchant API (JSON-RPC). Merchant kabinetda Endpoint = https://<domen>/payme
@@ -358,6 +366,11 @@ function checkConfig() {
   for (const w of warn) console.warn("⚠️  " + w);
 }
 
+// Baza (PostgreSQL yoki JSON) tayyor bo'lmaguncha so'rov qabul qilmaymiz — aks holda
+// ilk webhooklar noto'g'ri bazaga yozilib qolardi.
+await dbReady;
+await loadSeenEvents();
+
 const server = app.listen(config.port, () => {
   checkConfig();
   console.log(`Server ${config.port}-portda ishga tushdi 🚀`);
@@ -411,6 +424,7 @@ function shutdown(signal) {
   console.log(`\n${signal} — bazani saqlab, to'xtatilmoqda...`);
   try {
     persist();
+    flushSeenEvents();
   } catch (err) {
     console.error("Saqlashda xato:", err.message);
   }

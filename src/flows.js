@@ -21,6 +21,7 @@
  */
 import crypto from "node:crypto";
 import { persist } from "./db.js";
+import { pushChat } from "./chatStore.js";
 import { sendReply, sendMedia, splitKey, optionsAsText } from "./outbound.js";
 import { sanitizeMedia, absoluteMediaUrl } from "./mediaStore.js";
 import { renderTemplate, zonedParts } from "./templating.js";
@@ -644,15 +645,9 @@ function escapeHtml(s) {
  * xabari: u birinchi bot xabaridan OLDIN bir marta yoziladi (tartib to'g'ri bo'lsin).
  */
 export function logToInbox(tenant, key, ctx, botText = "") {
-  tenant.chats ||= {};
-  const list = (tenant.chats[key] ||= []);
-  const at = new Date().toISOString();
-  if (ctx?.userText) {
-    list.push({ role: "user", text: ctx.userText, at });
-    ctx.userText = "";
-  }
-  if (botText) list.push({ role: "assistant", text: botText, at });
-  tenant.chats[key] = list.slice(-16);
+  const userText = ctx?.userText || "";
+  if (ctx) ctx.userText = "";
+  pushChat(tenant, key, userText && { role: "user", text: userText }, botText && { role: "assistant", text: botText });
 }
 
 async function deliver(tenant, key, ctx, text, options = []) {

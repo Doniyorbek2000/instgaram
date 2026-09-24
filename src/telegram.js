@@ -8,6 +8,7 @@
 import { Router } from "express";
 import crypto from "node:crypto";
 import { findUserById, persist } from "./db.js";
+import { pushChat } from "./chatStore.js";
 import { processMessage } from "./respond.js";
 import { fetchAsBase64 } from "./media.js";
 import { sendReply, telegramBusinessExtra } from "./outbound.js";
@@ -192,10 +193,8 @@ export async function handleBusinessMessage(user, message, token) {
   if (String(message.from?.id) === tb.ownerId) {
     user.manualChats ||= {};
     user.manualChats[key] = Date.now() + 2 * 60 * 60 * 1000;
-    user.chats ||= {};
-    const list = (user.chats[key] ||= []);
-    if (text) list.push({ role: "operator", text, at: new Date().toISOString() });
-    user.chats[key] = list.slice(-16);
+    if (text) pushChat(user, key, { role: "operator", text });
+    else pushChat(user, key);
     persist(user);
     return;
   }
