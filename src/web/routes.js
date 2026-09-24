@@ -473,7 +473,7 @@ web.get("/billing", requireAuth, async (req, res) => {
   const planCards = plansArr
     .map((p, i) => {
       const current = u.subscription.plan === p.id;
-      const popular = i === 1; // Popular plan
+      const popular = p.id === "pro";
       return `<div class="card" style="margin:0; position:relative; ${current ? "border:2px solid #8b5cf6" : popular ? "border:2px solid #ec4899" : ""}">
         ${popular && !current ? `<span class="status-tag" style="position:absolute; top:-12px; left:20px; background:var(--grad-primary); color:#fff; border:0">🔥 OMMABOP</span>` : ""}
         ${current ? `<span class="status-tag" style="position:absolute; top:-12px; left:20px">✓ JORIY TARIF</span>` : ""}
@@ -504,7 +504,7 @@ web.get("/billing", requireAuth, async (req, res) => {
   const q = aiQuota(u);
   const packs = await getCreditPacks();
   const pct = q.quota ? Math.min(100, Math.round((q.used / q.quota) * 100)) : 100;
-  const planLabel = { free: "🆓 Bepul", trial: "🧪 Sinov", start: "Start", pro: "Pro", business: "Business" }[q.plan] || q.plan;
+  const planLabel = { free: "🆓 Bepul", trial: "🧪 Sinov", mini: "Mini", lite: "Lite", start: "Start", pro: "Pro", business: "Business" }[q.plan] || q.plan;
   const creditsCard = `
     <div class="card" id="credits" style="margin-top:20px">
       <div style="display:flex; justify-content:space-between; gap:12px; flex-wrap:wrap; align-items:center">

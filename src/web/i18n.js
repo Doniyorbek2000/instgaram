@@ -92,6 +92,20 @@ export const I18N = {
       cta: "Tanlash",
       plans: [
         {
+          id: "mini",
+          name: "Mini",
+          price: "19 000",
+          tagline: "Endi boshlayotganlar uchun",
+          features: ["Instagram, Messenger, WhatsApp, Telegram", "Flow builder va komment → Direct", "Live Inbox va CRM"],
+        },
+        {
+          id: "lite",
+          name: "Lite",
+          price: "49 000",
+          tagline: "Kichik sahifa va do'konlar uchun",
+          features: ["Do'kon: katalog, Payme / Click", "Ommaviy xabarlar va ketma-ketliklar", "Obunani tekshirish, referal, QR"],
+        },
+        {
           id: "start",
           name: "Start",
           price: "99 000",
@@ -271,6 +285,20 @@ export const I18N = {
       cta: "Выбрать",
       plans: [
         {
+          id: "mini",
+          name: "Mini",
+          price: "19 000",
+          tagline: "Для тех, кто только начинает",
+          features: ["Instagram, Messenger, WhatsApp, Telegram", "Конструктор сценариев и комментарий → Direct", "Live Inbox и CRM"],
+        },
+        {
+          id: "lite",
+          name: "Lite",
+          price: "49 000",
+          tagline: "Для небольших страниц и магазинов",
+          features: ["Магазин: каталог, Payme / Click", "Рассылки и цепочки сообщений", "Проверка подписки, рефералы, QR"],
+        },
+        {
           id: "start",
           name: "Start",
           price: "99 000",
@@ -449,6 +477,20 @@ export const I18N = {
       popular: "Popular",
       cta: "Choose",
       plans: [
+        {
+          id: "mini",
+          name: "Mini",
+          price: "19 000",
+          tagline: "For those just starting out",
+          features: ["Instagram, Messenger, WhatsApp, Telegram", "Flow builder and comment → DM", "Live Inbox and CRM"],
+        },
+        {
+          id: "lite",
+          name: "Lite",
+          price: "49 000",
+          tagline: "For small pages and shops",
+          features: ["Shop: catalog, Payme / Click", "Broadcasts and drip sequences", "Follow check, referrals, QR codes"],
+        },
         {
           id: "start",
           name: "Start",

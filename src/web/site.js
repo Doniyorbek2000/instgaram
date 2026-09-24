@@ -362,7 +362,13 @@ function siteLayout(lang, path, title, body, { user, active = "" } = {}) {
   .band .lbl { color: #b9b8c6; font-size: 14px; margin-top: 4px; }
 
   /* Pricing */
-  .plans { display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 20px; max-width: 980px; margin: 0 auto; }
+  .plans { display: grid; grid-template-columns: repeat(5, minmax(0,1fr)); gap: 14px; margin: 0 auto; }
+  .plans .plan { padding: 26px 20px; display: flex; flex-direction: column; }
+  .plans .plan ul { flex: 1; }
+  .plans .plan .tl { min-height: 2.9em; }
+  .plans .plan .price { font-size: 30px; white-space: nowrap; }
+  .plans .plan .price small { display: block; margin-top: 2px; font-size: 13.5px; }
+  @media (max-width: 1180px) { .plans { grid-template-columns: repeat(3, minmax(0,1fr)); max-width: 900px; } }
   .plan { background: #fff; border: 1px solid var(--line); border-radius: 20px; padding: 30px; position: relative; }
   .plan.pop { border: 2px solid transparent; background:
       linear-gradient(#fff,#fff) padding-box,
@@ -440,7 +446,7 @@ function siteLayout(lang, path, title, body, { user, active = "" } = {}) {
     .steps { grid-template-columns: 1fr; max-width: 460px; margin: 0 auto; }
     .band .stats { grid-template-columns: 1fr 1fr; gap: 30px; }
     .quotes { grid-template-columns: 1fr; }
-    .plans { grid-template-columns: 1fr; max-width: 440px; }
+    .plans { grid-template-columns: repeat(2, minmax(0,1fr)); max-width: 760px; }
     .foot-grid { grid-template-columns: 1fr 1fr; gap: 24px; }
     .contact-grid { grid-template-columns: 1fr; }
   }
@@ -575,13 +581,14 @@ async function pricingCards(tr) {
       .map((pl, i) => {
         const priceNum = live[pl.id]?.price;
         const priceStr = priceNum ? priceNum.toLocaleString("uz") : pl.price;
-        return `<div class="plan ${i === 1 ? "pop" : ""}">
-        ${i === 1 ? `<span class="tag">${esc(p.popular)}</span>` : ""}
+        const pop = pl.id === "pro";
+        return `<div class="plan ${pop ? "pop" : ""}">
+        ${pop ? `<span class="tag">${esc(p.popular)}</span>` : ""}
         <h3>${esc(pl.name)}</h3>
         <p class="tl">${esc(pl.tagline)}</p>
         <div class="price">${esc(priceStr)} <small>${esc(p.currency)}${esc(p.perMonth)}</small></div>
         <ul>${AI_QUOTA[pl.id] && p.aiPerMonth ? `<li><b>${esc(p.aiPerMonth.replace("{n}", AI_QUOTA[pl.id].toLocaleString("ru-RU")))}</b></li>` : ""}${pl.features.map((x) => `<li>${esc(x)}</li>`).join("")}</ul>
-        <a href="/register" class="btn ${i === 1 ? "primary" : "ghost"}">${esc(p.cta)}</a>
+        <a href="/register" class="btn ${pop ? "primary" : "ghost"}">${esc(p.cta)}</a>
       </div>`;
       })
       .join("")}
@@ -1018,7 +1025,8 @@ site.get("/terms", (req, res) => {
   res.send(siteLayout(req.lang, "/terms", "Foydalanish shartlari", body, { user: req.user }));
 });
 
-site.get("/offer", (req, res) => {
+site.get("/offer", async (req, res) => {
+  const plans = await getPlans();
   const body = legalBody("Ommaviy oferta / Public Offer", [
     {
       h: "Umumiy qoidalar",
@@ -1041,9 +1049,7 @@ site.get("/offer", (req, res) => {
       h: "2. Xizmat narxi va to'lov tartibi",
       body: `Narxlar O'zbekiston Respublikasi milliy valyutasida — <b>so'mda (UZS)</b>
         belgilanadi va QQS (${LEGAL.vat}) hisobga olingan holda ko'rsatiladi.<br><br>
-        <b>Start</b> — 99 000 so'm/oy<br>
-        <b>Pro</b> — 199 000 so'm/oy<br>
-        <b>Business</b> — 399 000 so'm/oy<br><br>
+        ${Object.values(plans).map((pl) => `<b>${esc(pl.name)}</b> — ${esc(pl.price.toLocaleString("ru-RU"))} so'm/oy<br>`).join("")}<br>
         Yangi Buyurtmachilarga <b>3 kunlik bepul sinov muddati</b> beriladi, karta
         ma'lumotlari talab qilinmaydi. To'lov oldindan, tanlangan tarif uchun bir oylik
         davrga amalga oshiriladi. To'lov Payme, Click yoki bank kartasi (Visa/MasterCard,
