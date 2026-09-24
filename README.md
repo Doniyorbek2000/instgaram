@@ -24,6 +24,20 @@ Instagram, Facebook va WhatsApp uchun **veb-platforma ko'rinishidagi AI avtomatl
 | 🔔 **Telegram bildirishnoma** | Operator chaqirilganda biznes egasiga Telegram'ga xabar keladi |
 | ⚙️ **Admin panel** | Dasturchi barcha bizneslarni ko'radi, tokenlar kiritadi, to'lovni tasdiqlaydi |
 | 🛡️ **Zaxira rejim** | AI ishlamasa kalit so'z qoidalari (`rules.json`) ishlaydi — mijoz javobsiz qolmaydi |
+| 🧩 **Flow Builder** | Vizual muharrir: xabar → savol → shart → amal → kutish → AI → boshqa flow. Bloklarni sudrab ulash, AI bilan flow yaratish, tayyor shablonlar (`/flows`) |
+| 🎯 **Triggerlar** | Direct kalit so'z, post/Reels kommenti, jonli efir kommenti, story javobi va mention, yangi kontakt, referal havola. Moslik: kalit so'zlar, aniq, regex yoki **AI (ma'no bo'yicha)** |
+| 🔀 **Shartlar** | Teg, hafta kuni, ish vaqti, sana oralig'i, ballar, o'zgaruvchi, obuna holati, kanal |
+| ⚡ **Amallar** | Teg qo'shish/olish, o'zgaruvchi, ball, konversiya, operatorga o'tkazish, Telegram bildirishnoma, webhook/CRM |
+| 🔤 **O'zgaruvchilar** | `{name\|do'stim}`, `{first_name}`, `{username}`, `{phone}`, `{points}` va yig'ilgan har qanday maydon — barcha xabarlarda |
+| ⏰ **Eslatma va follow-up** | Obuna bo'lmaganlarga N daqiqadan so'ng eslatma, sovg'adan keyin kechiktirilgan xabar (server qayta ishga tushsa ham saqlanadi) |
+| 📢 **Ommaviy xabarlar** | Teg bo'yicha segment, istisno teglar, 24 soatlik oyna filtri, o'zgaruvchilar, tugmalar, flow ishga tushirish, rejalashtirish, jonli progress |
+| 📊 **Analitika** | 7/30/90 kun: kunlik xabarlar, flow boshlanishi va konversiyalar grafigi, flow va qoidalar jadvali (`/analytics`) |
+| 🏆 **Geymifikatsiya** | Ballar, sovg'alar do'koni (promokodlar), viktorina, referal, ochiq reyting sahifasi `/top/<slug>` (`/game`) |
+| 📝 **Lid formalari** | DM so'rovnoma konstruktori, arizalar, CSV eksport (`/forms`) |
+| 🔌 **Integratsiyalar** | Webhook (Make, Zapier, n8n, amoCRM, Bitrix24) va Google Sheets, sinov va jurnal (`/integrations`) |
+| 👋 **Ice Breakers** | Instagram salomlashuv tugmalari API orqali, har biri flow'ga ulanadi |
+| 👥 **Jamoa** | Xodimni havola orqali taklif qilish, rollar: administrator / operator / kuzatuvchi (`/team`) |
+| 🎬 **AI Kontent studiya** | Reels ssenariy, karusel (PNG), post matni, kontent reja, g'oyalar; Reels'dan bir bosishda komment flow (`/content`) |
 
 ## Qanday ishlaydi
 

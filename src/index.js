@@ -21,6 +21,7 @@ import { analyticsRouter } from "./web/analytics_ui.js";
 import { gameRouter } from "./web/game_ui.js";
 import { formsRouter } from "./web/forms_ui.js";
 import { integrationsRouter } from "./web/integrations_ui.js";
+import { contentRouter } from "./web/content_ui.js";
 import { teamContext } from "./team.js";
 import { telegramRouter } from "./telegram.js";
 import { reportsBotRouter, reportsBotAvailable, setupReportsBotWebhook, checkAndSendDailyReports } from "./reportsBot.js";
@@ -122,6 +123,7 @@ app.use(analyticsRouter);
 app.use(gameRouter);
 app.use(formsRouter);
 app.use(integrationsRouter);
+app.use(contentRouter);
 app.use(telegramRouter);
 app.use(reportsBotRouter);
 
