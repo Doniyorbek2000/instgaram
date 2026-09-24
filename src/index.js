@@ -1,6 +1,6 @@
 import express from "express";
 import crypto from "node:crypto";
-import { readFileSync } from "node:fs";
+import { readFileSync, existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 import { config } from "./config.js";
