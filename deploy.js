@@ -149,8 +149,41 @@ async function main() {
         await new Promise(r => setTimeout(r, 3000));
         const logs = await execCommand(conn, 'docker logs instagram-bot-1 --tail 50');
         console.log("Container Logs:\n", logs.stdout || logs.stderr);
-        const health = await execCommand(conn, 'curl -s http://localhost:3015/health || curl -s https://chat.voxo.uz/health');
-        console.log("Health Check:\n", health.stdout || health.stderr);
+        const health = await execCommand(conn, 'curl -s http://localhost:3015/health');
+        console.log("Health Check (localhost:3015):\n", health.stdout || health.stderr);
+
+        // Setup Nginx for obunext.uz
+        console.log("\n🌐 obunext.uz uchun Nginx sozlanmoqda...");
+        const nginxSetupCmd = `cat << 'EOF' > /etc/nginx/sites-available/obunext.uz
+server {
+    listen 80;
+    listen [::]:80;
+    server_name obunext.uz www.obunext.uz;
+
+    client_max_body_size 25m;
+
+    location /.well-known/acme-challenge/ {
+        root /var/www/html;
+    }
+
+    location / {
+        proxy_pass http://127.0.0.1:3015;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_read_timeout 120s;
+    }
+}
+EOF
+ln -sf /etc/nginx/sites-available/obunext.uz /etc/nginx/sites-enabled/
+nginx -t && systemctl reload nginx
+`;
+        const nginxSetupRes = await execCommand(conn, nginxSetupCmd);
+        console.log("Nginx Setup:\n", nginxSetupRes.stdout || nginxSetupRes.stderr);
 
         conn.end();
         console.log('\n🎉 SERVERGA DEPLOY VA REBUILD TO\'LIQ MUVAFFAQIYATLI YAKUNLANDI!');
