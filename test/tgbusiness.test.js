@@ -78,3 +78,19 @@ test("uzilgan, boshqa ulanish yoki javob ruxsati yo'q bo'lsa — javob yo'q", as
   assert.strictEqual(calls.filter((c) => c.method === "sendMessage").length, 0);
   assert.deepStrictEqual(u.tgBusiness.chats, {});
 });
+
+test("setWebhook muvaffaqiyatsiz bo'lsa maxfiy kalit saqlanmaydi (eski webhook ishlashda davom etadi)", async () => {
+  process.env.BASE_URL = "https://bot.example.uz";
+  const u = await tenant("tgb5@x.uz");
+  const saved = globalThis.fetch;
+  globalThis.fetch = async () => new Response(JSON.stringify({ ok: false }), { status: 400 });
+  assert.strictEqual(await tg.setupTelegramWebhook(u), false);
+  assert.strictEqual(u.settings.telegramWebhookSecret, undefined);
+  globalThis.fetch = saved;
+  calls.length = 0;
+  assert.strictEqual(await tg.setupTelegramWebhook(u), true);
+  const set = calls.find((c) => c.method === "setWebhook");
+  assert.ok(set.body.secret_token);
+  assert.strictEqual(u.settings.telegramWebhookSecret, set.body.secret_token);
+  assert.ok(set.body.allowed_updates.includes("business_message"));
+});

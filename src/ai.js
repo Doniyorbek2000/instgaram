@@ -352,7 +352,7 @@ export async function classifyIntent(tenant, text, rules) {
   if (!candidates.length || !message) return null;
 
   const geminiKey = await resolveGeminiKey(tenant);
-  if (!geminiKey) return null;
+  if (!geminiKey || !canUseAi(tenant)) return null; // kredit tugagan — faqat kalit so'z qoidalari
 
   const list = candidates
     .map((r, i) => `${i + 1}. ${(r.aiIntent || r.name || r.keyword || "").replace(/\s+/g, " ").slice(0, 300)}`)
@@ -392,8 +392,8 @@ export async function generateText(tenant, systemPrompt, prompt, { maxOutputToke
   const key = await resolveGeminiKey(tenant);
   if (!key) throw new Error("AI kaliti sozlanmagan. Admin paneldan Gemini kalitini kiriting.");
   if (!canUseAi(tenant)) throw new Error("AI kreditlari tugadi — Obuna & Tariflar sahifasida kredit paketi oling.");
-  consumeAi(tenant);
   const out = await askGemini(key, systemPrompt, [], prompt, [], { maxOutputTokens, json, temperature, timeoutMs: 30000 });
+  consumeAi(tenant); // faqat muvaffaqiyatli javob uchun hisoblanadi
   if (!json) return out;
   const cleaned = String(out).replace(/^```(?:json)?\s*/i, "").replace(/```\s*$/, "").trim();
   try {

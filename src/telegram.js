@@ -108,14 +108,17 @@ export async function setupTelegramWebhook(user) {
   const webhookUrl = `${baseUrl.replace(/\/$/, "")}/telegram/webhook/${user.id}`;
   // Maxfiy kalit: Telegram har bir so'rovda X-Telegram-Bot-Api-Secret-Token sarlavhasida
   // qaytaradi — shu bilan soxta (Telegram'dan kelmagan) update'lar rad etiladi.
-  user.settings.telegramWebhookSecret ||= crypto.randomBytes(24).toString("hex");
+  // Kalit faqat Telegram setWebhook'ni QABUL QILGANDAN keyin saqlanadi — aks holda
+  // (tarmoq xatosi va h.k.) eski, kalitsiz webhook'dan kelgan update'lar rad etilib, bot jim qolardi
+  const secret = user.settings.telegramWebhookSecret || crypto.randomBytes(24).toString("hex");
   const result = await callTelegramApi(token, "setWebhook", {
     url: webhookUrl,
-    secret_token: user.settings.telegramWebhookSecret,
+    secret_token: secret,
     allowed_updates: ["message", "edited_message", "callback_query", "business_connection", "business_message"],
   });
 
   if (result?.ok) {
+    user.settings.telegramWebhookSecret = secret;
     console.log(`[Telegram Webhook] Muvaffaqiyatli o'rnatildi (${user.businessName}): ${webhookUrl}`);
     user.settings.telegramWebhookSet = true;
     // Referal havolalar (t.me/<bot>?start=...) uchun bot username'ini saqlaymiz
