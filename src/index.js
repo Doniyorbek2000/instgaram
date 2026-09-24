@@ -17,11 +17,13 @@ import { growthRouter } from "./web/growth_ui.js";
 import { settingsRouter } from "./web/settings_ui.js";
 import { flowsRouter } from "./web/flows_ui.js";
 import { teamRouter } from "./web/team_ui.js";
+import { analyticsRouter } from "./web/analytics_ui.js";
 import { teamContext } from "./team.js";
 import { telegramRouter } from "./telegram.js";
 import { reportsBotRouter, reportsBotAvailable, setupReportsBotWebhook, checkAndSendDailyReports } from "./reportsBot.js";
 import { checkAndPublishScheduledPosts } from "./postPublisher.js";
 import { runDueFollowUps } from "./followups.js";
+import { runDueBroadcasts } from "./broadcasts.js";
 import { page } from "./web/layout.js";
 import { findUserByPlatformId, persist } from "./db.js";
 import { handleInstagramEntry } from "./handlers/instagram.js";
@@ -113,6 +115,7 @@ app.use(settingsRouter);
 app.use(schedulerRouter);
 app.use(flowsRouter);
 app.use(teamRouter);
+app.use(analyticsRouter);
 app.use(telegramRouter);
 app.use(reportsBotRouter);
 
@@ -306,6 +309,7 @@ const server = app.listen(config.port, () => {
   // Obuna eslatmalari va follow-up xabarlar — daqiqa aniqligida
   setInterval(() => {
     runDueFollowUps().catch((err) => console.error("[FollowUp] xato:", err.message));
+    runDueBroadcasts().catch((err) => console.error("[Broadcast] xato:", err.message));
   }, 60 * 1000);
 
   setInterval(() => {

@@ -6,7 +6,7 @@
  *  - /ai/rewrite         — xabarni AI bilan qayta yozish (muharrir va boshqa formalarda)
  */
 import { Router } from "express";
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 import { requireAuth } from "../auth.js";
@@ -22,13 +22,19 @@ import { allTags } from "../contacts.js";
 
 export const flowsRouter = Router();
 
+// Panel sahifalarining brauzer skriptlari (src/web/assets/*.js) — ishga tushishda
+// bir marta o'qiladi; faqat ro'yxatdagi nomlar beriladi (path traversal yo'q).
 const assetsDir = path.join(path.dirname(fileURLToPath(import.meta.url)), "assets");
-const builderJs = readFileSync(path.join(assetsDir, "flow-builder.js"), "utf8");
+const ASSETS = Object.fromEntries(
+  readdirSync(assetsDir).filter((f) => /^[a-z0-9-]+\.js$/.test(f)).map((f) => [f, readFileSync(path.join(assetsDir, f), "utf8")])
+);
 
-flowsRouter.get("/assets/flow-builder.js", (_req, res) => {
+flowsRouter.get("/assets/:name", (req, res, next) => {
+  const js = ASSETS[req.params.name];
+  if (!js) return next();
   res.type("application/javascript");
   res.setHeader("Cache-Control", "no-cache");
-  res.send(builderJs);
+  res.send(js);
 });
 
 /** <script type="application/json"> ichiga xavfsiz joylash uchun JSON. */
