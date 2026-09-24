@@ -14,6 +14,7 @@ const config = {
   port: parseInt(process.env.SSH_PORT || '22', 10),
   username: process.env.SSH_USER || 'root',
   password: process.env.SSH_PASSWORD,
+  readyTimeout: 60000,
 };
 
 
@@ -68,6 +69,8 @@ function execCommand(conn, cmd) {
   });
 }
 
+import { execSync } from 'node:child_process';
+
 function uploadSingleFile(sftp, localPath, remotePath) {
   return new Promise((resolve, reject) => {
     fs.readFile(localPath, (err, data) => {
@@ -86,13 +89,26 @@ function uploadSingleFile(sftp, localPath, remotePath) {
 async function main() {
   const conn = new Client();
 
+  conn.on('error', (err) => {
+    console.error('❌ SSH ulanish xatosi:', err.message);
+  });
+
   conn.on('ready', async () => {
     console.log('✅ Serverga SSH ulanish hosil qilindi!');
     console.log(`📁 Server loyiha jildi: ${remoteProjectDir}`);
 
+    const bundleName = 'deploy_bundle.tar.gz';
+    const localBundlePath = path.join(localBaseDir, bundleName);
+    const remoteBundlePath = path.posix.join(remoteProjectDir, bundleName);
+
     try {
-      // 1. Zamoniy papkalarni serverda oldindan yaratib olamiz
-      await execCommand(conn, `mkdir -p ${remoteProjectDir}/src/handlers ${remoteProjectDir}/src/services ${remoteProjectDir}/src/web ${remoteProjectDir}/assets`);
+      console.log('📦 Loyiha fayllari bitta arxivga yig\'ilmoqda...');
+      execSync(`tar -czf "${bundleName}" package.json package-lock.json rules.json auto_reply_rules.json scheduled_posts.json APP_REVIEW.md DEPLOY.md README.md SETUP.md business.md assets .env docker-compose.yml src`, {
+        cwd: localBaseDir,
+        stdio: 'inherit'
+      });
+
+      await execCommand(conn, `mkdir -p ${remoteProjectDir}`);
 
       conn.sftp(async (sftpErr, sftp) => {
         if (sftpErr) {
@@ -101,21 +117,23 @@ async function main() {
           return;
         }
 
-        console.log(`🚀 ${filesToUpload.length} ta fayl serverga yuklanmoqda...`);
-        let count = 0;
-        for (const file of filesToUpload) {
-          const localFilePath = path.join(localBaseDir, file);
-          const remoteFilePath = path.posix.join(remoteProjectDir, file);
-          if (fs.existsSync(localFilePath)) {
-            const ok = await uploadSingleFile(sftp, localFilePath, remoteFilePath);
-            if (ok) {
-              count++;
-              console.log(`  ✓ ${file}`);
-            }
-          }
+        console.log(`🚀 Arxiv serverga yuklanmoqda (${bundleName})...`);
+        const uploaded = await uploadSingleFile(sftp, localBundlePath, remoteBundlePath);
+        if (!uploaded) {
+          console.error('Arxivni serverga yuklashda xatolik yuz berdi.');
+          conn.end();
+          return;
         }
+        console.log('✅ Arxiv serverga muvaffaqiyatli yuklandi!');
 
-        console.log(`✅ ${count} ta fayl serverga muvaffaqiyatli yuklandi!`);
+        // Arxivni serverda ochish va tozalash
+        console.log('📂 Serverda fayllar ochilmoqda...');
+        await execCommand(conn, `tar -xzf ${remoteBundlePath} -C ${remoteProjectDir} && rm -f ${remoteBundlePath}`);
+
+        // Lokal arxivni tozalash
+        if (fs.existsSync(localBundlePath)) {
+          fs.unlinkSync(localBundlePath);
+        }
 
         // Rebuild and restart docker container
         console.log('🔄 Docker container restart va rebuild qilinmoqda...');
@@ -138,6 +156,9 @@ async function main() {
         console.log('\n🎉 SERVERGA DEPLOY VA REBUILD TO\'LIQ MUVAFFAQIYATLI YAKUNLANDI!');
       });
     } catch (err) {
+      if (fs.existsSync(localBundlePath)) {
+        try { fs.unlinkSync(localBundlePath); } catch (_) {}
+      }
       console.error('Deploy xatosi:', err);
       conn.end();
     }
