@@ -28,7 +28,8 @@ import { updateUser, listUsers, findUserById, persist, createOrder, setPlanPrice
 import { config, paymeReady } from "../config.js";
 import { getPlans, PLAN_DEFS, statusInfo, activate, deactivate, creditReferral } from "../subscription.js";
 import { aiStatusLabel, aiSettings } from "../aiControl.js";
-import { aiQuota, getCreditPacks, CREDIT_PACKS, CREDIT_ORDER_PREFIX, platformSettings, savePlatformSettings, addCredits, AI_QUOTA } from "../credits.js";
+import { aiQuota, getCreditPacks, CREDIT_PACKS, CREDIT_ORDER_PREFIX, platformSettings, savePlatformSettings, addCredits, AI_QUOTA, consumeAi, canUseAi } from "../credits.js";
+import { creditsFor, recordAiCost } from "../aiCost.js";
 import { paymeCheckoutUrl } from "../payme.js";
 import {
   statsSummary,
@@ -1602,7 +1603,7 @@ web.post("/account/scan-instagram-audit", requireAuth, async (req, res) => {
   const platformKey = await getPlatformGeminiKey();
   const geminiKey = u.geminiApiKey || platformKey || process.env.GEMINI_API_KEY;
 
-  if (geminiKey) {
+  if (geminiKey && canUseAi(u)) {
     try {
       const auditPrompt = isCompetitor
         ? `Instagram profil ma'lumotlari (haqiqiy, Meta Graph API "Business Discovery" orqali hozir olingan — bu SO'ROVCHI TADBIRKORNING EMAS, boshqa/raqobatchi akkauntning ommaviy ma'lumoti):
@@ -1633,13 +1634,17 @@ RECS:
 - <tavsiya 1>
 - <tavsiya 2>`;
 
+      const meter = {};
       const aiText = await askGemini(
         geminiKey,
         "Sen tajribali Instagram va sotuv auditchisisan. Faqat berilgan haqiqiy ma'lumotlarga tayanib javob ber, hech narsani o'ylab topma yoki fabrikatsiya qilma.",
         [],
         auditPrompt,
-        []
+        [],
+        { meter }
       );
+      consumeAi(u, Math.max(1, Math.ceil(creditsFor(meter.inTok, meter.outTok) - 0.05)));
+      recordAiCost(u, { kind: "audit", model: meter.model, inTok: meter.inTok, outTok: meter.outTok, ownKey: Boolean(u.geminiApiKey) });
 
       const scoreMatch = aiText.match(/SCORE:\s*(\d{1,3})/i);
       const gapsMatch = aiText.match(/(?:GAPS|INSIGHTS):\s*([\s\S]*?)(?:RECS:|$)/i);

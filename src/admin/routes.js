@@ -22,6 +22,8 @@ import { config, paymeReady } from "../config.js";
 import { isPgReady } from "../pgdb.js";
 import { deleteHistory } from "../chatStore.js";
 import { diagnoseBusiness } from "./diagnostics.js";
+import { registerAiCostRoutes } from "./aiCostPage.js";
+import { monthCost, toSom, aiPricing } from "../aiCost.js";
 import { siteSettings, saveSiteSettings, contactMessages, updateContactMessages } from "../siteSettings.js";
 
 export const adminRouter = Router();
@@ -305,6 +307,7 @@ adminRouter.get("/admin/businesses/:id", async (req, res) => {
             <button class="btn sm">Qo'llash</button>
           </form>
           <p class="hint">Bonus kreditlar: <b>${u.aiUsage?.bonus || 0}</b> · Oylik kvota: ${AI_QUOTA[b.tier] ?? "—"}</p>
+          <p class="hint">Shu oy AI xarajati: <b>${esc(money(Math.round(toSom(monthCost(u).usd, aiPricing()))))}</b> · ${monthCost(u).calls} ta chaqiruv · <a href="/admin/ai-cost">batafsil</a></p>
         </div>
         <div class="card"><h2>🔑 Kirish</h2>
           <form method="post" action="${url}/reset-password" style="margin:0" onsubmit="return confirm('Yangi vaqtinchalik parol yaratilsinmi? Biznesning barcha sessiyalari yopiladi.')">
@@ -636,6 +639,9 @@ adminRouter.post("/admin/announce", async (req, res) => {
   await audit(req, "announcement", announcement.enabled ? "on" : "off", announcement.text.slice(0, 120));
   go(res, "/admin/announce", "ok", "E'lon saqlandi");
 });
+
+// ================= AI xarajati =================
+registerAiCostRoutes(adminRouter);
 
 // ================= Sayt va murojaatlar =================
 
