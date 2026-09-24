@@ -96,6 +96,9 @@ const assetsDir = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", 
 const ogImageBuffer = readFileSync(path.join(assetsDir, "og-image.png"));
 const faviconBuffer = readFileSync(path.join(assetsDir, "favicon.png"));
 const logoBuffer = existsSync(path.join(assetsDir, "logo.png")) ? readFileSync(path.join(assetsDir, "logo.png")) : faviconBuffer;
+const readAsset = (name, fallback) => (existsSync(path.join(assetsDir, name)) ? readFileSync(path.join(assetsDir, name)) : fallback);
+const logoWebp = readAsset("logo.webp", null);
+const appleIcon = readAsset("apple-touch-icon.png", logoBuffer);
 
 app.get("/og-image.png", (_req, res) => {
   res.type("image/png");
@@ -113,6 +116,19 @@ app.get(["/logo.png", "/assets/logo.png"], (_req, res) => {
   res.type("image/png");
   res.setHeader("Cache-Control", "public, max-age=86400");
   res.send(logoBuffer);
+});
+
+// Yengil logo (sahifalarda ko'rsatish uchun) va iOS bosh ekran belgisi
+app.get("/logo.webp", (_req, res, next) => {
+  if (!logoWebp) return next();
+  res.type("image/webp");
+  res.setHeader("Cache-Control", "public, max-age=604800");
+  res.send(logoWebp);
+});
+app.get("/apple-touch-icon.png", (_req, res) => {
+  res.type("image/png");
+  res.setHeader("Cache-Control", "public, max-age=604800");
+  res.send(appleIcon);
 });
 
 // Publik marketing sayti (ko'p tilli: /, /features, /pricing, /faq, /contact)

@@ -9,6 +9,8 @@ import { icon, brandIcon } from "./icons.js";
 import { getPlans } from "../subscription.js";
 import { I18N, LANGS, LANG_SHORT, pickLang, t } from "./i18n.js";
 import { googleAuthAvailable } from "../googleAuth.js";
+import { HOME_CSS, heroStage, heroTrust, platformsStrip, showcaseSection, bentoSection, channelsSection, casesSection, testimonialAvatar } from "./site_home.js";
+import { home } from "./i18n_home.js";
 
 export const site = Router();
 
@@ -87,7 +89,10 @@ function siteLayout(lang, path, title, body, { user, active = "" } = {}) {
 
 <!-- Favicon & App Icons -->
 <link rel="icon" href="/favicon.png" type="image/png">
-<link rel="apple-touch-icon" href="/logo.png">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Plus+Jakarta+Sans:wght@600;700;800&display=swap">
 
 <!-- Structured Data JSON-LD (SoftwareApplication & Organization) -->
 <script type="application/ld+json">
@@ -170,7 +175,7 @@ function siteLayout(lang, path, title, body, { user, active = "" } = {}) {
   @media (prefers-reduced-motion: reduce) {
     *, *::before, *::after { animation-duration: .001ms !important; animation-iteration-count: 1 !important; transition-duration: .001ms !important; scroll-behavior: auto !important; }
   }
-  h1,h2,h3 { line-height: 1.12; letter-spacing: -.03em; margin: 0; }
+  h1,h2,h3 { line-height: 1.12; letter-spacing: -.03em; margin: 0; font-family: "Plus Jakarta Sans", "Inter", system-ui, sans-serif; }
   .gt { background: var(--grad); -webkit-background-clip: text; background-clip: text; color: transparent; }
   .eyebrow {
     display: inline-flex; align-items: center; gap: 7px; font-size: 13.5px; font-weight: 600;
@@ -395,7 +400,7 @@ function siteLayout(lang, path, title, body, { user, active = "" } = {}) {
 
   /* Footer */
   footer.site { background: var(--dark); color: #cfced9; padding: 60px 0 30px; }
-  .foot-grid { display: grid; grid-template-columns: 1.6fr 1fr 1fr 1fr; gap: 30px; }
+  .foot-grid { display: grid; grid-template-columns: 1.6fr 1fr 1fr 1fr 1.1fr; gap: 30px; }
   footer.site .brand { color: #fff; }
   footer.site .tag { color: #9998a6; font-size: 14px; margin: 14px 0 18px; max-width: 300px; }
   footer.site h4 { color: #fff; font-size: 14px; margin: 0 0 14px; }
@@ -444,7 +449,8 @@ function siteLayout(lang, path, title, body, { user, active = "" } = {}) {
     .hero-cta { flex-direction: column; align-items: stretch; }
     .hero-cta .btn { width: 100%; }
     .band .stats { grid-template-columns: 1fr 1fr; gap: 22px 16px; }
-    .foot-grid { grid-template-columns: 1fr; gap: 22px; }
+    .foot-grid { grid-template-columns: 1fr 1fr; gap: 22px 16px; }
+    .foot-grid > div:first-child { grid-column: 1 / -1; }
     .foot-bottom { flex-direction: column; align-items: flex-start; }
     .lang-menu { width: 170px; }
     .card2, .quote { padding: 20px; }
@@ -453,6 +459,7 @@ function siteLayout(lang, path, title, body, { user, active = "" } = {}) {
     .nav-cta .btn.primary { padding: 10px 14px; font-size: 14px; }
     .lang-dd summary span { display: none; }
   }
+${HOME_CSS}
 </style>
 </head>
 <body>
@@ -584,150 +591,31 @@ function faqAccordion(items) {
 site.get("/", async (req, res) => {
   const lang = req.lang;
   const tr = t(lang);
-  const h = tr.hero, m = tr.mock, hl = tr.highlights, how = tr.how, st = tr.stats, ts = tr.testimonials, fq = tr.faq, cta = tr.ctaBand;
+  const h = tr.hero, how = tr.how, st = tr.stats, ts = tr.testimonials, fq = tr.faq, cta = tr.ctaBand;
 
+  const H = home(lang);
   const body = `
-  <section class="hero">
+  <section class="hero hx-hero">
     <div class="wrap hero-grid">
       <div>
         <span class="eyebrow">${esc(h.badge)}</span>
-        <h1>${esc(h.titleA)} <span class="gt">${esc(h.titleHi)}</span> ${esc(h.titleB)}</h1>
+        <h1 style="margin-top:18px">${esc(h.titleA)} <span class="gt">${esc(h.titleHi)}</span> ${esc(h.titleB)}</h1>
         <p class="lede">${esc(h.sub)}</p>
         <div class="hero-cta">
-          <a href="/register" class="btn primary lg">${esc(h.ctaPrimary)}</a>
-          <a href="/#channels" class="btn ghost lg">Kanallarni ko'rish ➔</a>
+          <a href="/register" class="btn primary lg">${esc(h.ctaPrimary)} →</a>
+          <a href="/#showcase" class="btn ghost lg">${esc(H.heroSecondary)}</a>
         </div>
-        <div class="hero-trust"><span class="stars">★★★★★</span> ${esc(h.trust)}</div>
+        ${heroTrust(lang, h.trust)}
       </div>
-      <div class="phone-wrap">
-        <div class="ch-tabs">
-          <button type="button" onclick="switchChannel('ig')" class="ch-tab active" id="tab-ig" style="gap:6px">${brandIcon("instagram", { size: 16 })} Instagram</button>
-          <button type="button" onclick="switchChannel('tg')" class="ch-tab" id="tab-tg" style="gap:6px">${brandIcon("telegram", { size: 16 })} Telegram</button>
-          <button type="button" onclick="switchChannel('wa')" class="ch-tab" id="tab-wa" style="gap:6px">${brandIcon("whatsapp", { size: 16 })} WhatsApp</button>
-          <button type="button" onclick="switchChannel('fb')" class="ch-tab" id="tab-fb" style="gap:6px">${brandIcon("facebook", { size: 16 })} Messenger</button>
-        </div>
-        <div class="phone"><div class="phone-screen">
-          <div class="ig-top">
-            <div class="ig-av"></div>
-            <div><div class="ig-name" id="chHandle">${esc(m.handle)}</div><div class="ig-sub" id="chSub">Instagram · Direct</div></div>
-            <div class="ig-cam">💬</div>
-          </div>
-          <div class="chat">
-            <div class="msg in m1" id="cm1">${esc(m.c1)}</div>
-            <div class="msg out m2" id="cm2">${esc(m.b1)}</div>
-            <div class="msg in m3" id="cm3">${esc(m.c2)}</div>
-            <div class="typing"><i></i><i></i><i></i></div>
-            <div class="msg out m4" id="cm4">${esc(m.b2)}</div>
-          </div>
-          <div class="ig-bar"><div class="ig-input"></div><span>➤</span></div>
-        </div></div>
-      </div>
+      ${heroStage(lang)}
     </div>
   </section>
 
-  <script>
-    const channelSimData = {
-      ig: { handle: "guli_do'koni", sub: "Instagram · Direct", c1: "Salom! Ko'ylak narxi qancha? 😊", b1: "Assalomu alaykum! Ko'ylaklarimiz 150 000 – 300 000 so'm. Qaysi rang qiziqtiradi?", c2: "Qizil, yetkazib berasizmi?", b2: "Ha ✅ Toshkent bo'ylab 1 kunda yetkazib beramiz." },
-      tg: { handle: "obunext_bot", sub: "Telegram · BotFather", c1: "/start", b1: "Assalomu alaykum! 🤖 AI Biznes Yordamchisiga xush kelibsiz. Katalogni ko'rish uchun tanlang:", c2: "Bugun ishlaysizlarmi?", b2: "Ha! Har kuni 09:00 dan 21:00 gacha xizmatingizdamiz. 📍 Chilonzor 5-daha" },
-      wa: { handle: "+998901234567", sub: "WhatsApp · Cloud API", c1: "Assalomu alaykum, zakaz beray degan edim.", b1: "Vaalaykum assalom! 💚 Buyurtmangizni qabul qilishga tayyorman. Qaysi mahsulot ma'qul bo'ldi?", c2: "2 ta Xuddi qora rangda.", b2: "Qabul qilindi! Umumiy summasi 500.000 so'm. Click/Payme orqali to'lashingiz mumkin." },
-      fb: { handle: "Fashion Store Page", sub: "Facebook · Messenger", c1: "Manzilni yuboring iltimos.", b1: "Toshkent sh., Amir Temur shoh ko'chasi 45. Mo'ljal: Metro Yunusobod 📍", c2: "Dastavka narxi qancha?", b2: "Toshkent bo'ylab 20.000 so'm, viloyatlarga BTS pochta orqali 30.000 so'm." }
-    };
-    function switchChannel(key) {
-      document.querySelectorAll('.ch-tab').forEach(t => t.classList.remove('active'));
-      document.getElementById('tab-' + key).classList.add('active');
-      const d = channelSimData[key];
-      document.getElementById('chHandle').innerText = d.handle;
-      document.getElementById('chSub').innerText = d.sub;
-      document.getElementById('cm1').innerText = d.c1;
-      document.getElementById('cm2').innerText = d.b1;
-      document.getElementById('cm3').innerText = d.c2;
-      document.getElementById('cm4').innerText = d.b2;
-    }
-  </script>
-
-  <div class="logos"><div class="wrap">
-    <p>${esc(tr.logos.title)}</p>
-    <div class="logo-row">
-      <span class="logo-pill">${brandIcon("instagram", { size: 20 })} Instagram Direct & Comments</span>
-      <span class="logo-pill">${brandIcon("telegram", { size: 20 })} Telegram Bot & Webhooks</span>
-      <span class="logo-pill">${brandIcon("whatsapp", { size: 20 })} WhatsApp Business Cloud API</span>
-      <span class="logo-pill">${brandIcon("facebook", { size: 20 })} Facebook Messenger</span>
-      <span class="logo-pill">${logoMark(20)} Obunext</span>
-    </div>
-  </div></div>
-
-  <!-- Barcha 4 ta Kanal Showcase Grid -->
-  <section id="channels" style="padding:60px 0"><div class="wrap">
-    <div class="sec-head">
-      <span class="eyebrow">🌐 Multikanal AI Integratsiyasi</span>
-      <h2>Barcha Muloqot Kanallari Bitta Boshqaruv Panelida</h2>
-      <p>Mijoz qayerdan yozishidan qat'i nazar — Sun'iy Intellekt avtomatik va tirik operator kabi javob beradi.</p>
-    </div>
-
-    <div class="channel-grid">
-      <!-- Instagram Card -->
-      <div class="channel-card ig">
-        ${brandIcon("instagram", { size: 40 })}
-        <h3>Instagram Auto DM</h3>
-        <p>Instagram Direct, post/reels kommentariyalari va Story Mention'larga soniyalarda javob bering.</p>
-        <ul>
-          <li>Komment yozganda avto-DM</li>
-          <li>Story tag qilinganda rahmat xabari</li>
-          <li>Post va Reels ostidagi kommentlar</li>
-          <li>Rasmiy Meta Graph API</li>
-        </ul>
-      </div>
-
-      <!-- Telegram Card -->
-      <div class="channel-card tg">
-        ${brandIcon("telegram", { size: 40 })}
-        <h3>Telegram Bot & Group</h3>
-        <p>Shaxsiy Telegram botingizni bir daqiqada ulang va barcha mijozlarga darhol xizmat ko'rsating.</p>
-        <ul>
-          <li>Cheksiz foydalanuvchilar bilan muloqot</li>
-          <li>Ovozli va rasmli xabarlarni tushunish</li>
-          <li>Guruhlar va kanallarda avto-javob</li>
-          <li>Operator rejimi va chat o'tkazish</li>
-        </ul>
-      </div>
-
-      <!-- WhatsApp Card -->
-      <div class="channel-card wa">
-        ${brandIcon("whatsapp", { size: 40 })}
-        <h3>WhatsApp Business API</h3>
-        <p>Meta Cloud API orqali rasmiy yashil belgi (Green Badge) va ommaviy xabarnomalar yuborish.</p>
-        <ul>
-          <li>Meta Cloud API rasmiy ulanish</li>
-          <li>Yashil belgili biznes profili</li>
-          <li>Avtomatik shablonli xabarnomalar</li>
-          <li>To'lov va buyurtma tasdiqlash</li>
-        </ul>
-      </div>
-
-      <!-- Facebook Card -->
-      <div class="channel-card fb">
-        ${brandIcon("facebook", { size: 40 })}
-        <h3>Facebook Messenger</h3>
-        <p>Facebook sahifangizga kelgan habarlar va Facebook Lead Ads reklama mijozlarini avto-tahlil qiling.</p>
-        <ul>
-          <li>Facebook Page Messenger bot</li>
-          <li>Lead Ads reklamadan kelganlarga DM</li>
-          <li>Avtomatik mijozlar bazasini yig'ish</li>
-          <li>Ko'p operatorli ishchi o'rin</li>
-        </ul>
-      </div>
-    </div>
-  </div></section>
-
-  <section id="features" style="background:var(--bg-2);border-top:1px solid var(--line);border-bottom:1px solid var(--line)"><div class="wrap">
-    <div class="sec-head">
-      <span class="eyebrow">✨ ${esc(tr.nav.features)}</span>
-      <h2>${esc(hl.title)}</h2><p>${esc(hl.sub)}</p>
-    </div>
-    <div class="cards">
-      ${hl.items.map((it) => `<div class="card2"><div class="ico">${icon(it.icon, { size: 24 })}</div><h3>${esc(it.title)}</h3><p>${esc(it.text)}</p></div>`).join("")}
-    </div>
-  </div></section>
+  ${platformsStrip(lang)}
+  ${showcaseSection(lang)}
+  ${bentoSection(lang)}
+  ${channelsSection(lang)}
+  ${casesSection(lang)}
 
   <section id="how"><div class="wrap">
     <div class="sec-head">
@@ -751,7 +639,7 @@ site.get("/", async (req, res) => {
   <section style="background:var(--bg-2);border-top:1px solid var(--line);border-bottom:1px solid var(--line)"><div class="wrap">
     <div class="sec-head"><h2>${esc(ts.title)}</h2></div>
     <div class="quotes">
-      ${ts.items.map((q) => `<div class="quote"><p>“${esc(q.quote)}”</p><div class="who"><div class="av"></div><div><b>${esc(q.name)}</b><span>${esc(q.role)}</span></div></div></div>`).join("")}
+      ${ts.items.map((q, i) => `<div class="quote"><div class="st">★★★★★</div><p>“${esc(q.quote)}”</p><div class="who">${testimonialAvatar(q.name, i)}<div><b>${esc(q.name)}</b><span>${esc(q.role)}</span></div></div></div>`).join("")}
     </div>
   </div></section>
 
@@ -763,7 +651,7 @@ site.get("/", async (req, res) => {
 
   <section style="padding-top:0"><div class="wrap"><div class="cta-band">
     <h2>${esc(cta.title)}</h2><p>${esc(cta.sub)}</p>
-    <a href="/register" class="btn lg">${esc(cta.button)}</a>
+    <a href="/register" class="btn lg">${esc(cta.button)} →</a>
   </div></div></section>`;
 
   res.send(siteLayout(lang, "/", tr.nav.start, body, { user: req.user, active: "" }));
@@ -774,19 +662,19 @@ site.get("/features", (req, res) => {
   const tr = t(lang);
   const fp = tr.featuresPage;
   const body = `
-  <section class="hero" style="padding:56px 0 40px"><div class="wrap" style="text-align:center;max-width:720px;margin:0 auto">
+  <section class="hero" style="padding:56px 0 40px"><div class="wrap" style="text-align:center;max-width:760px;margin:0 auto">
     <span class="eyebrow">✨ ${esc(tr.nav.features)}</span>
-    <h1 style="font-size:clamp(30px,5vw,46px);margin:16px 0 14px">${esc(fp.title)}</h1>
+    <h1 style="font-size:clamp(30px,5vw,50px);margin:16px 0 14px">${esc(fp.title)}</h1>
     <p class="lede" style="margin:0 auto">${esc(fp.sub)}</p>
+    <div class="hero-cta" style="justify-content:center;margin-top:26px"><a href="/register" class="btn primary lg">${esc(tr.nav.start)} →</a><a href="/pricing" class="btn ghost lg">${esc(tr.nav.pricing)}</a></div>
   </div></section>
-  <section style="padding-top:20px"><div class="wrap">
-    <div class="cards">
-      ${fp.blocks.map((b) => `<div class="card2"><div class="ico">${icon(b.icon, { size: 24 })}</div><h3>${esc(b.title)}</h3><p>${esc(b.text)}</p></div>`).join("")}
-    </div>
-  </div></section>
-  <section style="padding-top:0"><div class="wrap"><div class="cta-band">
+  ${showcaseSection(lang, { id: "product" })}
+  ${bentoSection(lang)}
+  ${channelsSection(lang)}
+  ${casesSection(lang)}
+  <section><div class="wrap"><div class="cta-band">
     <h2>${esc(tr.ctaBand.title)}</h2><p>${esc(tr.ctaBand.sub)}</p>
-    <a href="/register" class="btn lg">${esc(tr.ctaBand.button)}</a>
+    <a href="/register" class="btn lg">${esc(tr.ctaBand.button)} →</a>
   </div></div></section>`;
   res.send(siteLayout(lang, "/features", tr.nav.features, body, { user: req.user, active: "features" }));
 });

@@ -5,7 +5,7 @@
 let _c = 0;
 
 export function logoMark(size = 34) {
-  return `<img src="/logo.png" height="${size}" alt="Obunext Logo" style="display:inline-block;vertical-align:middle;border-radius:8px;object-fit:contain;max-height:${size}px;width:auto;" />`;
+  return `<img src="/logo.webp" width="${size}" height="${size}" alt="Obunext" decoding="async" style="display:inline-block;vertical-align:middle;flex:none;width:${size}px;height:${size}px;border-radius:${Math.round(size * 0.24)}px" onerror="this.onerror=null;this.src='/logo.png'">`;
 }
 
 /** To'liq logotip: belgi + matn (ixtiyoriy) */
