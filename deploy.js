@@ -21,12 +21,20 @@ const config = {
 const localBaseDir = path.dirname(fileURLToPath(import.meta.url));
 const remoteProjectDir = '/opt/instagram';
 
+// src/ ichidagi barcha .js fayllar avtomatik yig'iladi — qo'lda yuritiladigan ro'yxat
+// eskirib, yangi modul serverga yuklanmay qolishi (va server yiqilishi) oldini oladi.
+function collectSrcFiles(dir = 'src') {
+  return fs.readdirSync(path.join(localBaseDir, dir), { withFileTypes: true }).flatMap((e) => {
+    const rel = `${dir}/${e.name}`;
+    if (e.isDirectory()) return collectSrcFiles(rel);
+    return e.name.endsWith('.js') ? [rel] : [];
+  });
+}
+
 const filesToUpload = [
   'package.json',
   'package-lock.json',
-  // main.py/scheduler.py/analytics.py/dm_autoresponder.py/refresh_token.py/requirements.txt
-  // legacy-python/ ga ko'chirildi — Node.js platformasi (src/) bilan bog'liq emas,
-  // production serverga yuklanmaydi.
+  // legacy-python/ production serverga yuklanmaydi.
   'rules.json',
   'auto_reply_rules.json',
   'scheduled_posts.json',
@@ -35,54 +43,11 @@ const filesToUpload = [
   'README.md',
   'SETUP.md',
   'business.md',
-  'src/index.js',
-  'src/db.js',
-  'src/pgdb.js',
-  'src/rag.js',
-  'src/rateLimit.js',
-  'src/ai.js',
-  'src/rules.js',
-  'src/respond.js',
-  'src/config.js',
-  'src/auth.js',
-  'src/dedup.js',
-  'src/engagement.js',
-  'src/graph.js',
-  'src/media.js',
-  'src/notify.js',
-  'src/telegram.js',
-  'src/reportsBot.js',
-  'src/postPublisher.js',
-  'src/oauth.js',
-  'src/googleAuth.js',
-  'src/payme.js',
-  'src/subscription.js',
-  'src/tts.js',
-  'src/autoReply.js',
-  'src/handlers/instagram.js',
-  'src/handlers/facebook.js',
-  'src/handlers/whatsapp.js',
-  'src/services/instagram.js',
-  'src/services/messenger.js',
-  'src/services/whatsapp.js',
-  'src/web/site.js',
-  'src/web/routes.js',
-  'src/web/layout.js',
-  'src/web/i18n.js',
-  'src/web/brand.js',
-  'src/web/icons.js',
-  'src/web/inbox.js',
-  'src/web/rules_ui.js',
-  'src/web/scheduler_ui.js',
-  'src/web/templates_ui.js',
-  'src/web/contacts_ui.js',
-  'src/web/broadcasts_ui.js',
-  'src/web/growth_ui.js',
-  'src/web/settings_ui.js',
   'assets/og-image.png',
   'assets/favicon.png',
   '.env',
   'docker-compose.yml',
+  ...collectSrcFiles(),
 ];
 
 
