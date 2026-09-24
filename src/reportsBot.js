@@ -87,7 +87,7 @@ export async function findUserByReportsChatId(chatId) {
 
 const TXT = {
   uz: {
-    chooseLang: "Salom! 👋 ADM AI Hisobot Boti. Tilni tanlang:",
+    chooseLang: "Salom! 👋 Obunext Hisobot Boti. Tilni tanlang:",
     askPhone: "Rahmat! Endi saytdagi akkauntingizga bog'lash uchun telefon raqamingizni yuboring 👇",
     contactBtn: "📱 Raqamni yuborish",
     notFound: "Bu raqam saytdagi hech bir akkauntga bog'lanmagan. Avval /settings sahifasida shu raqamni kiriting, so'ng qayta urinib ko'ring.",
@@ -115,7 +115,7 @@ const TXT = {
       `🏢 *${b}*\n\n💳 Obuna: ${sub.label}\n🤖 AI o'qitilgan: ${infoLen > 0 ? `✅ ha (${infoLen} belgi)` : "❌ yo'q"}\n\n🔌 Ulangan kanallar:\n📷 Instagram: ${u.meta?.igAccessToken || u.meta?.pageAccessToken ? "✅" : "❌"}\n📘 Facebook: ${u.meta?.pageAccessToken ? "✅" : "❌"}\n💚 WhatsApp: ${u.meta?.whatsappToken ? "✅" : "❌"}`,
   },
   ru: {
-    chooseLang: "Здравствуйте! 👋 ADM AI Бот отчётов. Выберите язык:",
+    chooseLang: "Здравствуйте! 👋 Obunext Бот отчётов. Выберите язык:",
     askPhone: "Спасибо! Теперь отправьте номер телефона, чтобы привязать аккаунт на сайте 👇",
     contactBtn: "📱 Отправить номер",
     notFound: "Этот номер не привязан ни к одному аккаунту на сайте. Сначала введите его на странице /settings и повторите попытку.",
@@ -143,7 +143,7 @@ const TXT = {
       `🏢 *${b}*\n\n💳 Подписка: ${sub.label}\n🤖 AI обучен: ${infoLen > 0 ? `✅ да (${infoLen} симв.)` : "❌ нет"}\n\n🔌 Подключённые каналы:\n📷 Instagram: ${u.meta?.igAccessToken || u.meta?.pageAccessToken ? "✅" : "❌"}\n📘 Facebook: ${u.meta?.pageAccessToken ? "✅" : "❌"}\n💚 WhatsApp: ${u.meta?.whatsappToken ? "✅" : "❌"}`,
   },
   en: {
-    chooseLang: "Hello! 👋 ADM AI Reports Bot. Choose your language:",
+    chooseLang: "Hello! 👋 Obunext Reports Bot. Choose your language:",
     askPhone: "Thanks! Now send your phone number to link your website account 👇",
     contactBtn: "📱 Send phone number",
     notFound: "This number isn't linked to any account on the site. Add it on the /settings page first, then try again.",
@@ -341,7 +341,7 @@ async function handleReportsBotUpdate(update) {
     const t = TXT[lang];
     await callReportsBotApi("sendMessage", {
       chat_id: chatId,
-      text: t.linked(user.businessName || "ADM AI") + buildReportText(user, lang),
+      text: t.linked(user.businessName || "Obunext") + buildReportText(user, lang),
       parse_mode: "Markdown",
       reply_markup: menuKeyboard(lang),
     });
@@ -390,7 +390,7 @@ async function handleReportsBotUpdate(update) {
       const sub = statusInfo(linkedUser);
       await callReportsBotApi("sendMessage", {
         chat_id: chatId,
-        text: t.statusText(linkedUser.businessName || "ADM AI", sub, linkedUser, (linkedUser.businessInfo || "").length),
+        text: t.statusText(linkedUser.businessName || "Obunext", sub, linkedUser, (linkedUser.businessInfo || "").length),
         parse_mode: "Markdown",
         reply_markup: menuKeyboard(lang),
       });

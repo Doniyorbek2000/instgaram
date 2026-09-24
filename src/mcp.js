@@ -19,7 +19,7 @@ import { isActive } from "./subscription.js";
 import { aiStatusLabel, setAiEnabled } from "./aiControl.js";
 
 export const PROTOCOL_VERSIONS = ["2025-06-18", "2025-03-26", "2024-11-05"];
-const SERVER_INFO = { name: "adm-ai", title: "ADM AI — Instagram/Telegram avtomatlashtirish", version: "1.0.0" };
+const SERVER_INFO = { name: "obunext", title: "Obunext — Instagram/Telegram avtomatlashtirish", version: "1.0.0" };
 const MAX_TOKENS = 10;
 const RATE_PER_MIN = 60;
 
@@ -30,7 +30,7 @@ const hashToken = (t) => crypto.createHash("sha256").update(String(t)).digest("h
 export function createApiToken(tenant, { name = "Claude", scope = "full" } = {}) {
   tenant.apiTokens ||= [];
   if (tenant.apiTokens.length >= MAX_TOKENS) return { error: `Ko'pi bilan ${MAX_TOKENS} ta token` };
-  const token = `adm_${crypto.randomBytes(24).toString("hex")}`;
+  const token = `obx_${crypto.randomBytes(24).toString("hex")}`;
   const rec = {
     id: crypto.randomBytes(6).toString("hex"),
     name: String(name || "Claude").trim().slice(0, 60) || "Claude",
@@ -55,7 +55,7 @@ export function revokeApiToken(tenant, id) {
 /** Token bo'yicha biznes va token yozuvini topadi (doimiy vaqtda solishtirish). */
 export async function findByToken(token) {
   const t = String(token || "");
-  if (!/^adm_[a-f0-9]{48}$/.test(t)) return null;
+  if (!/^(obx|adm)_[a-f0-9]{48}$/.test(t)) return null; // adm_ — rebrenddan oldingi tokenlar
   const h = Buffer.from(hashToken(t));
   for (const tenant of await listUsers()) {
     for (const rec of tenant.apiTokens || []) {
@@ -316,7 +316,7 @@ export async function handleRpc(tenant, rec, msg) {
       protocolVersion: PROTOCOL_VERSIONS.includes(requested) ? requested : PROTOCOL_VERSIONS[0],
       capabilities: { tools: { listChanged: false } },
       serverInfo: SERVER_INFO,
-      instructions: `You are connected to the ADM AI automation panel of "${tenant.businessName || "a business"}". Call get_business_info first. New flows are created disabled; tell the owner to review them in the panel before enabling.`,
+      instructions: `You are connected to the Obunext automation panel of "${tenant.businessName || "a business"}". Call get_business_info first. New flows are created disabled; tell the owner to review them in the panel before enabling.`,
     });
   }
   if (isNotification) return null; // notifications/initialized va boshqalar — javob kerak emas

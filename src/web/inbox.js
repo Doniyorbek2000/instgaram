@@ -84,7 +84,7 @@ function appendInboxMessage(user, chatKey, msgObj) {
 }
 
 /**
- * ADM AI style Ultra-Professional Multi-Channel Live Inbox (/inbox)
+ * Obunext style Ultra-Professional Multi-Channel Live Inbox (/inbox)
  * 3-Column Layout: Contact List | Active Chat Stream | Contact CRM Details
  */
 inboxRouter.get("/inbox", requireAuth, (req, res) => {
@@ -224,7 +224,7 @@ inboxRouter.get("/inbox", requireAuth, (req, res) => {
           ? `<span style="font-size:10px; opacity:0.7; font-weight:700">👤 MIJOZ</span>`
           : isOperator
             ? `<span style="font-size:10px; opacity:0.9; font-weight:700">👤 OPERATOR</span>`
-            : `<span style="font-size:10px; opacity:0.9; font-weight:700">🤖 ADM AI</span>`;
+            : `<span style="font-size:10px; opacity:0.9; font-weight:700">🤖 Obunext</span>`;
 
         return `
           <div style="display:flex; flex-direction:column; max-width:75%; ${alignStyle} padding:10px 14px; border-radius:12px; margin-bottom:10px; box-shadow:0 2px 8px rgba(0,0,0,0.2)">
@@ -361,7 +361,7 @@ inboxRouter.get("/inbox", requireAuth, (req, res) => {
           </div>
           <div style="display:flex; justify-content:space-between">
             <span style="color:#94a3b8">Rejim:</span>
-            <b style="color:${activeChatObj.handOff ? "#f87171" : "#34d399"}">${activeChatObj.handOff ? "Operator" : "ADM AI Bot"}</b>
+            <b style="color:${activeChatObj.handOff ? "#f87171" : "#34d399"}">${activeChatObj.handOff ? "Operator" : "Obunext Bot"}</b>
           </div>
           <div style="display:flex; justify-content:space-between">
             <span style="color:#94a3b8">1-xabar:</span>

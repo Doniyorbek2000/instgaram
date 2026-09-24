@@ -85,7 +85,7 @@ integrationsRouter.get("/integrations", requireAuth, (req, res) => {
             <ol class="hint" style="font-size:13px; line-height:1.8; padding-left:18px; margin:0">
               <li>O'ngda token yarating va MCP manzilini nusxalang.</li>
               <li><b>claude.ai</b> → Sozlamalar → <b>Connectors</b> → <b>Add custom connector</b> → manzilni qo'ying.</li>
-              <li>Yoki Claude Code'da: <code>claude mcp add --transport http adm-ai &lt;manzil&gt;</code></li>
+              <li>Yoki Claude Code'da: <code>claude mcp add --transport http obunext &lt;manzil&gt;</code></li>
               <li>Claude yaratgan flow'lar o'chiq holda saqlanadi — panelda ko'rib, keyin yoqasiz.</li>
             </ol>
             ${(u.apiTokens || []).length ? `<table style="width:100%; border-collapse:collapse; font-size:13px; margin-top:12px">

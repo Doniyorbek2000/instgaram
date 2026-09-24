@@ -17,7 +17,7 @@ const call = (t, rec, method, params, id = 1) => mcp.handleRpc(t, rec, { jsonrpc
 test("token: faqat xeshi saqlanadi, topiladi, bekor qilingach ishlamaydi", async () => {
   const { user: t } = await register("mcp1@x.uz", "parol123", "Biznes");
   const { token, rec } = mcp.createApiToken(t, { name: "Claude" });
-  assert.match(token, /^adm_[a-f0-9]{48}$/);
+  assert.match(token, /^obx_[a-f0-9]{48}$/);
   assert.ok(!JSON.stringify(t.apiTokens).includes(token), "token ochiq saqlanmaydi");
   assert.strictEqual((await mcp.findByToken(token)).tenant.id, t.id);
   assert.strictEqual(await mcp.findByToken("adm_" + "0".repeat(48)), null);

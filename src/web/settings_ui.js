@@ -57,7 +57,7 @@ settingsRouter.get("/settings", requireAuth, (req, res) => {
           <h3 style="margin-top:0; color:#fff">🏢 Profil va Faoliyat Sohasi</h3>
           <form method="post" action="/settings/profile">
             <label>Tashkilot / Biznes / Shaxs Nomi</label>
-            <input type="text" name="businessName" value="${esc(u.businessName || "")}" placeholder="Masalan: Dr. Alimov / Smile Dental / ADM Store" required>
+            <input type="text" name="businessName" value="${esc(u.businessName || "")}" placeholder="Masalan: Dr. Alimov / Smile Dental / Nur Store" required>
 
             <label>Faoliyat Sohasi (Yo'nalishingiz)</label>
             <select name="businessType">

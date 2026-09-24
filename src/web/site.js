@@ -52,9 +52,9 @@ function siteLayout(lang, path, title, body, { user, active = "" } = {}) {
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>${esc(title)} — ADM AI Sales & Multi-Channel Automation Platform</title>
+<title>${esc(title)} — Obunext Sales & Multi-Channel Automation Platform</title>
 <meta name="description" content="${esc(tr.hero.sub)}">
-<meta name="keywords" content="chatplace, chatplace ai, instagram dm avtomatlashtirish, telegram bot, whatsapp business, chat voxo uz, ai chatbot uzbekistan, omnichannel inbox, visual automations studio">
+<meta name="keywords" content="chatplace, chatplace ai, instagram dm avtomatlashtirish, telegram bot, whatsapp business, obunext, ai chatbot uzbekistan, omnichannel inbox, visual automations studio">
 <meta name="robots" content="index, follow">
 <meta name="google-site-verification" content="google954f397ce1b4faab">
 <link rel="canonical" href="${canonicalUrl}">
@@ -62,22 +62,22 @@ function siteLayout(lang, path, title, body, { user, active = "" } = {}) {
 <link rel="alternate" hreflang="ru" href="https://chat.voxo.uz${path}?lang=ru">
 <link rel="alternate" hreflang="en" href="https://chat.voxo.uz${path}?lang=en">
 <!-- Open Graph / Facebook -->
-<meta property="og:site_name" content="ADM AI | Voxo">
+<meta property="og:site_name" content="Obunext">
 <meta property="og:type" content="website">
 <meta property="og:url" content="${canonicalUrl}">
-<meta property="og:title" content="${esc(title)} — ADM AI Sales & Automation">
+<meta property="og:title" content="${esc(title)} — Obunext Sales & Automation">
 <meta property="og:description" content="${esc(tr.hero.sub)}">
 <meta property="og:image" content="https://chat.voxo.uz/og-image.png">
 <!-- Twitter Cards -->
 <meta name="twitter:card" content="summary_large_image">
-<meta name="twitter:title" content="${esc(title)} — ADM AI">
+<meta name="twitter:title" content="${esc(title)} — Obunext">
 <meta name="twitter:description" content="${esc(tr.hero.sub)}">
 <!-- Structured Data JSON-LD -->
 <script type="application/ld+json">
 {
   "@context": "https://schema.org",
   "@type": "SoftwareApplication",
-  "name": "ADM AI",
+  "name": "Obunext",
   "url": "https://chat.voxo.uz",
   "applicationCategory": "BusinessApplication",
   "operatingSystem": "All",
@@ -582,7 +582,7 @@ site.get("/", async (req, res) => {
   <script>
     const channelSimData = {
       ig: { handle: "guli_do'koni", sub: "Instagram · Direct", c1: "Salom! Ko'ylak narxi qancha? 😊", b1: "Assalomu alaykum! Ko'ylaklarimiz 150 000 – 300 000 so'm. Qaysi rang qiziqtiradi?", c2: "Qizil, yetkazib berasizmi?", b2: "Ha ✅ Toshkent bo'ylab 1 kunda yetkazib beramiz." },
-      tg: { handle: "voxo_bot", sub: "Telegram · BotFather", c1: "/start", b1: "Assalomu alaykum! 🤖 AI Biznes Yordamchisiga xush kelibsiz. Katalogni ko'rish uchun tanlang:", c2: "Bugun ishlaysizlarmi?", b2: "Ha! Har kuni 09:00 dan 21:00 gacha xizmatingizdamiz. 📍 Chilonzor 5-daha" },
+      tg: { handle: "obunext_bot", sub: "Telegram · BotFather", c1: "/start", b1: "Assalomu alaykum! 🤖 AI Biznes Yordamchisiga xush kelibsiz. Katalogni ko'rish uchun tanlang:", c2: "Bugun ishlaysizlarmi?", b2: "Ha! Har kuni 09:00 dan 21:00 gacha xizmatingizdamiz. 📍 Chilonzor 5-daha" },
       wa: { handle: "+998901234567", sub: "WhatsApp · Cloud API", c1: "Assalomu alaykum, zakaz beray degan edim.", b1: "Vaalaykum assalom! 💚 Buyurtmangizni qabul qilishga tayyorman. Qaysi mahsulot ma'qul bo'ldi?", c2: "2 ta Xuddi qora rangda.", b2: "Qabul qilindi! Umumiy summasi 500.000 so'm. Click/Payme orqali to'lashingiz mumkin." },
       fb: { handle: "Fashion Store Page", sub: "Facebook · Messenger", c1: "Manzilni yuboring iltimos.", b1: "Toshkent sh., Amir Temur shoh ko'chasi 45. Mo'ljal: Metro Yunusobod 📍", c2: "Dastavka narxi qancha?", b2: "Toshkent bo'ylab 20.000 so'm, viloyatlarga BTS pochta orqali 30.000 so'm." }
     };
@@ -606,7 +606,7 @@ site.get("/", async (req, res) => {
       <span class="logo-pill">${brandIcon("telegram", { size: 20 })} Telegram Bot & Webhooks</span>
       <span class="logo-pill">${brandIcon("whatsapp", { size: 20 })} WhatsApp Business Cloud API</span>
       <span class="logo-pill">${brandIcon("facebook", { size: 20 })} Facebook Messenger</span>
-      <span class="logo-pill">${logoMark(20)} ADM AI</span>
+      <span class="logo-pill">${logoMark(20)} Obunext</span>
     </div>
   </div></div>
 
@@ -987,7 +987,7 @@ site.get("/privacy-policy", (req, res) => {
     },
     {
       h: "4. Uchinchi tomon xizmatlari",
-      body: `Javob matnini yaratish uchun xabar mazmuni <b>ADM AI</b> tomonidan qayta ishlanadi.
+      body: `Javob matnini yaratish uchun xabar mazmuni <b>Obunext</b> tomonidan qayta ishlanadi.
         Xabarlarni qabul qilish va yuborish <b>Meta Platforms</b> API'lari orqali amalga oshiriladi.
         Boshqa uchinchi tomonlarga ma'lumot uzatilmaydi.`,
     },
@@ -1015,7 +1015,7 @@ site.get("/privacy-policy", (req, res) => {
       body: `This service lets businesses auto-reply to their Instagram, Messenger and WhatsApp
         customers using AI. We collect the business owner's email and business description, Meta
         access tokens, and incoming customer messages (text, voice, images) with Meta-provided user
-        IDs. Message content is processed by ADM AI to generate a reply. We do not sell or share
+        IDs. Message content is processed by Obunext to generate a reply. We do not sell or share
         your data. Data is stored on servers in Europe, encrypted in transit. To request access or
         deletion of your data, see <a href="/data-deletion">/data-deletion</a> or email
         <a href="mailto:${LEGAL_EMAIL}">${LEGAL_EMAIL}</a>.`,
@@ -1161,7 +1161,7 @@ site.get("/data-deletion", (req, res) => {
         foydalaning, yoki Instagram ulanishini uzing. Ulanish uzilgach, biz sizning nomingizdan
         hech qanday xabar ola olmaymiz va yubora olmaymiz.<br><br>
         <b>2-usul — Instagram tomonidan:</b> Instagram akkauntingizda
-        Sozlamalar → Ilovalar va saytlar bo'limiga kiring va "ADM AI" ilovasini o'chiring.<br><br>
+        Sozlamalar → Ilovalar va saytlar bo'limiga kiring va "Obunext" ilovasini o'chiring.<br><br>
         <b>3-usul — so'rov yuborish:</b> <a href="mailto:${LEGAL_EMAIL}">${LEGAL_EMAIL}</a> ga
         ro'yxatdan o'tgan emailingizdan yozing. So'rovingizni 30 kun ichida bajaramiz va
         tasdiqnoma yuboramiz.`,
@@ -1175,7 +1175,7 @@ site.get("/data-deletion", (req, res) => {
     {
       h: "English",
       body: `To delete your data: (1) remove the connection from your dashboard or delete your
-        account; (2) remove the "ADM AI" app from Instagram Settings → Apps and Websites; or
+        account; (2) remove the "Obunext" app from Instagram Settings → Apps and Websites; or
         (3) email <a href="mailto:${LEGAL_EMAIL}">${LEGAL_EMAIL}</a> from your registered address.
         We complete deletion requests within 30 days, including backups, and send you a
         confirmation. Deleted data includes your account, business information, stored Meta

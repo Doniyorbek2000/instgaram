@@ -47,7 +47,7 @@ const svg = `
     <path d="M100 22l3.4 8 8 3.4-8 3.4-3.4 8-3.4-8-8-3.4 8-3.4z" fill="#f97316"/>
   </g>
 
-  <text x="240" y="150" font-family="Arial, sans-serif" font-size="58" font-weight="800" fill="#ffffff" letter-spacing="-1">ADM AI</text>
+  <text x="240" y="150" font-family="Arial, sans-serif" font-size="58" font-weight="800" fill="#ffffff" letter-spacing="-1">Obunext</text>
 
   <text x="80" y="300" font-family="Arial, sans-serif" font-size="60" font-weight="800" fill="#ffffff" letter-spacing="-1.5">Mijozlaringizga AI</text>
   <text x="80" y="372" font-family="Arial, sans-serif" font-size="60" font-weight="800" fill="#ffffff" letter-spacing="-1.5">javob bersin 24/7</text>

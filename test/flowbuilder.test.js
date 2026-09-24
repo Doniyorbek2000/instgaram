@@ -131,7 +131,7 @@ test("export → import: yangi, o'chiq flow; boshqa flow havolalari tozalanadi",
   const res = await fetch(`${base}/flows/${flow.id}/export`);
   assert.match(res.headers.get("content-disposition"), /attachment/);
   const file = await res.json();
-  assert.strictEqual(file.format, "adm-flow");
+  assert.strictEqual(file.format, "obunext-flow");
   assert.strictEqual(file.flow.stats, undefined);
 
   file.flow.nodes.r = { id: "r", type: "redirect", flowId: "flow_boshqa_akkaunt", x: 0, y: 0 };

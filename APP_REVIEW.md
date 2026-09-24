@@ -1,6 +1,6 @@
 # Meta App Review — tayyorlov qo'llanmasi
 
-Bu hujjat `ADM AI` (App ID: `993539666776696`) ilovasini App Review'dan o'tkazish uchun.
+Bu hujjat `Obunext` (App ID: `993539666776696`) ilovasini App Review'dan o'tkazish uchun.
 Maqsad: `instagram_business_*` ruxsatlariga **Advanced Access** olish — shundan keyin
 istalgan tadbirkor o'z Instagram'ini platformaga ulay oladi (hozir faqat tester roli
 berilgan akkauntlar ulana oladi).
@@ -221,7 +221,7 @@ Meta kim ilova yaratayotganini bilishni talab qiladi. Ikki xil bo'lishi mumkin:
   yuridik manzil tasdiqi, kompaniya nomiga telefon/veb-sayt
 
 Sizning holatingiz — mijozlarga xizmat ko'rsatish, ya'ni **business verification** talab
-qilinishi ehtimoli katta. Hujjatlar ADM AI biznes portfoliosi orqali topshiriladi.
+qilinishi ehtimoli katta. Hujjatlar Obunext biznes portfoliosi orqali topshiriladi.
 Bu qism eng uzun cho'ziladi (bir necha kun — bir necha hafta).
 
 ## 4. Meta ko'p rad etadigan sabablar (oldini olamiz)

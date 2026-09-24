@@ -261,7 +261,7 @@ web.get("/dashboard", requireAuth, (req, res) => {
         <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:16px">
           <div>
             <h1 style="font-size:24px; margin:0">${esc(greet)}, ${esc(u.businessName || "Biznes egasi")}! 🚀</h1>
-            <p class="hint" style="margin:4px 0 14px">ADM AI barcha ijtimoiy tarmoqlardagi mijozlaringiz bilan avtomatik muloqot qilmoqda.</p>
+            <p class="hint" style="margin:4px 0 14px">Obunext barcha ijtimoiy tarmoqlardagi mijozlaringiz bilan avtomatik muloqot qilmoqda.</p>
             <div style="display:flex; gap:10px; flex-wrap:wrap">
               <span class="status-tag">${u.businessInfo ? "✓ AI O'rgatilgan" : "• AI Sozlanmagan"}</span>
               <span class="status-tag" style="background:rgba(59,130,246,0.15); color:#60a5fa; border-color:rgba(59,130,246,0.3)">${channelsReady ? "✓ Kanallar Faol" : "• Kanallar Yo'q"}</span>
@@ -1039,7 +1039,7 @@ Biz "Fuqarolar Murojaat Markazi" jamoat tashkilotimiz.
         const steps = [
           { p: 25, t: "🔍 @" + cleanHandle + " Instagram profiliga ulanmoqda..." },
           { p: 50, t: "📄 Bio, kontakt va profil ma'lumotlari ajratib olinmoqda..." },
-          { p: 75, t: "🧠 ADM AI kamchilik va sotuv muammolarini tahlil qilmoqda..." },
+          { p: 75, t: "🧠 Obunext kamchilik va sotuv muammolarini tahlil qilmoqda..." },
           { p: 90, t: "🚀 Sotuvni oshirish bo'yicha tavsiyalar tayyorlanmoqda..." },
         ];
 
@@ -1182,7 +1182,7 @@ Biz "Fuqarolar Murojaat Markazi" jamoat tashkilotimiz.
           <h2 style="margin:0; font-size:22px">🧠 AI Biznes O'rgatish Studiyasi (AI Knowledge Studio)</h2>
           <p class="hint">Sun'iy Intellekt mijozlar bilan muloqotda ushbu ma'lumotlarga tayanadi.</p>
         </div>
-        <span class="status-tag">✨ ADM AI</span>
+        <span class="status-tag">✨ Obunext</span>
       </div>
 
       <!-- Instagram AI Profile Scanner Box -->
@@ -1198,7 +1198,7 @@ Biz "Fuqarolar Murojaat Markazi" jamoat tashkilotimiz.
         </div>
 
         <div style="display:flex; gap:10px; margin-top:12px; flex-wrap:wrap">
-          <input type="text" id="igHandleInputField" placeholder="O'zingiz yoki raqobatchi: @adm_fashion yoki https://instagram.com/adm_fashion" value="${esc(u.meta?.igUsername ? '@' + u.meta.igUsername : '')}" style="flex:1; min-width:240px; margin:0; background:#1e293b; border:1px solid rgba(255,255,255,0.15); font-size:13.5px">
+          <input type="text" id="igHandleInputField" placeholder="O'zingiz yoki raqobatchi: @nur_fashion yoki https://instagram.com/nur_fashion" value="${esc(u.meta?.igUsername ? '@' + u.meta.igUsername : '')}" style="flex:1; min-width:240px; margin:0; background:#1e293b; border:1px solid rgba(255,255,255,0.15); font-size:13.5px">
           <span id="btnScanIg" onclick="event.preventDefault(); window.startInlineIgAudit(); return false;" class="btn" style="padding:8px 20px; font-size:13px; margin:0; cursor:pointer; background:linear-gradient(135deg,#f472b6,#db2777)">
             🚀 Skanerlash va AI Bazasini Yaratish
           </span>
@@ -1232,7 +1232,7 @@ Biz "Fuqarolar Murojaat Markazi" jamoat tashkilotimiz.
 
       <form method="post" action="/settings/business">
         <label>Biznesingiz nomi</label>
-        <input name="businessName" value="${esc(u.businessName || "")}" placeholder="Masalan: ADM Fashion Store" required>
+        <input name="businessName" value="${esc(u.businessName || "")}" placeholder="Masalan: Nur Fashion Store" required>
 
         <div style="display:flex; justify-content:space-between; align-items:center; margin-top:16px; flex-wrap:wrap; gap:8px">
           <label style="margin:0">📚 Bilimlar Bazasi Hujjatlari & Ma'lumotlar (${(u.businessInfo || "").length} ta belgi)</label>
@@ -1259,10 +1259,10 @@ Biz "Fuqarolar Murojaat Markazi" jamoat tashkilotimiz.
 
         <textarea name="businessInfo" id="bizInfo" rows="12" style="margin-top:8px; font-family:monospace; font-size:13.5px" placeholder="Bu yerga mahsulotlaringiz, narxlar, manzil, yetkazib berish va tez-tez beriladigan savollarga javoblarni kiriting...">${esc(u.businessInfo || "")}</textarea>
 
-        <!-- ADM AI Reasoning Mode Toggle -->
+        <!-- Obunext Reasoning Mode Toggle -->
         <div style="background:#0f172a; padding:14px 16px; border-radius:10px; border:1px solid rgba(124,58,237,0.3); margin-top:14px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px">
           <div>
-            <b style="color:#a78bfa; font-size:14.5px">🧠 ADM AI Erkin Fikrlash & Intellekt Rejimi</b>
+            <b style="color:#a78bfa; font-size:14.5px">🧠 Obunext Erkin Fikrlash & Intellekt Rejimi</b>
             <p class="hint" style="margin:2px 0 0; font-size:12px; color:#94a3b8">
               <b>Yoqilgan (ON)</b>: AI o'z intellekti bilan mantiqiy fikrlaydi va mijozga aql bilan maslahat beradi.<br>
               <b>O'chirilgan (OFF - Qat'iy Rejim)</b>: AI faqat va faqat kiritilgan bilimlar bazasi doirasida cheklanib javob beradi.
@@ -1833,7 +1833,7 @@ RECS:
         score += 5;
       }
       if (gapsArr.length === 0) gapsArr.push("• Profil va bilimlar bazasida jiddiy muammo topilmadi.");
-      if (recsArr.length === 0) recsArr.push("• ADM AI Erkin Fikrlash rejimini yoqilgan holatda saqlang.");
+      if (recsArr.length === 0) recsArr.push("• Obunext Erkin Fikrlash rejimini yoqilgan holatda saqlang.");
       score = Math.min(100, score);
     }
   }
@@ -1913,8 +1913,8 @@ web.get("/admin/user/:id", requireAdmin, async (req, res) => {
 
           <h2 style="margin-top:22px">🔑 AI kaliti (ixtiyoriy)</h2>
           <p class="hint">Bo'sh qoldirsangiz platformaning umumiy kaliti ishlatiladi.
-          Bu biznes uchun alohida ADM AI kaliti kerak bo'lsagina to'ldiring.</p>
-          <label>ADM AI API kaliti</label>
+          Bu biznes uchun alohida Obunext kaliti kerak bo'lsagina to'ldiring.</p>
+          <label>Obunext API kaliti</label>
           <input name="geminiApiKey" value="${esc(u.geminiApiKey)}" placeholder="AIza...">
 
           <button>Saqlash</button>

@@ -51,7 +51,7 @@ async function postJson(url, body) {
   try {
     const res = await fetch(url, {
       method: "POST",
-      headers: { "Content-Type": "application/json", "User-Agent": "ADM-AI-Webhook/1.0" },
+      headers: { "Content-Type": "application/json", "User-Agent": "Obunext-Webhook/1.0" },
       body: JSON.stringify(body),
       signal: controller.signal,
       redirect: "follow", // Apps Script 302 bilan javob beradi

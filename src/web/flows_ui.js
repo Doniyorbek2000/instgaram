@@ -278,7 +278,7 @@ flowsRouter.post("/flows/:id/restore/:idx", requireAuth, (req, res) => {
 flowsRouter.get("/flows/:id/export", requireAuth, (req, res) => {
   const flow = findFlow(req.user, req.params.id);
   if (!flow) return res.redirect("/flows");
-  const out = { format: "adm-flow", version: 1, exportedAt: new Date().toISOString(), flow: { name: flow.name, triggers: flow.triggers, start: flow.start, nodes: flow.nodes } };
+  const out = { format: "obunext-flow", version: 1, exportedAt: new Date().toISOString(), flow: { name: flow.name, triggers: flow.triggers, start: flow.start, nodes: flow.nodes } };
   const file = `${String(flow.name).replace(/[^\p{L}\p{N}_-]+/gu, "_").slice(0, 60) || "flow"}.json`;
   res.setHeader("Content-Disposition", `attachment; filename="flow.json"; filename*=UTF-8''${encodeURIComponent(file)}`);
   res.type("application/json").send(JSON.stringify(out, null, 2));
@@ -288,7 +288,7 @@ flowsRouter.get("/flows/:id/export", requireAuth, (req, res) => {
 flowsRouter.post("/flows/import", requireAuth, (req, res) => {
   try {
     const raw = typeof req.body?.json === "string" ? JSON.parse(req.body.json) : req.body;
-    const src = raw?.format === "adm-flow" ? raw.flow : raw;
+    const src = ["obunext-flow", "adm-flow"].includes(raw?.format) ? raw.flow : raw; // adm-flow — eski eksportlar
     if (!src || typeof src !== "object" || !src.nodes) throw new Error("Bu flow fayli emas");
     const flow = sanitizeFlow({ ...src, id: newId("flow"), enabled: false });
     if (!Object.keys(flow.nodes).length) throw new Error("Faylda bloklar yo'q");

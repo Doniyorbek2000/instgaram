@@ -1,5 +1,5 @@
 /**
- * ADM AI — PostgreSQL Adapter Layer
+ * Obunext — PostgreSQL Adapter Layer
  * 
  * adm-postgres (postgres:16-alpine) konteyneriga ulanadi.
  * JSON fayl bazasi bilan bir xil API ni ta'minlaydi — db.js bilan to'liq mos.
@@ -51,10 +51,10 @@ async function initPg() {
     await pgPool.query("SELECT 1");
     await runMigrations();
     pgReady = true;
-    console.log("[ADM AI] ✅ PostgreSQL ulanish muvaffaqiyatli! Host:", PG_HOST);
+    console.log("[Obunext] ✅ PostgreSQL ulanish muvaffaqiyatli! Host:", PG_HOST);
   } catch (err) {
     pgReady = false;
-    console.warn("[ADM AI] ⚠️  PostgreSQL ulanmadi — JSON fayl baza ishlatilmoqda:", err.message);
+    console.warn("[Obunext] ⚠️  PostgreSQL ulanmadi — JSON fayl baza ishlatilmoqda:", err.message);
   }
 }
 

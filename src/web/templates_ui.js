@@ -1,5 +1,5 @@
 /**
- * ADM AI Style Shablonlar Hub (Templates Gallery & 1-Click Rule Applier)
+ * Obunext Style Shablonlar Hub (Templates Gallery & 1-Click Rule Applier)
  * URL: /templates
  */
 import { Router } from "express";
@@ -84,7 +84,7 @@ export const TEMPLATES = [
       keyword: "*",
       matchType: "any",
       publicReply: "",
-      privateReply: "Assalomu alaykum! Men ADM AI yordamchisiman. Sizga qanday yordam bera olaman?",
+      privateReply: "Assalomu alaykum! Men Obunext yordamchisiman. Sizga qanday yordam bera olaman?",
     },
   },
   {
@@ -217,8 +217,8 @@ templatesRouter.get("/templates", requireAuth, (req, res) => {
       `
       <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px; flex-wrap:wrap; gap:12px">
         <div>
-          <h2>🎨 ADM AI Shablonlar Hubi (Templates Center)</h2>
-          <p class="hint">ADM AI uslubidagi tayyor va sinovdan o'tgan avtomatlashtirish shablonlari (1-Click Install).</p>
+          <h2>🎨 Obunext Shablonlar Hubi (Templates Center)</h2>
+          <p class="hint">Obunext uslubidagi tayyor va sinovdan o'tgan avtomatlashtirish shablonlari (1-Click Install).</p>
         </div>
         <form method="get" action="/templates" style="display:flex; gap:8px; margin:0">
           <input type="hidden" name="cat" value="${esc(cat)}">
