@@ -51,22 +51,42 @@ test("noto'g'ri parol rad etiladi, to'g'risi bilan kiriladi (telefon har xil for
   const set = ok.headers.get("set-cookie");
   assert.match(set, /^adm=.+; Path=\/admin; HttpOnly; SameSite=Strict/);
   cookie = set.split(";")[0];
+  // Dastlabki parol bilan faqat "Xavfsizlik" sahifasi ochiladi
+  const dash = await get("/admin");
+  assert.strictEqual(dash.status, 302);
+  assert.match(dash.headers.get("location"), /^\/admin\/security/);
+  assert.strictEqual((await post("/admin/announce", { text: "x" })).status, 403);
+  const sec = await get("/admin/security");
+  assert.strictEqual(sec.status, 200);
+  assert.match(await sec.text(), /Dastlabki parol ishlatilmoqda/);
+});
+
+test("parolni o'zgartirish: eski sessiya va eski parol ishlamaydi", async () => {
+  const weak = await post("/admin/security", { login: "+998949392250", current: "949392250Adm", next: "short1", next2: "short1" });
+  assert.match(decodeURIComponent(weak.headers.get("location")), /kamida 10/);
+  const r = await post("/admin/security", { login: "+998949392250", current: "949392250Adm", next: "YangiParol2026", next2: "YangiParol2026" });
+  assert.strictEqual(r.headers.get("location"), "/admin/login");
+  assert.strictEqual((await get("/admin")).status, 302, "eski sessiya bekor");
+  assert.strictEqual((await post("/admin/login", { login: "998949392250", password: "949392250Adm" }, { "x-forwarded-for": "10.1.1.1" })).status, 401);
+  const ok = await post("/admin/login", { login: "998949392250", password: "YangiParol2026" }, { "x-forwarded-for": "10.1.1.1" });
+  assert.strictEqual(ok.status, 302);
+  cookie = ok.headers.get("set-cookie").split(";")[0];
   const dash = await get("/admin");
   assert.strictEqual(dash.status, 200);
   const html = await dash.text();
   assert.match(html, /Bizneslar/);
-  assert.match(html, /Dastlabki parol ishlatilmoqda/);
+  assert.ok(!html.includes("Dastlabki parol"));
 });
 
 test("5 ta xato urinishdan so'ng IP bloklanadi", async () => {
   for (let i = 0; i < 5; i++) await post("/admin/login", { login: "998949392250", password: `x${i}` }, { "x-forwarded-for": "10.0.0.77" });
-  const r = await post("/admin/login", { login: "998949392250", password: "949392250Adm" }, { "x-forwarded-for": "10.0.0.77" });
+  const r = await post("/admin/login", { login: "998949392250", password: "YangiParol2026" }, { "x-forwarded-for": "10.0.0.77" });
   assert.strictEqual(r.status, 401);
   assert.match(await r.text(), /Juda ko/);
 });
 
 test("barcha bo'limlar ochiladi", async () => {
-  for (const p of ["/admin", "/admin/businesses", "/admin/businesses?q=guli&status=trial&sort=name", `/admin/businesses/${biz.id}`, "/admin/payments", "/admin/plans", "/admin/ai", "/admin/announce", "/admin/audit", "/admin/system", "/admin/security"]) {
+  for (const p of ["/admin", "/admin/businesses", "/admin/businesses?q=guli&status=trial&sort=name", `/admin/businesses/${biz.id}`, "/admin/payments", "/admin/plans", "/admin/ai", "/admin/announce", "/admin/site", "/admin/audit", "/admin/system", "/admin/security"]) {
     const r = await get(p);
     assert.strictEqual(r.status, 200, p);
   }
@@ -159,15 +179,19 @@ test("biznesni o'chirish faqat email tasdig'i bilan", async () => {
   assert.strictEqual(await findUserById(other.id), null);
 });
 
-test("parolni o'zgartirish: eski sessiya va eski parol ishlamaydi", async () => {
-  const weak = await post("/admin/security", { login: "+998949392250", current: "949392250Adm", next: "short1", next2: "short1" });
-  assert.match(decodeURIComponent(weak.headers.get("location")), /kamida 10/);
-  const r = await post("/admin/security", { login: "+998949392250", current: "949392250Adm", next: "YangiParol2026", next2: "YangiParol2026" });
-  assert.strictEqual(r.headers.get("location"), "/admin/login");
-  assert.strictEqual((await get("/admin")).status, 302, "eski sessiya bekor");
-  assert.strictEqual((await post("/admin/login", { login: "998949392250", password: "949392250Adm" }, { "x-forwarded-for": "10.1.1.1" })).status, 401);
-  const ok = await post("/admin/login", { login: "998949392250", password: "YangiParol2026" }, { "x-forwarded-for": "10.1.1.1" });
-  assert.strictEqual(ok.status, 302);
-  cookie = ok.headers.get("set-cookie").split(";")[0];
-  assert.ok(!(await (await get("/admin")).text()).includes("Dastlabki parol"));
+
+test("sayt sozlamalari va murojaatlar", async () => {
+  const bad = await post("/admin/site", { email: "notog'ri", telegram: "" });
+  assert.match(decodeURIComponent(bad.headers.get("location")), /Email noto/);
+  await post("/admin/site", { email: "hello@obunext.uz", telegram: "@obunext_uz", phone: "+998 90 000 00 00", showBusinessCount: "on", minBusinessCount: "1", testimonials: "Zo'r xizmat | Aziz | Kafe egasi\nnoto'g'ri qator" });
+  const { siteSettings, addContactMessage } = await import("../src/siteSettings.js");
+  const s = siteSettings();
+  assert.strictEqual(s.email, "hello@obunext.uz");
+  assert.strictEqual(s.telegram, "obunext_uz");
+  assert.deepStrictEqual(s.testimonials, [{ quote: "Zo'r xizmat", name: "Aziz", role: "Kafe egasi" }]);
+  assert.strictEqual((await addContactMessage({ name: "A", message: "hi" })).error, "short");
+  await addContactMessage({ name: "Ali", email: "ali@x.uz", message: "Narxlar haqida savol bor" });
+  const html = await (await get("/admin/site")).text();
+  assert.match(html, /Narxlar haqida savol bor/);
+  assert.match(html, /1 yangi/);
 });

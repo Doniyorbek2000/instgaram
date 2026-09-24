@@ -1,5 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { persist, getPlatformGeminiKey } from "./db.js";
+import { pushChat, recentHistory, AI_CONTEXT } from "./chatStore.js";
 import { canUseAi, consumeAi, warnCreditsOut } from "./credits.js";
 import { aiSettings } from "./aiControl.js";
 
@@ -11,8 +12,7 @@ const CLAUDE_MODEL = process.env.AI_MODEL || "claude-3-5-sonnet-20241022";
 const anthropicClient = globalAnthropicKey ? new Anthropic() : null;
 
 // Suhbat tarixi tenant.chats[chatKey] da saqlanadi (bazada, server o'chsa yo'qolmaydi).
-const MAX_HISTORY = 16;
-const MAX_CHATS = 500; // bir biznesda saqlanadigan suhbatlar soni
+// To'liq tarix arxivda (chatStore.js) — AI'ga faqat oxirgi xabarlar beriladi.
 
 import { findRelevantChunks } from "./rag.js";
 
@@ -303,7 +303,7 @@ export async function generateReply(tenant, chatKey, { text = "", media = [] } =
   }
 
   tenant.chats ||= {};
-  const history = tenant.chats[chatKey] || [];
+  const history = recentHistory(tenant, chatKey, AI_CONTEXT);
   const { actionsPrompt, extractActions, executeAiActions } = await import("./aiActions.js");
   const { shopPrompt } = await import("./shop.js");
   const systemPrompt = buildSystemPrompt(tenant, text, history.length === 0) + shopPrompt(tenant) + actionsPrompt(tenant, chatKey);
@@ -328,17 +328,7 @@ export async function generateReply(tenant, chatKey, { text = "", media = [] } =
     const nowIso = new Date().toISOString();
     const summary = text || (media.length ? "[Media xabar]" : "...");
     
-    tenant.chats[chatKey] = [
-      ...history,
-      { role: "user", text: summary, at: nowIso },
-      { role: "assistant", text: reply, at: nowIso },
-    ].slice(-MAX_HISTORY);
-
-    // Suhbatlar soni cheklovi — eng eskilarini o'chiramiz
-    const keys = Object.keys(tenant.chats);
-    if (keys.length > MAX_CHATS) {
-      for (const k of keys.slice(0, keys.length - MAX_CHATS)) delete tenant.chats[k];
-    }
+    pushChat(tenant, chatKey, { role: "user", text: summary, at: nowIso }, { role: "assistant", text: reply, at: nowIso });
     persist(tenant);
 
     return reply;

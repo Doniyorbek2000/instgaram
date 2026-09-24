@@ -9,12 +9,26 @@ const FREE_MODE = String(process.env.FREE_MODE || "").toLowerCase() === "true";
 // Tarif ta'riflari (narxlar so'mda, oyiga). Narx admin tomonidan o'zgartirilishi mumkin —
 // o'zgartirilgani bazada saqlanadi, aks holda defaultPrice ishlatiladi.
 export const PLAN_DEFS = {
+  mini: {
+    id: "mini",
+    name: "Mini",
+    defaultPrice: 19000,
+    tagline: "Endi boshlayotganlar uchun",
+    features: ["Instagram, Messenger, WhatsApp, Telegram", "Flow builder va komment → Direct", "Live Inbox va CRM"],
+  },
+  lite: {
+    id: "lite",
+    name: "Lite",
+    defaultPrice: 49000,
+    tagline: "Kichik sahifa va do'konlar uchun",
+    features: ["Barcha imkoniyatlar ochiq", "Do'kon: katalog, Payme / Click", "Ommaviy xabarlar va ketma-ketliklar"],
+  },
   start: {
     id: "start",
     name: "Start",
     defaultPrice: 99000,
     tagline: "Kichik biznes uchun",
-    features: ["Instagram + Messenger", "AI matn javoblari", "Kommentlarga javob", "Asosiy statistika"],
+    features: ["Instagram, Messenger, WhatsApp, Telegram", "Flow builder va komment → Direct", "Live Inbox, CRM, do'kon"],
   },
   pro: {
     id: "pro",
@@ -22,10 +36,9 @@ export const PLAN_DEFS = {
     defaultPrice: 199000,
     tagline: "O'sayotgan biznes uchun",
     features: [
-      "Start'dagi hammasi",
-      "WhatsApp integratsiyasi",
-      "AI ovoz / rasm / video tahlili",
-      "Suhbat tarixi",
+      "Barcha imkoniyatlar ochiq",
+      "Ommaviy xabarlar va ketma-ketliklar",
+      "amoCRM / Bitrix24, Google Sheets",
     ],
   },
   business: {
@@ -34,11 +47,9 @@ export const PLAN_DEFS = {
     defaultPrice: 399000,
     tagline: "Yuqori yuklamali biznes uchun",
     features: [
-      "Pro'dagi hammasi",
-      "Ovozli javob (TTS)",
-      "Operator chaqirish rejimi",
-      "Telegram bildirishnoma",
-      "Kengaytirilgan statistika",
+      "Barcha imkoniyatlar ochiq",
+      "Jamoa a'zolari va operator rejimi",
+      "API / MCP, ovozli javob (TTS)",
     ],
   },
 };

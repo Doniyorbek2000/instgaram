@@ -33,8 +33,22 @@ const TRIAL_DAYS = 3;
 // ============================================================
 let pgPool = null;
 let pgReady = false;
+// PostgreSQL sozlangan (PG_PASS bor) bo'lsa-yu ulanmasa — bu JIDDIY holat: ma'lumotlar
+// vaqtincha JSON faylga yoziladi. Admin panel va /health buni ochiq ko'rsatadi.
+const pgState = { configured: Boolean(process.env.PG_PASS || process.env.PG_HOST), error: "", attempts: 0, connectedAt: "" };
 
 async function initPg() {
+  if (!pgState.configured) return;
+  const tries = Math.max(1, Number(process.env.PG_CONNECT_RETRIES || 5));
+  for (let i = 1; i <= tries; i++) {
+    pgState.attempts = i;
+    if (await connectOnce()) return;
+    if (i < tries) await new Promise((r) => setTimeout(r, Math.min(8000, 1000 * 2 ** (i - 1))));
+  }
+  console.error("[Obunext] ❌ PostgreSQL'ga ulanib bo'lmadi — VAQTINCHA JSON fayl baza ishlatilmoqda! Sabab:", pgState.error);
+}
+
+async function connectOnce() {
   try {
     const { default: pg } = await import("pg");
     pgPool = new pg.Pool({
@@ -50,12 +64,25 @@ async function initPg() {
     pgPool.on("error", (err) => console.error("[PG Pool Error]", err.message));
     await pgPool.query("SELECT 1");
     await runMigrations();
+    await loadAllUsers();
     pgReady = true;
+    pgState.error = "";
+    pgState.connectedAt = new Date().toISOString();
     console.log("[Obunext] ✅ PostgreSQL ulanish muvaffaqiyatli! Host:", PG_HOST);
+    return true;
   } catch (err) {
     pgReady = false;
-    console.warn("[Obunext] ⚠️  PostgreSQL ulanmadi — JSON fayl baza ishlatilmoqda:", err.message);
+    pgState.error = err.message;
+    try { await pgPool?.end(); } catch { /* yopilgan */ }
+    pgPool = null;
+    console.warn(`[Obunext] ⚠️  PostgreSQL ulanmadi (${pgState.attempts}-urinish):`, err.message);
+    return false;
   }
+}
+
+/** Baza holati (admin panel, /health). */
+export function dbStatus() {
+  return { mode: pgReady ? "postgres" : "json", configured: pgState.configured, fallback: pgState.configured && !pgReady, error: pgState.error, attempts: pgState.attempts, connectedAt: pgState.connectedAt };
 }
 
 // Migrations (bir marta bajariladi, idempotent)
@@ -141,14 +168,34 @@ async function runMigrations() {
 
     INSERT INTO platform(key, value) VALUES('prices', '{}') ON CONFLICT DO NOTHING;
 
+    -- To'liq suhbat arxivi (users.chats'da faqat oxirgi xabarlar keshlanadi)
+    CREATE TABLE IF NOT EXISTS messages (
+      id BIGSERIAL PRIMARY KEY,
+      user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      chat_key TEXT NOT NULL,
+      role TEXT NOT NULL,
+      text TEXT NOT NULL DEFAULT '',
+      at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      extra JSONB
+    );
+    CREATE INDEX IF NOT EXISTS messages_chat_idx ON messages(user_id, chat_key, id);
+
+    -- Takroriy webhook hodisalari (restartdan keyin ham eslab qolinadi)
+    CREATE TABLE IF NOT EXISTS seen_events (
+      id TEXT PRIMARY KEY,
+      at BIGINT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS seen_events_at_idx ON seen_events(at);
+
     CREATE INDEX IF NOT EXISTS sessions_user_id_idx ON sessions(user_id);
     CREATE INDEX IF NOT EXISTS orders_user_id_idx   ON orders(user_id);
   `;
   await pgPool.query(sql);
 }
 
-// Singleton init
-initPg().catch(() => {});
+// Singleton init — server tinglashni boshlashdan oldin `pgInit` kutiladi (index.js),
+// aks holda ilk so'rovlar JSON bazaga tushib qolardi.
+export const pgInit = initPg().catch((err) => { pgState.error = err.message; });
 
 // ============================================================
 // HELPER
@@ -196,6 +243,52 @@ function normalizeUser(row) {
   };
 }
 
+// ============================================================
+// IDENTITY MAP — har bir biznes xotirada BITTA obyekt sifatida yashaydi.
+// Ilgari har so'rov bazadan yangi obyekt o'qirdi va persist() butun qatorni yozardi:
+// parallel webhook + panel so'rovlari bir-birining o'zgarishini bosib ketardi
+// ("lost update"). Endi barcha o'qishlar shu keshdagi obyektni qaytaradi, saqlashda
+// esa faqat haqiqatan o'zgargan ustunlar yoziladi.
+// Server bitta jarayonda ishlaydi (docker-compose: 1 ta app konteyner).
+// ============================================================
+const cache = new Map(); // id -> user
+const snapshots = new Map(); // id -> { column: json }
+let allLoaded = false;
+
+function jsonOf(v) {
+  return v === undefined ? "null" : JSON.stringify(v);
+}
+
+function remember(user) {
+  const snap = {};
+  for (const key of Object.keys(COL_MAP)) snap[key] = jsonOf(user[key]);
+  snap.meta = jsonOf(user.meta);
+  snapshots.set(user.id, snap);
+}
+
+function hydrate(row) {
+  if (!row) return null;
+  const hit = cache.get(row.id);
+  if (hit) return hit;
+  const user = normalizeUser(row);
+  cache.set(user.id, user);
+  remember(user);
+  return user;
+}
+
+async function loadAllUsers() {
+  const { rows } = await pgPool.query("SELECT * FROM users ORDER BY created_at DESC");
+  cache.clear();
+  snapshots.clear();
+  for (const r of rows) hydrate(r);
+  allLoaded = true;
+}
+
+function cachedUsers() {
+  const t = (u) => new Date(u.createdAt || 0).getTime() || 0;
+  return [...cache.values()].sort((a, b) => t(b) - t(a));
+}
+
 function defaultSubscription() {
   return {
     plan: "start",
@@ -218,114 +311,156 @@ export async function createUser({ email, passwordHash, salt, businessName }) {
      VALUES($1,$2,$3,$4,$5,$6) RETURNING *`,
     [id, email.toLowerCase().trim(), passwordHash, salt, businessName || "", JSON.stringify(subscription)]
   );
-  return normalizeUser(rows[0]);
+  return hydrate(rows[0]);
 }
 
 export async function findUserByEmail(email) {
   if (!pgReady) return null;
   const e = String(email || "").toLowerCase().trim();
+  if (allLoaded) {
+    for (const u of cache.values()) if (u.email === e) return u;
+  }
   const { rows } = await pgPool.query("SELECT * FROM users WHERE email=$1", [e]);
-  return normalizeUser(rows[0]) || null;
+  return hydrate(rows[0]);
 }
 
 export async function findUserById(id) {
   if (!pgReady) return null;
+  const hit = cache.get(String(id || ""));
+  if (hit) return hit;
   const { rows } = await pgPool.query("SELECT * FROM users WHERE id=$1", [id]);
-  return normalizeUser(rows[0]) || null;
+  return hydrate(rows[0]);
 }
 
+/** Barcha bizneslar — xotiradagi keshdan (har daqiqalik rejalashtiruvchilar bazani yuklamaydi). */
 export async function listUsers() {
   if (!pgReady) return [];
-  const { rows } = await pgPool.query("SELECT * FROM users ORDER BY created_at DESC");
-  return rows.map(normalizeUser);
+  if (!allLoaded) await loadAllUsers();
+  return cachedUsers();
 }
 
+const COL_MAP = {
+  email: "email",
+  businessName: "business_name",
+  businessInfo: "business_info",
+  geminiApiKey: "gemini_api_key",
+  passwordHash: "password_hash",
+  salt: "salt",
+  settings: "settings",
+  subscription: "subscription",
+  stats: "stats",
+  handoffs: "handoffs",
+  manualChats: "manual_chats",
+  leads: "leads",
+  chats: "chats",
+  rules: "rules",
+  scheduledPosts: "scheduled_posts",
+  broadcasts: "broadcasts",
+  growth: "growth",
+  contactProfiles: "contact_profiles",
+  gamification: "gamification",
+  forms: "forms",
+  contactMeta: "contact_meta",
+  integrations: "integrations",
+  followUps: "follow_ups",
+  flows: "flows",
+  team: "team",
+  content: "content",
+  mediaLibrary: "media_library",
+  tgBusiness: "tg_business",
+  apiTokens: "api_tokens",
+  aiUsage: "ai_usage",
+  sequences: "sequences",
+  shop: "shop",
+  trackedLinks: "tracked_links",
+  pushSubs: "push_subs",
+};
+const TEXT_COLS = new Set(["email", "businessName", "businessInfo", "geminiApiKey", "passwordHash", "salt"]);
+
+/**
+ * Faqat o'zgargan ustunlarni aniqlaydi: sof funksiya (testlar uchun eksport).
+ * Qaytaradi: [{ key, col, json }]
+ */
+export function diffColumns(user, snap = {}) {
+  const out = [];
+  for (const [key, col] of Object.entries({ ...COL_MAP, meta: "meta" })) {
+    if (!(key in user)) continue;
+    const json = jsonOf(user[key]);
+    if (snap[key] !== json) out.push({ key, col, json });
+  }
+  return out;
+}
+
+// Bir biznes uchun yozuvlar ketma-ket bajariladi (tartib buzilmasin)
+const writeChains = new Map();
+
+/**
+ * Biznesni saqlaydi. `patch` — keshdagi obyektning o'zi (persist) yoki qisman
+ * o'zgarishlar ({ settings: ... }). Ikkala holatda ham keshdagi obyekt yangilanadi
+ * va bazaga FAQAT o'zgargan ustunlar yoziladi.
+ */
 export async function updateUser(id, patch) {
   if (!pgReady) return null;
-
-  // Patch'dan meta o'qib olamiz — MUTATSIYA QILMASDAN. `delete patch.meta` xavfli
-  // edi: persist(user) chaqirilganda `patch` aynan LIVE `user`/`tenant` obyektining
-  // o'zi (klon emas) — shuning uchun `delete` shu topilgan tenant.meta'ni butun
-  // amaldagi so'rov davomida (masalan webhook handler'da) DARHOL o'chirib
-  // yuborardi, garchi quyidagi colMap sikli "meta" kalitini umuman ishlatmasa ham
-  // (shuning uchun delete hech qanday amaliy maqsadga xizmat qilmagan, faqat zarar
-  // keltirgan).
-  const meta = patch.meta || undefined;
-
-  const setClauses = [];
-  const vals = [];
-  let i = 1;
-
-  const colMap = {
-    businessName: "business_name",
-    businessInfo: "business_info",
-    geminiApiKey: "gemini_api_key",
-    passwordHash: "password_hash",
-    salt: "salt",
-    settings: "settings",
-    subscription: "subscription",
-    stats: "stats",
-    handoffs: "handoffs",
-    manualChats: "manual_chats",
-    leads: "leads",
-    chats: "chats",
-    rules: "rules",
-    scheduledPosts: "scheduled_posts",
-    broadcasts: "broadcasts",
-    growth: "growth",
-    contactProfiles: "contact_profiles",
-    gamification: "gamification",
-    forms: "forms",
-    contactMeta: "contact_meta",
-    integrations: "integrations",
-    followUps: "follow_ups",
-    flows: "flows",
-    team: "team",
-    content: "content",
-    mediaLibrary: "media_library",
-    tgBusiness: "tg_business",
-    apiTokens: "api_tokens",
-    aiUsage: "ai_usage",
-    sequences: "sequences",
-    shop: "shop",
-    trackedLinks: "tracked_links",
-    pushSubs: "push_subs",
+  let user = cache.get(id) || (await findUserById(id));
+  if (!user) return null;
+  if (patch && patch !== user) {
+    const { meta, ...rest } = patch;
+    if (meta) user.meta = { ...(user.meta || {}), ...meta };
+    for (const key of Object.keys(rest)) if (key in COL_MAP) user[key] = rest[key];
+  }
+  const run = async () => {
+    const snap = snapshots.get(id) || {};
+    const changed = diffColumns(user, snap);
+    if (!changed.length) return user;
+    const sets = [];
+    const vals = [];
+    changed.forEach((c, i) => {
+      sets.push(`${c.col} = $${i + 1}`);
+      vals.push(TEXT_COLS.has(c.key) ? user[c.key] ?? "" : c.json);
+    });
+    vals.push(id);
+    await pgPool.query(`UPDATE users SET ${sets.join(",")} WHERE id=$${vals.length}`, vals);
+    for (const c of changed) snap[c.key] = c.json;
+    snapshots.set(id, snap);
+    return user;
   };
-
-  for (const [key, col] of Object.entries(colMap)) {
-    if (key in patch) {
-      setClauses.push(`${col} = $${i++}`);
-      vals.push(typeof patch[key] === "object" ? JSON.stringify(patch[key]) : patch[key]);
-    }
+  const prev = writeChains.get(id) || Promise.resolve();
+  const next = prev.catch(() => {}).then(run);
+  writeChains.set(id, next);
+  try {
+    return await next;
+  } finally {
+    if (writeChains.get(id) === next) writeChains.delete(id);
   }
-
-  if (meta) {
-    setClauses.push(`meta = meta || $${i++}`);
-    vals.push(JSON.stringify(meta));
-  }
-
-  if (setClauses.length === 0) return findUserById(id);
-  vals.push(id);
-  const { rows } = await pgPool.query(
-    `UPDATE users SET ${setClauses.join(",")} WHERE id=$${i} RETURNING *`,
-    vals
-  );
-  return normalizeUser(rows[0]) || null;
 }
 
 export async function findUserByPlatformId(kind, platformId) {
   if (!pgReady) return null;
   const id = String(platformId || "");
   if (!id) return null;
+  if (allLoaded) {
+    const users = cachedUsers();
+    const found = users.find((u) => {
+      const m = u.meta || {};
+      if (kind === "ig" || kind === "page") return m.igUserId === id || m.pageId === id;
+      if (kind === "whatsapp") return m.whatsappPhoneNumberId === id || m.whatsappPhoneId === id;
+      return false;
+    });
+    if (found) return found;
+    if (kind === "ig") {
+      const fb = users.find((u) => u.meta?.igAccessToken);
+      if (fb) console.warn(`[findUserByPlatformId] ig=${id} uchun aniq moslik topilmadi — fallback orqali "${fb.businessName}" tanlandi`);
+      return fb || null;
+    }
+    return null;
+  }
   let q;
   if (kind === "ig") q = `SELECT * FROM users WHERE meta->>'igUserId' = $1 OR meta->>'pageId' = $1`;
   else if (kind === "page") q = `SELECT * FROM users WHERE meta->>'pageId' = $1 OR meta->>'igUserId' = $1`;
   else if (kind === "whatsapp") q = `SELECT * FROM users WHERE meta->>'whatsappPhoneNumberId' = $1 OR meta->>'whatsappPhoneId' = $1`;
   else return null;
   const { rows } = await pgPool.query(q, [id]);
-  if (rows[0]) {
-    return normalizeUser(rows[0]);
-  }
+  if (rows[0]) return hydrate(rows[0]);
 
   // Fallback: Agar platformId mos kelmasa, Instagram tokeni bor foydalanuvchini topish.
   // DIQQAT: bu >1 ulangan Instagram biznes bo'lganda noto'g'ri biznesga marshrutlash
@@ -334,7 +469,7 @@ export async function findUserByPlatformId(kind, platformId) {
     const fb = await pgPool.query(`SELECT * FROM users WHERE meta->>'igAccessToken' != '' AND meta->>'igAccessToken' IS NOT NULL LIMIT 1`);
     if (fb.rows[0]) {
       console.warn(`[findUserByPlatformId] ig=${id} uchun aniq moslik topilmadi — fallback orqali "${fb.rows[0].business_name}" tanlandi (2+ biznes ulangan bo'lsa xato marshrutlash xavfi bor)`);
-      return normalizeUser(fb.rows[0]);
+      return hydrate(fb.rows[0]);
     }
   }
   return null;
@@ -454,6 +589,8 @@ export async function listOrders({ limit = 500 } = {}) {
 export async function deleteUser(id) {
   if (!pgReady) return false;
   const { rowCount } = await pgPool.query("DELETE FROM users WHERE id=$1", [String(id)]);
+  cache.delete(String(id));
+  snapshots.delete(String(id));
   return rowCount > 0;
 }
 
@@ -544,6 +681,62 @@ export async function listPaymeTx({ from, to } = {}) {
   if (to   != null) { vals.push(to);   q += ` AND create_time <= $${vals.length}`; }
   const { rows } = await pgPool.query(q, vals);
   return rows;
+}
+
+// ============================================================
+// SUHBAT ARXIVI
+// ============================================================
+
+export async function archiveMessages(userId, chatKey, entries) {
+  if (!pgReady || !entries.length) return;
+  const vals = [];
+  const rows = entries.map((e, i) => {
+    const b = i * 6;
+    const { role, text, at, ...extra } = e;
+    vals.push(userId, chatKey, String(role || "user"), String(text ?? ""), at || new Date().toISOString(), Object.keys(extra).length ? JSON.stringify(extra) : null);
+    return `($${b + 1},$${b + 2},$${b + 3},$${b + 4},$${b + 5},$${b + 6})`;
+  });
+  await pgPool.query(`INSERT INTO messages(user_id, chat_key, role, text, at, extra) VALUES ${rows.join(",")}`, vals);
+}
+
+/** Oxirgi `limit` ta xabar (eskidan yangiga) va jami soni. */
+export async function loadMessages(userId, chatKey, limit = 100) {
+  if (!pgReady) return { messages: [], total: 0 };
+  const [{ rows }, count] = await Promise.all([
+    pgPool.query("SELECT role, text, at, extra FROM messages WHERE user_id=$1 AND chat_key=$2 ORDER BY id DESC LIMIT $3", [userId, chatKey, limit]),
+    pgPool.query("SELECT COUNT(*)::int AS n FROM messages WHERE user_id=$1 AND chat_key=$2", [userId, chatKey]),
+  ]);
+  const messages = rows.reverse().map((r) => ({ ...(r.extra || {}), role: r.role, text: r.text, at: new Date(r.at).toISOString() }));
+  return { messages, total: count.rows[0]?.n || 0 };
+}
+
+export async function deleteMessages(userId, chatKey) {
+  if (!pgReady) return;
+  if (chatKey == null) await pgPool.query("DELETE FROM messages WHERE user_id=$1", [userId]);
+  else await pgPool.query("DELETE FROM messages WHERE user_id=$1 AND chat_key=$2", [userId, chatKey]);
+}
+
+// ============================================================
+// TAKRORIY HODISALAR (dedup)
+// ============================================================
+
+/** Yangi bo'lsa true (va yozib qo'yadi), avval ko'rilgan bo'lsa false. */
+export async function markSeen(id, ttlMs) {
+  if (!pgReady) return true;
+  const now = Date.now();
+  const { rowCount } = await pgPool.query(
+    `INSERT INTO seen_events(id, at) VALUES($1,$2)
+     ON CONFLICT(id) DO UPDATE SET at=EXCLUDED.at WHERE seen_events.at < $3`,
+    [String(id), now, now - ttlMs]
+  );
+  if (Math.random() < 0.01) pgPool.query("DELETE FROM seen_events WHERE at < $1", [now - ttlMs]).catch(() => {});
+  return rowCount > 0;
+}
+
+export async function recentSeen(ttlMs) {
+  if (!pgReady) return [];
+  const { rows } = await pgPool.query("SELECT id, at FROM seen_events WHERE at >= $1", [Date.now() - ttlMs]);
+  return rows.map((r) => [r.id, Number(r.at)]);
 }
 
 // ============================================================

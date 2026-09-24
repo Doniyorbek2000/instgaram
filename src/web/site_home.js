@@ -254,13 +254,12 @@ export function heroStage(lang) {
 }
 
 /** Hero chap tomonidagi ishonch qatori. */
-export function heroTrust(lang, trustText) {
+export function heroTrust(lang, trustText, rating = "") {
   const H = home(lang);
-  const names = ["D", "S", "K", "M", "J"];
-  return `<div class="hx-trust">
-      <div class="hx-avatars">${names.map((n, i) => `<span style="background:${AVATAR_BG[i]}">${n}</span>`).join("")}</div>
-      <div><span class="stars">★★★★★</span> <b>4.9</b> · ${esc(trustText)}</div>
-    </div>
+  // Reyting faqat admin haqiqiy qiymat kiritganda ko'rsatiladi
+  return `${trustText ? `<div class="hx-trust">
+      <div>${rating ? `<span class="stars">★★★★★</span> <b>${esc(rating)}</b> · ` : "✓ "}${esc(trustText)}</div>
+    </div>` : ""}
     <div class="hx-chan"><span class="ics">${["instagram", "telegram", "whatsapp", "facebook"].map((b) => brandIcon(b, { size: 18 })).join("")}</span>${esc(H.heroChannels)}</div>`;
 }
 

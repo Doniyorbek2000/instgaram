@@ -15,7 +15,7 @@ import { getPlatformSettings, setPlatformSettings, updateUser, persist, getPlanP
 import { isActive } from "./subscription.js";
 import { config } from "./config.js";
 
-export const AI_QUOTA = { free: 50, trial: 300, start: 1000, pro: 3000, business: 10000 };
+export const AI_QUOTA = { free: 50, trial: 300, mini: 200, lite: 500, start: 1000, pro: 3000, business: 10000 };
 
 export const CREDIT_PACKS = {
   c500: { id: "c500", credits: 500, defaultPrice: 29000 },

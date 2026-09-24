@@ -8,8 +8,8 @@
  *  - Buyurtma holati o'zgarsa (to'landi / yo'lga chiqdi / yetkazildi) — mijozga xabar
  *
  * To'lov: biznesning O'Z Payme / Click kassasi. Havola Payme/Click'ning ochiq checkout
- * formatida tuziladi; to'lov tasdig'i kassa kabinetida ko'rinadi va buyurtma panelda
- * "To'landi" deb belgilanadi (Payme/Click merchant API ulanmaguncha avtomatik emas).
+ * formatida tuziladi. Kassa kaliti kiritilgan bo'lsa to'lov AVTOMATIK tasdiqlanadi
+ * (shopPayments.js — Payme Merchant API / Click SHOP API), aks holda panelda qo'lda.
  *
  * tenant.shop = { settings, products: [...], orders: [...], seq }
  */
@@ -44,13 +44,13 @@ export function ensureShop(tenant) {
     currency: "so'm",
     cartReminderMin: 60,
     cartReminderText: "{name|Do'stim}, buyurtmangiz №{num} to'lovni kutyapti 🛒 Hali ham kerak bo'lsa, shu yerdan to'lashingiz mumkin 👇",
-    payme: { merchantId: "", account: "order_id" },
-    click: { serviceId: "", merchantId: "" },
+    payme: { merchantId: "", account: "order_id", key: "" },
+    click: { serviceId: "", merchantId: "", secretKey: "" },
     notifyOwner: true,
     ...(s.settings || {}),
   };
-  s.settings.payme = { merchantId: "", account: "order_id", ...(s.settings.payme || {}) };
-  s.settings.click = { serviceId: "", merchantId: "", ...(s.settings.click || {}) };
+  s.settings.payme = { merchantId: "", account: "order_id", key: "", ...(s.settings.payme || {}) };
+  s.settings.click = { serviceId: "", merchantId: "", secretKey: "", ...(s.settings.click || {}) };
   if (!Array.isArray(s.products)) s.products = [];
   if (!Array.isArray(s.orders)) s.orders = [];
   s.seq ||= 1000;

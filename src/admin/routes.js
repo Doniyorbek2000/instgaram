@@ -13,13 +13,16 @@ import {
   audit, auditLog, clientIp, changeAdminPassword, usingDefaultPassword, adminLogin,
 } from "./auth.js";
 import {
-  listUsers, findUserById, updateUser, persist, listOrders, findOrder, updateOrder, deleteUser,
+  listUsers, findUserById, updateUser, dbStatus, persist, listOrders, findOrder, updateOrder, deleteUser,
   createSession, deleteUserSessions, getPlanPrices, setPlanPrices, getPlatformGeminiKey, setPlatformGeminiKey, listPaymeTx,
 } from "../db.js";
 import { getPlans, PLAN_DEFS, activate, deactivate } from "../subscription.js";
 import { addCredits, CREDIT_PACKS, CREDIT_ORDER_PREFIX, getCreditPacks, platformSettings, savePlatformSettings, AI_QUOTA } from "../credits.js";
 import { config, paymeReady } from "../config.js";
 import { isPgReady } from "../pgdb.js";
+import { deleteHistory } from "../chatStore.js";
+import { diagnoseBusiness } from "./diagnostics.js";
+import { siteSettings, saveSiteSettings, contactMessages, updateContactMessages } from "../siteSettings.js";
 
 export const adminRouter = Router();
 
@@ -87,6 +90,13 @@ adminRouter.post("/admin/logout", async (req, res) => {
 // Qolgan barcha /admin sahifalari — faqat admin sessiyasi bilan
 adminRouter.use("/admin", requireAdminSession);
 
+// Dastlabki (repodagi) parol bilan ishlash mumkin emas — avval parolni almashtirish shart
+adminRouter.use("/admin", async (req, res, next) => {
+  if (req.path === "/security" || req.path === "/logout" || !(await usingDefaultPassword())) return next();
+  if (req.method !== "GET") return res.status(403).send("Avval dastlabki admin parolini almashtiring");
+  go(res, "/admin/security", "err", "Davom etish uchun dastlabki parolni almashtiring");
+});
+
 // ================= Boshqaruv (dashboard) =================
 
 adminRouter.get("/admin", async (req, res) => {
@@ -97,8 +107,9 @@ adminRouter.get("/admin", async (req, res) => {
   const expiring = s.list.filter((b) => b.status.active && b.status.until && b.status.until - Date.now() < 3 * 86400000).slice(0, 8);
   const byId = Object.fromEntries(users.map((u) => [u.id, u]));
   const revDelta = s.revenuePrev ? Math.round(((s.revenueMonth - s.revenuePrev) / s.revenuePrev) * 100) : null;
-  const warn = (await usingDefaultPassword())
-    ? `<div class="flash warn">🔐 Dastlabki parol ishlatilmoqda — <a href="/admin/security">Xavfsizlik</a> bo'limida parolni almashtiring.</div>`
+  const dbs = dbStatus();
+  const warn = dbs.fallback
+    ? `<div class="flash bad">⚠️ PostgreSQL'ga ulanib bo'lmadi — ma'lumotlar VAQTINCHA JSON faylga yozilmoqda. Sabab: ${esc(dbs.error || "noma'lum")}. Bazani tiklab, serverni qayta ishga tushiring (<a href="/admin/system">Tizim</a>).</div>`
     : "";
 
   const kpi = (l, v, sub = "", cls = "") => `<div class="kpi"><div class="l">${l}</div><div class="v">${v}</div>${sub ? `<div class="s ${cls}">${sub}</div>` : ""}</div>`;
@@ -272,6 +283,10 @@ adminRouter.get("/admin/businesses/:id", async (req, res) => {
             <button class="btn danger sm" name="action" value="off" formnovalidate style="align-self:end" onclick="return confirm('Obuna bekor qilinsinmi?')">Bekor qilish</button>
           </form>
         </div>
+        <div class="card"><h2>🩺 Ulanishlar holati</h2>
+          ${diagHtml(m.lastDiagnostics)}
+          <form method="post" action="${url}/diagnose" style="margin:10px 0 0"><button class="btn sm">🩺 Ulanishlarni tekshirish</button></form>
+        </div>
         <div class="card"><h2>🔌 Tokenlar va kalitlar</h2>
           <p class="hint" style="margin-top:0">Hozirgi qiymatlar yashirin. O'zgartirish uchun yangi qiymatni kiriting — bo'sh maydon o'zgarmaydi. "-" kiritilsa o'chiriladi.</p>
           <form method="post" action="${url}/meta" style="margin:0">
@@ -319,6 +334,14 @@ adminRouter.get("/admin/businesses/:id", async (req, res) => {
   res.send(adminPage(b.name, body, { active: "businesses", flash, flashKind: kind }));
 });
 
+const DIAG_PILL = { ok: ["ok", "✓"], warn: ["warn", "!"], bad: ["bad", "✕"], off: ["mute", "—"] };
+function diagHtml(d) {
+  if (!d?.results?.length) return `<p class="hint" style="margin:0">Hali tekshirilmagan. Tugma Instagram, Facebook, WhatsApp va Telegram API'lariga haqiqiy so'rov yuboradi.</p>`;
+  return `<p class="hint" style="margin-top:0">Oxirgi tekshiruv: ${esc(fmtDate(d.at))}</p><div class="kv">${d.results
+    .map((r) => `<div><span class="pill ${DIAG_PILL[r.status]?.[0] || "mute"}">${DIAG_PILL[r.status]?.[1] || ""} ${esc(r.channel)}</span></div><div><b>${esc(r.title)}</b>${r.detail ? `<div class="hint">${esc(r.detail)}</div>` : ""}</div>`)
+    .join("")}</div>`;
+}
+
 const withBusiness = (handler) => async (req, res) => {
   const u = await findUserById(req.params.id);
   if (!u) return go(res, "/admin/businesses", "err", "Biznes topilmadi");
@@ -355,6 +378,16 @@ adminRouter.post("/admin/businesses/:id/subscription", withBusiness(async (req, 
   activate(u, days, plan);
   await audit(req, "subscription_extend", u.email, `${plan} +${days} kun`);
   go(res, url, "ok", `Obuna ${days} kunga uzaytirildi`);
+}));
+
+adminRouter.post("/admin/businesses/:id/diagnose", withBusiness(async (req, res, u, url) => {
+  const results = await diagnoseBusiness(u);
+  u.meta ||= {};
+  u.meta.lastDiagnostics = { at: new Date().toISOString(), results };
+  await persist(u);
+  await audit(req, "diagnose", u.email, results.map((r) => `${r.channel}:${r.status}`).join(" "));
+  const bad = results.filter((r) => r.status === "bad").length;
+  go(res, url, bad ? "err" : "ok", bad ? `${bad} ta ulanishda muammo topildi` : "Tekshiruv tugadi");
 }));
 
 adminRouter.post("/admin/businesses/:id/credits", withBusiness(async (req, res, u, url) => {
@@ -427,6 +460,7 @@ adminRouter.post("/admin/businesses/:id/meta", withBusiness(async (req, res, u, 
 adminRouter.post("/admin/businesses/:id/delete", withBusiness(async (req, res, u, url) => {
   if (String(req.body?.confirm || "").trim().toLowerCase() !== String(u.email || "").toLowerCase()) return go(res, url, "err", "Email mos kelmadi — o'chirilmadi");
   await deleteUser(u.id);
+  await deleteHistory(u.id).catch((err) => console.error("[Arxiv] o'chirishda xato:", err.message));
   await audit(req, "delete_business", u.email, u.businessName || "");
   go(res, "/admin/businesses", "ok", `${u.businessName || u.email} o'chirildi`);
 }));
@@ -603,6 +637,66 @@ adminRouter.post("/admin/announce", async (req, res) => {
   go(res, "/admin/announce", "ok", "E'lon saqlandi");
 });
 
+// ================= Sayt va murojaatlar =================
+
+adminRouter.get("/admin/site", async (req, res) => {
+  const c = siteSettings();
+  const msgs = await contactMessages();
+  const unread = msgs.filter((m) => !m.read).length;
+  const body = `
+    <div class="grid two">
+      <form method="post" action="/admin/site" class="card" style="margin:0">
+        <h2>🌐 Publik sayt</h2>
+        <p class="hint" style="margin-top:0">Saytdagi aloqa ma'lumotlari, huquqiy sahifalar va footer shu yerdan olinadi.</p>
+        <label>Email</label><input name="email" type="email" value="${esc(c.email)}" placeholder="info@obunext.uz">
+        <div class="row">
+          <div class="grow"><label>Telegram (username)</label><input name="telegram" value="${esc(c.telegram)}" placeholder="obunext"></div>
+          <div class="grow"><label>Telefon</label><input name="phone" value="${esc(c.phone)}" placeholder="+998 ..."></div>
+        </div>
+        <h3 style="margin:18px 0 6px">⭐ Ishonch qatori (bosh sahifa)</h3>
+        <label style="display:flex; gap:8px; align-items:center; font-size:13.5px"><input type="checkbox" name="showBusinessCount" ${c.showBusinessCount ? "checked" : ""} style="width:auto; margin:0"> Haqiqiy bizneslar sonini ko'rsatish</label>
+        <div class="row">
+          <div class="grow"><label>Kamida nechta bo'lsa ko'rsatilsin</label><input name="minBusinessCount" type="number" min="1" value="${esc(c.minBusinessCount)}"></div>
+          <div class="grow"><label>Reyting (ixtiyoriy, 1–5)</label><input name="rating" value="${esc(c.rating)}" placeholder="bo'sh — ko'rsatilmaydi"></div>
+        </div>
+        <label>O'z matningiz (ixtiyoriy — son o'rniga)</label><input name="trustText" value="${esc(c.trustText)}" maxlength="120" placeholder="masalan: Toshkentdagi 40 dan ortiq do'kon ishonadi">
+        <p class="hint">Reyting va raqamlarni faqat haqiqiy manba bo'lsa kiriting — o'ylab topilgan ko'rsatkichlar iste'molchilarni chalg'itadi va reklama qonunchiligini buzadi.</p>
+        <h3 style="margin:18px 0 6px">💬 Mijozlar fikri</h3>
+        <label>Har qatorda bitta: <code>fikr | ism | kasbi/biznesi</code> (bo'sh — bo'lim ko'rsatilmaydi)</label>
+        <textarea name="testimonials" rows="5" maxlength="6000" placeholder="Endi Direct'ga kechasi ham javob beriladi | Dilnoza | Kiyim do'koni">${esc(c.testimonials.map((t) => [t.quote, t.name, t.role].join(" | ")).join("\n"))}</textarea>
+        <p class="hint">Faqat mijoz ruxsati bilan olingan haqiqiy fikrlar.</p>
+        <button class="btn">💾 Saqlash</button>
+      </form>
+      <div class="card" style="margin:0"><h2>📩 Saytdan murojaatlar ${unread ? `<span class="pill warn">${unread} yangi</span>` : ""}</h2>
+        ${msgs.length ? msgs.slice(0, 100).map((m) => `<div style="border-top:1px solid var(--line); padding:10px 0; ${m.read ? "opacity:.65" : ""}">
+            <div class="row" style="justify-content:space-between; margin:0"><b>${esc(m.name || "—")}</b><span class="hint">${esc(fmtDate(m.at))}</span></div>
+            <div class="hint">${[m.email && `<a href="mailto:${esc(m.email)}">${esc(m.email)}</a>`, m.phone && `<a href="tel:${esc(m.phone)}">${esc(m.phone)}</a>`, m.lang && esc(m.lang.toUpperCase())].filter(Boolean).join(" · ")}</div>
+            <div style="white-space:pre-wrap; margin:6px 0">${esc(m.message)}</div>
+            <form method="post" action="/admin/site/messages/${esc(m.id)}" class="row" style="margin:0; gap:6px">
+              ${m.read ? "" : `<button class="btn sec sm" name="action" value="read">✓ O'qildi</button>`}
+              <button class="btn danger sm" name="action" value="delete" onclick="return confirm('O\'chirilsinmi?')">O'chirish</button>
+            </form>
+          </div>`).join("") : `<p class="hint">Hali murojaat yo'q. Sayt → "Bog'lanish" formasi orqali keladi${process.env.ADMIN_TELEGRAM_CHAT_ID ? " (Telegram'ga ham yuboriladi)" : ". Telegram'da ham olish uchun .env'da ADMIN_TELEGRAM_CHAT_ID ni kiriting"}.</p>`}
+      </div>
+    </div>`;
+  const [flash, kind] = flashOf(req);
+  res.send(adminPage("Sayt va murojaatlar", body, { active: "site", flash, flashKind: kind }));
+});
+
+adminRouter.post("/admin/site", async (req, res) => {
+  const r = await saveSiteSettings(req.body || {});
+  if (!r.ok) return go(res, "/admin/site", "err", r.error);
+  await audit(req, "site_settings", "", `email=${req.body?.email || ""} tg=${req.body?.telegram || ""}`);
+  go(res, "/admin/site", "ok", "Sayt sozlamalari saqlandi");
+});
+
+adminRouter.post("/admin/site/messages/:id", async (req, res) => {
+  const id = String(req.params.id);
+  const action = req.body?.action;
+  await updateContactMessages((list) => (action === "delete" ? list.filter((m) => m.id !== id) : list.map((m) => (m.id === id ? { ...m, read: true } : m))));
+  go(res, "/admin/site", "ok", action === "delete" ? "O'chirildi" : "Belgilandi");
+});
+
 // ================= Audit =================
 
 const ACTION_LABELS = {
@@ -634,7 +728,7 @@ adminRouter.get("/admin/system", async (req, res) => {
         <div>Ishlash vaqti</div><div>${Math.floor(up / 86400)} kun ${Math.floor((up % 86400) / 3600)} soat ${Math.floor((up % 3600) / 60)} daq</div>
         <div>Node.js</div><div>${esc(process.version)}</div>
         <div>Xotira (RSS)</div><div>${Math.round(mem.rss / 1048576)} MB · heap ${Math.round(mem.heapUsed / 1048576)} / ${Math.round(mem.heapTotal / 1048576)} MB</div>
-        <div>Ma'lumotlar bazasi</div><div>${isPgReady() ? `<span class="pill ok">PostgreSQL</span>` : `<span class="pill warn">JSON fayl</span>`}</div>
+        <div>Ma'lumotlar bazasi</div><div>${isPgReady() ? `<span class="pill ok">PostgreSQL</span>` : dbStatus().fallback ? `<span class="pill bad">JSON fayl (PostgreSQL ulanmadi!)</span> <span class="hint">${esc(dbStatus().error)}</span>` : `<span class="pill warn">JSON fayl</span>`}</div>
         <div>Bizneslar</div><div>${users.length}</div>
         <div>Server vaqti</div><div>${esc(fmtDate(Date.now()))} (Toshkent)</div>
       </div></div>
