@@ -43,20 +43,29 @@ export async function getUserFollowerCount(tenant, igsid) {
 }
 
 /**
- * Foydalanuvchi biznes sahifasiga obuna bo'lganmi yoki yo'qligini tekshiradi (Follower Gate).
- * Qaytaradi: boolean (true = obuna bo'lgan, false = obuna bo'lmagan)
+ * Obuna holati: true / false / null (aniqlab bo'lmadi).
+ * Meta komment egasining profilini u Direct'da javob bermaguncha (tugma bosish ham
+ * hisob) ko'pincha bermaydi — shunda null qaytadi.
+ */
+export async function getFollowStatus(tenant, igsid) {
+  const profile = await getUserProfile(tenant, igsid);
+  if (!profile || typeof profile.is_user_follow_business !== "boolean") return null;
+  return profile.is_user_follow_business;
+}
+
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+export const FOLLOW_RECHECK_MS = { value: 2500 };
+
+/**
+ * Foydalanuvchi biznes sahifasiga obuna bo'lganmi (Follower Gate) — qat'iy: aniqlab
+ * bo'lmasa false. Mijoz "Obuna bo'ldim" deb bosganda Meta yangi obunani darhol
+ * ko'rsatmasligi mumkin, shuning uchun "yo'q" chiqsa bir marta qayta tekshiriladi.
  */
 export async function checkFollowerStatus(tenant, igsid) {
-  const profile = await getUserProfile(tenant, igsid);
-  if (!profile) return false;
-
-  // Meta Graph API maydoni: is_user_follow_business
-  if (typeof profile.is_user_follow_business === "boolean") {
-    return profile.is_user_follow_business;
-  }
-
-  // Agar maydon qaytmagan bo'lsa (masalan, API ruxsat cheklovi), false qaytaramiz
-  return Boolean(profile.is_user_follow_business);
+  const first = await getFollowStatus(tenant, igsid);
+  if (first === true) return true;
+  await sleep(FOLLOW_RECHECK_MS.value);
+  return (await getFollowStatus(tenant, igsid)) === true;
 }
 
 /** Instagram kommentiga ochiq (public) javob yozadi. */
@@ -89,9 +98,13 @@ export async function privateReplyToComment(tenant, commentId, text, quickReplie
     );
     if (withButtons && !withButtons.error) return withButtons;
   }
+  // Tugmalar qabul qilinmasa — raqamli variantlar: mijoz "1" yoki tugma nomini yozadi
+  const body = qr.length
+    ? `${text}\n\n${qr.map((o, i) => `${i + 1}. ${o.title}`).join("\n")}\n\n👉 Raqamini yozib yuboring`
+    : String(text);
   return igGraphPost(
     "me/messages",
-    { recipient: { comment_id: commentId }, message: { text: String(text) } },
+    { recipient: { comment_id: commentId }, message: { text: body } },
     token
   );
 }

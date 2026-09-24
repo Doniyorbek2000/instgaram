@@ -49,7 +49,19 @@ const T = {
       { id: "m2", type: "message", text: "Mana sovg'angiz 🎉 Foydali bo'lsin!", buttons: [{ id: "b2", title: "Ochish", url: "https://example.uz/sovga" }], next: "d1" },
       { id: "d1", type: "delay", minutes: 60, next: "m4" },
       { id: "m4", type: "message", text: "{first_name|Do'stim}, sovg'a yoqdimi? 😊 Savollaringiz bo'lsa shu yerga yozing." },
-      { id: "m3", type: "message", text: "Sovg'a faqat obunachilarimiz uchun 🙏 Sahifamizga obuna bo'ling va tugmani qayta bosing:", buttons: [{ id: "b3", title: "Obuna bo'ldim ✅", next: "c1" }] },
+      { id: "m3", type: "message", text: "Sovg'a faqat obunachilarimiz uchun 🙏 Sahifamizga obuna bo'ling va tugmani qayta bosing:\n👉 {ig_profile}", buttons: [{ id: "b3", title: "Obuna bo'ldim ✅", next: "c1" }] },
+    ],
+  },
+  plus_gate: {
+    name: "➕ \"+\" komment → obuna tekshiruvi → material",
+    triggers: [{ type: "comment", keyword: "+", matchType: "contains", publicReplies: ["Direct'ga yubordim 📩", "Direct'ni tekshiring ✨", "Yubordim, Direct'ga qarang 🙌"] }],
+    start: "m1",
+    nodes: [
+      { id: "m1", type: "message", text: "Assalomu alaykum, {name|do'stim}! 👋\nMaterialni yuborishim uchun sahifamizga obuna bo'lganingizni tekshiraman. Pastdagi tugmani bosing 👇", buttons: [{ id: "b1", title: "Tekshirish ✅", next: "c1" }] },
+      { id: "c1", type: "condition", match: "all", conditions: [{ kind: "follows" }], yes: "a1", no: "m3" },
+      { id: "a1", type: "action", actions: [{ kind: "add_tag", value: "obunachi" }, { kind: "conversion", value: "Material berildi" }], next: "m2" },
+      { id: "m2", type: "message", text: "Rahmat, obunangiz tasdiqlandi! 🎉 Mana va'da qilingan material 👇", buttons: [{ id: "b2", title: "Materialni ochish", url: "https://example.uz/material" }] },
+      { id: "m3", type: "message", text: "Siz hali sahifamizga obuna bo'lmagansiz 🙏\nObuna bo'ling va pastdagi tugmani bosing — material darhol keladi:\n👉 {ig_profile}", buttons: [{ id: "b3", title: "Obuna bo'ldim ✅", next: "c1" }] },
     ],
   },
   leads: {
