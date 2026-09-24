@@ -95,6 +95,9 @@ async function runMigrations() {
     ALTER TABLE users ADD COLUMN IF NOT EXISTS contact_meta JSONB DEFAULT '{}';
     ALTER TABLE users ADD COLUMN IF NOT EXISTS integrations JSONB DEFAULT '{}';
     ALTER TABLE users ADD COLUMN IF NOT EXISTS follow_ups JSONB DEFAULT '[]';
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS flows JSONB DEFAULT '{}';
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS team JSONB DEFAULT '[]';
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS content JSONB DEFAULT '{}';
 
     CREATE TABLE IF NOT EXISTS sessions (
       token TEXT PRIMARY KEY,
@@ -170,6 +173,9 @@ function normalizeUser(row) {
     contactMeta: row.contact_meta || {},
     integrations: row.integrations || {},
     followUps: row.follow_ups || [],
+    flows: row.flows || {},
+    team: row.team || [],
+    content: row.content || {},
     createdAt: row.created_at,
   };
 }
@@ -257,6 +263,9 @@ export async function updateUser(id, patch) {
     contactMeta: "contact_meta",
     integrations: "integrations",
     followUps: "follow_ups",
+    flows: "flows",
+    team: "team",
+    content: "content",
   };
 
   for (const [key, col] of Object.entries(colMap)) {

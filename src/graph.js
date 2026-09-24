@@ -91,3 +91,24 @@ export const igGraphGet = (path, params, token) => doGet(igGraphUrl, path, param
 export const igGraphPost = (path, body, token, { retries = 2 } = {}) =>
   doPost(igGraphUrl, path, body, token, retries);
 
+
+/** Instagram Graph DELETE (masalan, salomlashuv tugmalarini o'chirish). Xatoda { error }. */
+export async function igGraphDelete(path, body, token) {
+  if (!token) return { error: { message: "access token yo'q" } };
+  try {
+    const res = await fetch(igGraphUrl(path), {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      body: JSON.stringify(body || {}),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || data?.error) {
+      console.error(`Graph DELETE xatosi [${path}] (${res.status}):`, JSON.stringify(data).slice(0, 300));
+      return { error: data.error || { message: `HTTP ${res.status}` } };
+    }
+    return data;
+  } catch (err) {
+    console.error(`Graph DELETE tarmoq xatosi [${path}]:`, err.message);
+    return { error: { message: err.message } };
+  }
+}

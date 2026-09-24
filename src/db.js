@@ -63,7 +63,10 @@ function normalizeUser(u) {
   u.forms ||= {}; // DM lid formalari: {list, sessions, submissions}
   u.contactMeta ||= {}; // chatKey -> {tags, note, fields}
   u.integrations ||= {}; // {webhookUrl, sheetsUrl, events}
-  u.followUps ||= []; // Kechiktirilgan xabarlar navbati (eslatma / follow-up)
+  u.followUps ||= []; // Kechiktirilgan xabarlar navbati (eslatma / follow-up / flow kutish)
+  u.flows ||= {}; // Flow builder: {list, sessions}
+  u.team ||= []; // Jamoa a'zolari: [{email, role, invitedAt}]
+  u.content ||= {}; // AI kontent studiya: saqlangan g'oyalar
   return u;
 }
 

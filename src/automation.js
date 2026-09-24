@@ -27,7 +27,7 @@ export function rememberOptions(tenant, key, options) {
   if (lastOptions.size > 20000) lastOptions.delete(lastOptions.keys().next().value);
 }
 
-function resolvePayload(tenant, key, text) {
+export function resolvePayload(tenant, key, text) {
   const k = `${tenant.id}|${key}`;
   const saved = lastOptions.get(k);
   if (!saved || Date.now() - saved.at > OPTIONS_TTL_MS) return "";

@@ -2,6 +2,8 @@ import { commentReplyText, commentPrivateReplyText } from "../autoReply.js";
 import { sendReply, optionsAsText } from "../outbound.js";
 import { classifyIntent } from "../ai.js";
 import { ruleReplyOptions, onRuleDelivered, onGateBlocked } from "../ruleActions.js";
+import { findFlowTrigger, aiFlowCandidates, startFlow, pickPublicReply as pickFlowPublicReply } from "../flows.js";
+import { renderTemplate } from "../templating.js";
 import { award, confirmPendingReferral } from "../gamification.js";
 import { processMessage } from "../respond.js";
 import { isActive } from "../subscription.js";
@@ -139,6 +141,11 @@ export async function handleInstagramEntry(tenant, entry) {
     if (isStoryMention) {
       console.log(`[IG Story Mention] ${tenant.businessName}: ${senderId} sizni story'da belgiladi!`);
       const pts = await award(tenant, key, "story_mention").catch(() => 0);
+      const mentionFlow = findFlowTrigger(tenant, "story_mention", {});
+      if (mentionFlow) {
+        await startFlow(tenant, key, mentionFlow.flow, { userText: "🌟 Story'da belgiladi" });
+        continue;
+      }
       const storyRule = findStoryMentionRule(tenant);
       if (storyRule && storyRule.privateReply) {
         storyRule.stats ||= {};
@@ -146,7 +153,7 @@ export async function handleInstagramEntry(tenant, entry) {
         storyRule.stats.sent = (storyRule.stats.sent || 0) + 1;
         persist(tenant);
         const extra = pts > 0 ? `\n\n⭐ +${pts} ball! Balingizni ko'rish uchun "${tenant.gamification.keywords.balance}" deb yozing.` : "";
-        await sendReply(tenant, "instagram", senderId, storyRule.privateReply + extra, ruleReplyOptions(storyRule));
+        await sendReply(tenant, "instagram", senderId, renderTemplate(storyRule.privateReply, tenant, key) + extra, ruleReplyOptions(storyRule));
         onRuleDelivered(tenant, storyRule, key);
         continue;
       }
@@ -160,6 +167,14 @@ export async function handleInstagramEntry(tenant, entry) {
     const isStoryReply = Boolean(message.reply_to?.story || message.attachments?.some((a) => a.type === "story_reply"));
     if (isStoryReply) {
       award(tenant, key, "story_reply").catch(() => {});
+      let storyFlow = findFlowTrigger(tenant, "story_reply", { text: message.text || "" });
+      if ((!storyFlow || storyFlow.catchAll) && message.text) {
+        storyFlow = (await classifyIntent(tenant, message.text, aiFlowCandidates(tenant, "story_reply"))) || storyFlow;
+      }
+      if (storyFlow) {
+        await startFlow(tenant, key, storyFlow.flow, { text: message.text || "", userText: `🗨️ Story javobi: ${message.text || ""}` });
+        continue;
+      }
       let storyReplyRule = findStoryReplyRule(tenant, message.text);
       if ((!storyReplyRule || isCatchAll(storyReplyRule)) && message.text) {
         storyReplyRule = (await classifyIntent(tenant, message.text, aiRules(tenant, "story_reply"))) || storyReplyRule;
@@ -170,7 +185,7 @@ export async function handleInstagramEntry(tenant, entry) {
         storyReplyRule.stats.triggered = (storyReplyRule.stats.triggered || 0) + 1;
         storyReplyRule.stats.sent = (storyReplyRule.stats.sent || 0) + 1;
         persist(tenant);
-        await sendReply(tenant, "instagram", senderId, storyReplyRule.privateReply, ruleReplyOptions(storyReplyRule));
+        await sendReply(tenant, "instagram", senderId, renderTemplate(storyReplyRule.privateReply, tenant, key), ruleReplyOptions(storyReplyRule));
         onRuleDelivered(tenant, storyReplyRule, key);
         continue;
       }
@@ -204,9 +219,10 @@ export async function handleInstagramEntry(tenant, entry) {
     }
   }
 
-  // Kommentlar (Comment-to-DM & Follower Gate Triggers)
+  // Kommentlar va jonli efir kommentlari (Comment-to-DM, Follower Gate, Flow triggerlari)
   for (const change of entry.changes || []) {
-    if (change.field !== "comments") continue;
+    if (change.field !== "comments" && change.field !== "live_comments") continue;
+    const isLive = change.field === "live_comments";
     const comment = change.value;
     if (!comment?.id) continue;
     if (comment.from?.id === tenant.meta.igUserId) continue;
@@ -224,7 +240,7 @@ export async function handleInstagramEntry(tenant, entry) {
     }
 
     // Sozlamada yoqilgan bo'lsa — har bir kommentga biznes nomidan avtomatik layk
-    if (tenant.settings?.autoLikeComments) {
+    if (tenant.settings?.autoLikeComments && !isLive) {
       const likeRes = await likeComment(tenant, comment.id);
       console.log(`[IG Auto-Layk] @${comment.from?.username || "?"} kommentiga: ${likeRes && !likeRes.error ? "OK ❤️" : "XATO"}`);
     }
@@ -234,23 +250,53 @@ export async function handleInstagramEntry(tenant, entry) {
       award(tenant, `ig:${comment.from.id}`, "comment", { username: comment.from.username || "", mediaId }).catch(() => {});
     }
 
-    // ChatPlace uslubida qoidani qidiramiz (mediaId va kalit so'z bo'yicha)
-    let commentRule = findCommentRule(tenant, comment.text, mediaId);
-    // AI trigger: kalit so'z mos kelmasa, kommentning MA'NOSI bo'yicha qoida tanlanadi
-    if ((!commentRule || isCatchAll(commentRule)) && comment.text) {
-      const smart = await classifyIntent(tenant, comment.text, aiRules(tenant, "comment_to_dm", mediaId));
-      if (smart) {
-        console.log(`[IG AI Trigger] "${comment.text}" → "${smart.name}"`);
-        commentRule = smart;
-      }
+    // Ustuvorlik: aniq kalit so'zli flow → aniq kalit so'zli qoida → AI (flow va
+    // qoidalar birga, bitta so'rov) → "hamma komment" flow'i → "hamma komment" qoidasi
+    const flowType = isLive ? "live_comment" : "comment";
+    const ruleType = isLive ? "live_comment" : "comment_to_dm";
+    const flowCandidate = findFlowTrigger(tenant, flowType, { text: comment.text || "", mediaId });
+    const ruleCandidate = findCommentRule(tenant, comment.text, mediaId, ruleType);
+    let flowHit = null;
+    let commentRule = null;
+    if (flowCandidate && !flowCandidate.catchAll) flowHit = flowCandidate;
+    else if (ruleCandidate && !isCatchAll(ruleCandidate)) commentRule = ruleCandidate;
+    else {
+      const smart = comment.text
+        ? await classifyIntent(tenant, comment.text, [
+            ...aiFlowCandidates(tenant, flowType, mediaId),
+            ...aiRules(tenant, ruleType, mediaId),
+          ])
+        : null;
+      if (smart) console.log(`[IG AI Trigger] "${comment.text}" → "${smart.name}"`);
+      if (smart?.flow) flowHit = smart;
+      else if (smart) commentRule = smart;
+      else if (flowCandidate) flowHit = flowCandidate;
+      else commentRule = ruleCandidate;
     }
+    if (flowHit) {
+      const fromId = comment.from?.id;
+      if (!isLive) {
+        const pub = pickFlowPublicReply(flowHit.trigger);
+        if (pub) await replyToComment(tenant, comment.id, pub);
+      }
+      if (fromId) {
+        await startFlow(tenant, `ig:${fromId}`, flowHit.flow, {
+          commentId: comment.id,
+          text: comment.text || "",
+          userText: `${isLive ? "🔴 Jonli efir" : "💬 Komment"}: ${comment.text || ""}`,
+        });
+      }
+      continue;
+    }
+    // Jonli efirda qoida/flow topilmasa — har bir kommentga javob bermaymiz (spam bo'ladi)
+    if (isLive && !commentRule) continue;
     if (commentRule) {
       commentRule.stats ||= {};
       commentRule.stats.triggered = (commentRule.stats.triggered || 0) + 1;
     }
 
-    // 1. Anti-Spam: Ochiq komment javobini random tanlaymiz
-    const publicText = pickPublicReply(commentRule) || commentReplyText();
+    // 1. Anti-Spam: Ochiq komment javobini random tanlaymiz (jonli efirda ochiq javob yo'q)
+    const publicText = isLive ? "" : pickPublicReply(commentRule) || commentReplyText();
     if (publicText) {
       const pub = await replyToComment(tenant, comment.id, publicText);
       console.log(`[IG Komment] ochiq javob (${publicText.slice(0, 30)}...): ${pub ? "OK" : "XATO"}`);
@@ -286,7 +332,9 @@ export async function handleInstagramEntry(tenant, entry) {
     // javob generatsiya qilinadi (bu oldin `commentPrivateReplyText()` doim
     // "truthy" qaytargani sababli hech qachon ishga tushmaydigan o'lik kod edi —
     // natijada barcha mijozlarga BIR XIL statik matn ketardi).
-    let privateText = commentRule?.privateReply || "";
+    let privateText = commentRule?.privateReply && comment.from?.id
+      ? renderTemplate(commentRule.privateReply, tenant, `ig:${comment.from.id}`)
+      : commentRule?.privateReply || "";
     if (!privateText && comment.text) {
       const { reply } = await processMessage(tenant, "instagram", `comment:${comment.from?.id || comment.id}`, {
         text: comment.text,

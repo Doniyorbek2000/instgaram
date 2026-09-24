@@ -61,7 +61,7 @@ ${relevantKb || "Biznes haqida ma'lumot kiritilmagan."}`;
 }
 
 /** Gemini — matn + ovoz + rasm + video birga tahlil qilinadi */
-export async function askGemini(apiKey, systemPrompt, history, text, media) {
+export async function askGemini(apiKey, systemPrompt, history, text, media, opts = {}) {
   const parts = [
     ...media.map((m) => ({
       inline_data: { mime_type: m.mimeType, data: m.data },
@@ -85,7 +85,11 @@ export async function askGemini(apiKey, systemPrompt, history, text, media) {
   const body = JSON.stringify({
     system_instruction: { parts: [{ text: systemPrompt }] },
     contents,
-    generationConfig: { maxOutputTokens: 400 },
+    generationConfig: {
+      maxOutputTokens: opts.maxOutputTokens || 400,
+      ...(opts.json ? { responseMimeType: "application/json" } : {}),
+      ...(opts.temperature !== undefined ? { temperature: opts.temperature } : {}),
+    },
   });
 
   // Eski nomlar (2.5/2.0/1.5-flash*) Google tomonidan bekor qilingan — Gemini API
@@ -107,7 +111,7 @@ export async function askGemini(apiKey, systemPrompt, history, text, media) {
   // cheksiz kutar edi. Endi belgilangan vaqtda javob kelmasa, keyingi modelga
   // (yoki halol zaxira javobga) o'tiladi — mijoz hech qachon o'nlab soniya
   // kutmaydi.
-  const FETCH_TIMEOUT_MS = 9000;
+  const FETCH_TIMEOUT_MS = opts.timeoutMs || 9000;
 
   for (const modelName of modelsToTry) {
     const RETRYABLE = new Set([429, 500, 503]);
@@ -339,8 +343,7 @@ export async function classifyIntent(tenant, text, rules) {
   const message = String(text || "").trim();
   if (!candidates.length || !message) return null;
 
-  const platformKey = await getPlatformGeminiKey();
-  const geminiKey = tenant.geminiApiKey || platformKey || globalGeminiKey;
+  const geminiKey = await resolveGeminiKey(tenant);
   if (!geminiKey) return null;
 
   const list = candidates
@@ -359,5 +362,33 @@ export async function classifyIntent(tenant, text, rules) {
   } catch (err) {
     console.error("[AI Trigger] klassifikatsiya xatosi:", err.message);
     return null;
+  }
+}
+
+/** Biznes uchun ishlatiladigan Gemini kaliti: biznesning o'zi → platforma → .env */
+export async function resolveGeminiKey(tenant) {
+  return tenant?.geminiApiKey || (await getPlatformGeminiKey()) || globalGeminiKey || "";
+}
+
+/** AI (Gemini) sozlanganmi — UI'da AI tugmalarini ko'rsatish/yashirish uchun. */
+export async function aiAvailable(tenant) {
+  return Boolean(await resolveGeminiKey(tenant));
+}
+
+/**
+ * Umumiy matn generatsiyasi (kontent studiya, xabarni qayta yozish, flow yaratish).
+ * Suhbat tarixiga yozilmaydi. json: true bo'lsa model JSON qaytaradi va u parse qilinadi.
+ * Xatoda Error otadi — chaqiruvchi foydalanuvchiga tushunarli xabar ko'rsatadi.
+ */
+export async function generateText(tenant, systemPrompt, prompt, { maxOutputTokens = 2048, json = false, temperature } = {}) {
+  const key = await resolveGeminiKey(tenant);
+  if (!key) throw new Error("AI kaliti sozlanmagan. Admin paneldan Gemini kalitini kiriting.");
+  const out = await askGemini(key, systemPrompt, [], prompt, [], { maxOutputTokens, json, temperature, timeoutMs: 30000 });
+  if (!json) return out;
+  const cleaned = String(out).replace(/^```(?:json)?\s*/i, "").replace(/```\s*$/, "").trim();
+  try {
+    return JSON.parse(cleaned);
+  } catch {
+    throw new Error("AI javobini o'qib bo'lmadi, qaytadan urinib ko'ring.");
   }
 }

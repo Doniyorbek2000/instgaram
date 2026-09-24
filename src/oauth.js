@@ -25,7 +25,7 @@ const SCOPES = [
 ].join(",");
 
 // Webhookda kerak bo'ladigan maydonlar
-const SUBSCRIBE_FIELDS = "messages,comments";
+const SUBSCRIBE_FIELDS = "messages,comments,live_comments,messaging_postbacks";
 
 /** Foydalanuvchini Instagram ruxsat oynasiga yo'naltirish uchun URL */
 export function authUrl(state) {

@@ -1,4 +1,4 @@
-import { graphPost, igGraphPost, graphGet, igGraphGet } from "../graph.js";
+import { graphPost, igGraphPost, graphGet, igGraphGet, igGraphDelete } from "../graph.js";
 
 // Instagram Login tokeni (yo'q bo'lsa — eski Page token bilan orqaga moslik).
 const igToken = (tenant) => tenant?.meta?.igAccessToken || tenant?.meta?.pageAccessToken || "";
@@ -73,14 +73,48 @@ export function likeComment(tenant, commentId) {
  * Komment egasiga Direct'ga shaxsiy javob (Private Reply) yuboradi.
  * Meta qoidasi: faqat komment yozilganidan keyin 7 kun ichida mumkin.
  */
-export function privateReplyToComment(tenant, commentId, text) {
+export async function privateReplyToComment(tenant, commentId, text, quickReplies = []) {
+  const token = igToken(tenant);
+  const qr = (quickReplies || [])
+    .filter((o) => o && o.title && o.payload)
+    .slice(0, 13)
+    .map((o) => ({ content_type: "text", title: String(o.title).slice(0, 20), payload: String(o.payload) }));
+  if (qr.length) {
+    // Tugmali private reply — mijoz tugmani bosishi bilan 24 soatlik suhbat oynasi
+    // ochiladi va flow davom etadi. API rad etsa, oddiy matnga qaytamiz.
+    const withButtons = await igGraphPost(
+      "me/messages",
+      { recipient: { comment_id: commentId }, message: { text: String(text), quick_replies: qr } },
+      token
+    );
+    if (withButtons && !withButtons.error) return withButtons;
+  }
   return igGraphPost(
     "me/messages",
-    {
-      recipient: { comment_id: commentId },
-      message: { text },
-    },
-    igToken(tenant)
+    { recipient: { comment_id: commentId }, message: { text: String(text) } },
+    token
+  );
+}
+
+/**
+ * Instagram "Salomlashuv tugmalari" (Ice Breakers) — mijoz birinchi marta Direct
+ * ochganda, hali hech narsa yozmasidan OLDIN ko'rinadigan savollar.
+ * items: [{ question, payload }] (maksimal 4 ta). Bo'sh ro'yxat — o'chiradi.
+ */
+export async function setIceBreakers(tenant, items = []) {
+  const token = igToken(tenant);
+  if (!token) return { error: { message: "Instagram ulanmagan" } };
+  const list = (items || [])
+    .filter((i) => i && i.question)
+    .slice(0, 4)
+    .map((i) => ({ question: String(i.question).slice(0, 80), payload: String(i.payload || i.question).slice(0, 1000) }));
+  if (!list.length) {
+    return igGraphDelete("me/messenger_profile", { fields: ["ice_breakers"] }, token);
+  }
+  return igGraphPost(
+    "me/messenger_profile",
+    { platform: "instagram", ice_breakers: [{ call_to_actions: list, locale: "default" }] },
+    token
   );
 }
 

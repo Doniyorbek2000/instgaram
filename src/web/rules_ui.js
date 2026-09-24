@@ -15,6 +15,7 @@ export const rulesRouter = Router();
 
 const TYPES = {
   comment_to_dm: "💬 Comment-to-DM",
+  live_comment: "🔴 Jonli efir kommenti",
   story_mention: "🌟 Story Mention",
   story_reply: "🗨️ Story Reply",
   keyword_dm: "✉️ Direct Keyword",

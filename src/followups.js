@@ -30,7 +30,7 @@ function jobsOf(tenant) {
  * mijoz tugmani qayta-qayta bossa ham eslatma bir marta keladi.
  * Qaytaradi: yaratilgan vazifa yoki null (matn/kechikish yo'q).
  */
-export function scheduleFollowUp(tenant, { key, kind, ruleId = "", text, options = [], delayMin }) {
+export function scheduleFollowUp(tenant, { key, kind, ruleId = "", text, options = [], delayMin, data = null }) {
   const body = String(text || "").trim();
   const delayMs = Math.min(MAX_DELAY_MS, Math.max(0, Number(delayMin) || 0) * 60 * 1000);
   if (!key || !body || !delayMs) return null;
@@ -46,6 +46,7 @@ export function scheduleFollowUp(tenant, { key, kind, ruleId = "", text, options
     ruleId,
     text: body,
     options: (options || []).filter((o) => o && o.title).slice(0, 3),
+    ...(data ? { data } : {}),
     dueAt: Date.now() + delayMs,
     createdAt: Date.now(),
   };
@@ -79,6 +80,13 @@ export async function runTenantFollowUps(tenant, now = Date.now(), send = sendRe
       if (now - job.dueAt > STALE_AFTER_MS) continue;
       const { chan, id } = splitKey(job.key);
       try {
+        if (job.kind === "flow") {
+          // Flow'dagi "Kutish" blokidan keyingi qadamni bajaramiz
+          const { continueFlowJob } = await import("./flows.js");
+          const flowSend = send === sendReply ? undefined : async (m) => send(tenant, chan, id, m.text, m.options);
+          if (await continueFlowJob(tenant, job, flowSend)) sent++;
+          continue;
+        }
         const ok = await send(tenant, chan, id, job.text, job.options);
         if (ok) sent++;
         else console.warn(`[FollowUp] ${tenant.businessName}: ${job.key} ga ${job.kind} yuborilmadi (24 soatlik oyna yopiq bo'lishi mumkin)`);
@@ -89,7 +97,10 @@ export async function runTenantFollowUps(tenant, now = Date.now(), send = sendRe
   }
   // Faqat navbat maydonini yozamiz — butun obyektni persist qilish shu vaqtda
   // webhook yozgan boshqa maydonlarni (chats, stats) eski qiymat bilan bosib ketishi mumkin
-  await updateUser(tenant.id, { followUps: tenant.followUps });
+  // Flow davom etgan bo'lsa u boshqa maydonlarni ham o'zgartirgan (sessiya, teglar,
+  // statistika) — shuning uchun to'liq saqlaymiz; aks holda faqat navbatni yozamiz
+  if (due.some((j) => j.kind === "flow")) await persist(tenant);
+  else await updateUser(tenant.id, { followUps: tenant.followUps });
   return sent;
 }
 

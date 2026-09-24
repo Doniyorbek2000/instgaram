@@ -5,7 +5,9 @@ import { findKeywordRule, aiRules } from "./rules.js";
 import { classifyIntent } from "./ai.js";
 import { ruleReplyOptions, onRuleDelivered, onGateBlocked } from "./ruleActions.js";
 import { persist } from "./db.js";
-import { runAutomations, rememberOptions, gateMessage, passesGate } from "./automation.js";
+import { runAutomations, rememberOptions, gateMessage, passesGate, resolvePayload } from "./automation.js";
+import { handleFlowInbound, findFlowTrigger, aiFlowCandidates, startFlow, logToInbox } from "./flows.js";
+import { renderTemplate } from "./templating.js";
 import { fireEvent } from "./integrations.js";
 import { chanShort } from "./outbound.js";
 import {
@@ -65,6 +67,17 @@ export async function processMessage(tenant, channel, chatKey, { text = "", medi
     return { reply: null };
   }
 
+  // Instagram salomlashuv tugmasi (ice breaker) bosildi — savol matni mijoz
+  // xabari sifatida ishlanadi (AI yoki kalit so'z qoidasi javob beradi)
+  if (payload?.startsWith("IB:")) {
+    const ib = tenant.settings?.icebreakers?.[Number(payload.slice(3))];
+    const question = typeof ib === "string" ? ib : ib?.question;
+    if (question) {
+      text = question;
+      payload = "";
+    }
+  }
+
   // Inbox da ko'rsatish uchun kanal prefiksi bilan key
   const fullKey = inboxKey(channel, chatKey);
   const isNewContact = !tenant.stats?.customers?.[fullKey];
@@ -88,6 +101,31 @@ export async function processMessage(tenant, channel, chatKey, { text = "", medi
     return { reply: HANDOFF_REPLY };
   }
 
+  // 5a. Flow builder: tugma bosilishi, "ma'lumot yig'ish" blokiga javob,
+  // referal havola yoki yangi kontakt triggerlari. Flow xabarlarni o'zi yuboradi.
+  const flowCtx = { text, userText: shownText, profile };
+  try {
+    const flowPayload = payload || resolvePayload(tenant, fullKey, text);
+    let handled = await handleFlowInbound(tenant, fullKey, { text, payload: flowPayload }, flowCtx);
+    if (!handled) {
+      const trig =
+        (ref && findFlowTrigger(tenant, "ref", { ref })) ||
+        (isNewContact && findFlowTrigger(tenant, "new_contact", {})) ||
+        null;
+      if (trig) {
+        await startFlow(tenant, fullKey, trig.flow, flowCtx);
+        handled = true;
+      }
+    }
+    if (handled) {
+      if (flowCtx.userText) logToInbox(tenant, fullKey, flowCtx);
+      persist(tenant);
+      return { reply: null };
+    }
+  } catch (err) {
+    console.error(`[Flow] ${tenant.businessName}: xato:`, err.message);
+  }
+
   // 5. Interaktiv avtomatlashtirish: referal, lid formalari, geymifikatsiya, tugmalar
   let prefix = "";
   try {
@@ -107,9 +145,26 @@ export async function processMessage(tenant, channel, chatKey, { text = "", medi
   // AI'ga bo'sh matn yubormaymiz.
   if (!text && !media.length) return { reply: prefix || null };
 
-  // 6. Kalit so'z bo'yicha avtomatlashtirish qoidasi (Rule Engine)
-  // Kalit so'z topilmasa — AI trigger qoidalari (ma'no bo'yicha) tekshiriladi
-  const rule = findKeywordRule(tenant, text) || (await classifyIntent(tenant, text, aiRules(tenant, "keyword_dm")));
+  // 6. Kalit so'z bo'yicha flow yoki qoida. Aniq kalit so'z topilmasa — AI
+  // triggerli flow va qoidalar birgalikda BITTA AI so'rovi bilan tekshiriladi.
+  let rule = null;
+  let flowHit = findFlowTrigger(tenant, "keyword", { text });
+  if (!flowHit) rule = findKeywordRule(tenant, text);
+  if (!flowHit && !rule) {
+    const smart = await classifyIntent(tenant, text, [...aiFlowCandidates(tenant, "keyword"), ...aiRules(tenant, "keyword_dm")]);
+    if (smart?.flow) flowHit = smart;
+    else rule = smart;
+  }
+  if (flowHit) {
+    try {
+      await startFlow(tenant, fullKey, flowHit.flow, flowCtx);
+      if (flowCtx.userText) logToInbox(tenant, fullKey, flowCtx);
+      persist(tenant);
+      return { reply: null };
+    } catch (err) {
+      console.error(`[Flow] ${tenant.businessName}: xato:`, err.message);
+    }
+  }
   if (rule) {
     console.log(`[${channel}] ${tenant.businessName}: Qoida ishga tushdi ("${rule.name}")`);
     rule.stats ||= {};
@@ -131,8 +186,9 @@ export async function processMessage(tenant, channel, chatKey, { text = "", medi
       const options = ruleReplyOptions(rule);
       onRuleDelivered(tenant, rule, fullKey);
       rememberOptions(tenant, fullKey, options);
-      logExchange(tenant, fullKey, shownText, rule.privateReply);
-      return { reply: rule.privateReply, quickReplies: options };
+      const ruleReply = renderTemplate(rule.privateReply, tenant, fullKey);
+      logExchange(tenant, fullKey, shownText, ruleReply);
+      return { reply: ruleReply, quickReplies: options };
     }
   }
 

@@ -149,9 +149,9 @@ function targetsMedia(rule, mediaId) {
 }
 
 /** Komment yozilganda mos keluvchi qoidani topadi (post ID va kalit so'z bo'yicha) */
-export function findCommentRule(user, commentText, mediaId = "") {
+export function findCommentRule(user, commentText, mediaId = "", type = "comment_to_dm") {
   const candidates = ensureRules(user).filter(
-    (r) => r.type === "comment_to_dm" && r.enabled && targetsMedia(r, mediaId)
+    (r) => r.type === type && r.enabled && targetsMedia(r, mediaId)
   );
   // 1. Aniq kalit so'z mosligi (aniq post uchun yozilgan qoida umumiysidan ustun)
   const specific = candidates.filter((r) => r.matchType !== "ai" && !isCatchAll(r) && matchesRule(r, commentText));
