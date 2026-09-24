@@ -3,7 +3,7 @@ import { isAdmin } from "../auth.js";
 import { currentActor, canAccess } from "../team.js";
 import { icon } from "./icons.js";
 
-/** Barcha ilova sahifalari uchun ADM AI uslubidagi to'q-binafsha Glassmorphism HTML qobig'i */
+/** Barcha ilova sahifalari uchun Obunext uslubidagi to'q-binafsha Glassmorphism HTML qobig'i */
 export function page(title, body, { user, active = "" } = {}) {
   // Admin menyusi faqat haqiqiy kirgan shaxs admin bo'lsa ko'rinadi (jamoa a'zosi
   // admin egasining ish maydoniga o'tganda ko'rinmaydi)
@@ -14,7 +14,7 @@ export function page(title, body, { user, active = "" } = {}) {
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>${esc(title)} — ADM AI Automation Studio</title>
+<title>${esc(title)} — Obunext Automation Studio</title>
 <link rel="icon" href="/favicon.png" type="image/png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -242,7 +242,7 @@ ${
   user
     ? `<div class="shell">
         <aside class="sidebar">
-          <a class="brand" href="/dashboard">${logoMark(32)}<span>ADM AI</span></a>
+          <a class="brand" href="/dashboard">${logoMark(32)}<span>Obunext</span></a>
           <nav class="side-nav">
             ${navSections(active, admin)}
           </nav>
@@ -270,7 +270,7 @@ ${
         </div>
       </div>`
     : `<header class="pub">
-        <a class="brand" href="/">${logoMark(32)}<span>ADM AI</span></a>
+        <a class="brand" href="/">${logoMark(32)}<span>Obunext</span></a>
         <nav><a href="/login">Kirish</a> &nbsp; <a href="/register" class="btn" style="margin:0; padding:8px 18px">Ro'yxatdan o'tish</a></nav>
       </header>
       <main class="pub">${body}</main>`
@@ -296,6 +296,7 @@ const NAV = [
     ["/flows", "flows", "flow", "Flow Builder"],
     ["/triggers", "triggers", "bolt", "Tezkor qoidalar"],
     ["/forms", "forms", "form", "Lid formalari"],
+    ["/media", "media", "camera", "Media kutubxona"],
     ["/templates", "templates", "layout", "Shablonlar Hubi"],
   ]],
   ["O'sish", [
@@ -306,6 +307,7 @@ const NAV = [
     ["/scheduler", "scheduler", "calendar", "Scheduler"],
   ]],
   ["Sozlamalar", [
+    ["/ai-settings", "ai-settings", "spark", "AI javob sozlamalari"],
     ["/integrations", "integrations", "plug", "Integratsiyalar"],
     ["/team", "team", "team", "Jamoa"],
     ["/billing", "billing", "card", "Obuna & Tariflar"],

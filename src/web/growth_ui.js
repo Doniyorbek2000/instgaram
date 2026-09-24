@@ -1,5 +1,5 @@
 /**
- * ADM AI style O'sish Vositalari (Growth Tools / Gamification / Icebreakers) Module (/growth)
+ * Obunext style O'sish Vositalari (Growth Tools / Gamification / Icebreakers) Module (/growth)
  */
 import { Router } from "express";
 import { requireAuth } from "../auth.js";

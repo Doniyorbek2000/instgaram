@@ -1,5 +1,5 @@
 /**
- * ADM AI — Vector Search (RAG - Retrieval-Augmented Generation) Engine
+ * Obunext — Vector Search (RAG - Retrieval-Augmented Generation) Engine
  * Katta bilimlar bazasini bo'laklarga (chunking) ajratadi va mijoz savoliga eng yaqin 
  * bilim bo'laklarini (Cosine Similarity / Vector Match) topib beradi.
  */

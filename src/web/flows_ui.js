@@ -13,7 +13,7 @@ import { requireAuth } from "../auth.js";
 import { page, esc } from "./layout.js";
 import { persist } from "../db.js";
 import {
-  ensureFlows, findFlow, sanitizeFlow, newId,
+  ensureFlows, findFlow, sanitizeFlow, newId, validateFlow, flowSnapshot,
   TRIGGER_TYPES, MATCH_TYPES, NODE_TYPES, CONDITION_KINDS, ACTION_KINDS, INPUT_VALIDATIONS,
 } from "../flows.js";
 import { FLOW_TEMPLATES, buildTemplate, autoLayout, AI_FLOW_PROMPT } from "../flowTemplates.js";
@@ -42,7 +42,7 @@ function safeJson(value) {
   return JSON.stringify(value).replace(/</g, "\\u003c").replace(/>/g, "\\u003e").replace(/&/g, "\\u0026");
 }
 
-const SHORT_LABELS = { message: "💬 Xabar", input: "📝 Savol", condition: "🔀 Shart", action: "⚡ Amal", delay: "⏱️ Kutish", ai: "🧠 AI", redirect: "↪️ O'tish" };
+const SHORT_LABELS = { message: "💬 Xabar", input: "📝 Savol", condition: "🔀 Shart", action: "⚡ Amal", delay: "⏱️ Kutish", ai: "🧠 AI", redirect: "↪️ O'tish", note: "🗒️ Izoh" };
 
 function flowSummary(flow) {
   const s = flow.stats || {};
@@ -61,6 +61,7 @@ flowsRouter.get("/flows", requireAuth, async (req, res) => {
     ? list
         .map((f) => {
           const { conv, triggers, nodes, s } = flowSummary(f);
+          const problems = validateFlow(f, list).errors.length;
           return `
           <div class="card flow-card" style="border-left:4px solid ${f.enabled ? "#4ade80" : "#64748b"}">
             <div style="display:flex; justify-content:space-between; gap:12px; flex-wrap:wrap; align-items:flex-start">
@@ -69,12 +70,14 @@ flowsRouter.get("/flows", requireAuth, async (req, res) => {
                 <div style="display:flex; gap:6px; flex-wrap:wrap; margin-top:6px">
                   ${triggers.map((t) => `<span class="status-tag" style="font-size:11.5px">${esc(t)}</span>`).join("") || `<span class="hint">Trigger yo'q — faqat boshqa flow yoki ice breaker orqali</span>`}
                   <span class="status-tag" style="font-size:11.5px">🧩 ${nodes} blok</span>
+                  ${problems ? `<a class="status-tag" href="/flows/${encodeURIComponent(f.id)}" style="font-size:11.5px; color:#f87171; border-color:#f87171">⚠️ ${problems} ta xato</a>` : ""}
                 </div>
               </div>
               <div style="display:flex; gap:6px; flex-wrap:wrap">
                 <a class="btn" href="/flows/${encodeURIComponent(f.id)}" style="padding:6px 14px; font-size:12.5px; margin:0">✏️ Muharrir</a>
                 <form method="post" action="/flows/${encodeURIComponent(f.id)}/toggle" style="margin:0"><button class="secondary" style="padding:6px 12px; font-size:12.5px; margin:0">${f.enabled ? "✅ Faol" : "⏸️ O'chiq"}</button></form>
                 <form method="post" action="/flows/${encodeURIComponent(f.id)}/duplicate" style="margin:0"><button class="secondary" style="padding:6px 12px; font-size:12.5px; margin:0" title="Nusxa">⧉</button></form>
+                <a class="btn secondary" href="/flows/${encodeURIComponent(f.id)}/export" style="padding:6px 10px; font-size:12.5px; margin:0" title="JSON faylga eksport">⬇️</a>
                 <form method="post" action="/flows/${encodeURIComponent(f.id)}/delete" style="margin:0" onsubmit="return confirm('Flow o\\'chirilsinmi?')"><button class="secondary" style="padding:6px 10px; font-size:12.5px; margin:0; color:#f87171">🗑️</button></form>
               </div>
             </div>
@@ -123,6 +126,14 @@ flowsRouter.get("/flows", requireAuth, async (req, res) => {
             </form>
           </div>
           <div class="card">
+            <h3 style="margin-top:0">📥 Import</h3>
+            <form method="post" action="/flows/import" id="flowImport" style="margin:0">
+              <input type="hidden" name="json">
+              <input type="file" accept=".json,application/json" onchange="var f=this.files[0], form=this.form; if(!f) return; if(f.size>900000){alert('Fayl juda katta');return} f.text().then(function(t){form.json.value=t; form.submit();})">
+            </form>
+            <p class="hint" style="font-size:12px; margin-bottom:0">⬇️ tugmasi bilan eksport qilingan flow faylini tanlang — o'chiq holda qo'shiladi.</p>
+          </div>
+          <div class="card">
             <h3 style="margin-top:0">📦 Tayyor shablonlar</h3>
             ${Object.entries(FLOW_TEMPLATES)
               .map(
@@ -167,11 +178,16 @@ flowsRouter.post("/flows/ai-generate", requireAuth, async (req, res) => {
 
 flowsRouter.post("/flows/:id/toggle", requireAuth, (req, res) => {
   const flow = findFlow(req.user, req.params.id);
+  const back = req.get("referer")?.includes(`/flows/${req.params.id}`) ? `/flows/${encodeURIComponent(req.params.id)}` : "/flows";
   if (flow) {
+    if (!flow.enabled) {
+      const { errors } = validateFlow(flow, ensureFlows(req.user).list);
+      if (errors.length) return res.redirect(`/flows?error=${encodeURIComponent(`"${flow.name}" yoqilmadi: ${errors[0].msg}${errors.length > 1 ? ` (+${errors.length - 1} ta xato)` : ""}`)}`);
+    }
     flow.enabled = !flow.enabled;
     persist(req.user);
   }
-  res.redirect(req.get("referer")?.includes(`/flows/${req.params.id}`) ? `/flows/${encodeURIComponent(req.params.id)}` : "/flows");
+  res.redirect(back);
 });
 
 flowsRouter.post("/flows/:id/duplicate", requireAuth, (req, res) => {
@@ -193,14 +209,103 @@ flowsRouter.post("/flows/:id/delete", requireAuth, (req, res) => {
   res.redirect("/flows");
 });
 
+/** Brauzerga yuboriladigan flow (versiyalar tarixisiz). */
+const publicFlow = ({ versions, ...f }) => ({ ...f, versionCount: (versions || []).length });
+
+const editable = (f) => JSON.stringify([f.name, f.triggers, f.start, f.nodes]);
+
+/** Oldingi holatni versiyalar tarixiga qo'shadi (o'zgargan bo'lsa). */
+function pushVersion(saved, previous) {
+  const versions = Array.isArray(previous.versions) ? previous.versions : [];
+  if (editable(saved) === editable(previous) || !Object.keys(previous.nodes || {}).length) return versions;
+  return [flowSnapshot(previous), ...versions].slice(0, MAX_VERSIONS);
+}
+
+const MAX_VERSIONS = 15;
+
 flowsRouter.post("/flows/:id/save", requireAuth, (req, res) => {
   const flows = ensureFlows(req.user);
   const idx = flows.list.findIndex((fl) => fl.id === req.params.id);
   if (idx < 0) return res.status(404).json({ ok: false, error: "Flow topilmadi" });
-  const saved = sanitizeFlow({ ...req.body, id: flows.list[idx].id }, flows.list[idx]);
+  const previous = flows.list[idx];
+  const saved = sanitizeFlow({ ...req.body, id: previous.id }, previous);
+  const validation = validateFlow(saved, flows.list);
+  let error = "";
+  if (saved.enabled && validation.errors.length) {
+    // Xatoli flow ishga tushmaydi — saqlanadi, lekin o'chiq holda
+    saved.enabled = false;
+    error = "Flow saqlandi, lekin xatolar tuzatilmaguncha yoqilmaydi";
+  }
+  saved.versions = pushVersion(saved, previous);
   flows.list[idx] = saved;
   persist(req.user);
-  res.json({ ok: true, flow: saved });
+  res.json({ ok: true, flow: publicFlow(saved), validation, error });
+});
+
+/** Saqlamasdan tekshirish (muharrir har o'zgarishdan keyin chaqiradi). */
+flowsRouter.post("/flows/:id/validate", requireAuth, (req, res) => {
+  const flows = ensureFlows(req.user);
+  const existing = findFlow(req.user, req.params.id);
+  if (!existing) return res.status(404).json({ ok: false, error: "Flow topilmadi" });
+  res.json({ ok: true, validation: validateFlow(sanitizeFlow({ ...req.body, id: existing.id }, existing), flows.list) });
+});
+
+/** Versiyalar ro'yxati (eng yangisi birinchi). */
+flowsRouter.get("/flows/:id/versions", requireAuth, (req, res) => {
+  const flow = findFlow(req.user, req.params.id);
+  if (!flow) return res.status(404).json({ ok: false, error: "Flow topilmadi" });
+  res.json({
+    ok: true,
+    versions: (flow.versions || []).map((v, i) => ({ idx: i, at: v.at, name: v.name, nodes: Object.keys(v.nodes || {}).length, triggers: (v.triggers || []).length })),
+  });
+});
+
+/** Versiyani tiklash: joriy holat ham tarixga tushadi (tiklashni bekor qilish mumkin). */
+flowsRouter.post("/flows/:id/restore/:idx", requireAuth, (req, res) => {
+  const flows = ensureFlows(req.user);
+  const idx = flows.list.findIndex((fl) => fl.id === req.params.id);
+  const current = flows.list[idx];
+  const version = current?.versions?.[Number(req.params.idx)];
+  if (!version) return res.status(404).json({ ok: false, error: "Versiya topilmadi" });
+  const restored = sanitizeFlow({ ...version, id: current.id, enabled: false }, current);
+  restored.versions = pushVersion(restored, current);
+  flows.list[idx] = restored;
+  persist(req.user);
+  res.json({ ok: true, flow: publicFlow(restored), validation: validateFlow(restored, flows.list) });
+});
+
+/** Flow'ni JSON fayl sifatida yuklab olish (boshqa akkauntga ko'chirish, zaxira). */
+flowsRouter.get("/flows/:id/export", requireAuth, (req, res) => {
+  const flow = findFlow(req.user, req.params.id);
+  if (!flow) return res.redirect("/flows");
+  const out = { format: "obunext-flow", version: 1, exportedAt: new Date().toISOString(), flow: { name: flow.name, triggers: flow.triggers, start: flow.start, nodes: flow.nodes } };
+  const file = `${String(flow.name).replace(/[^\p{L}\p{N}_-]+/gu, "_").slice(0, 60) || "flow"}.json`;
+  res.setHeader("Content-Disposition", `attachment; filename="flow.json"; filename*=UTF-8''${encodeURIComponent(file)}`);
+  res.type("application/json").send(JSON.stringify(out, null, 2));
+});
+
+/** JSON fayldan flow import qilish — doim yangi, o'chiq flow bo'lib qo'shiladi. */
+flowsRouter.post("/flows/import", requireAuth, (req, res) => {
+  try {
+    const raw = typeof req.body?.json === "string" ? JSON.parse(req.body.json) : req.body;
+    const src = ["obunext-flow", "adm-flow"].includes(raw?.format) ? raw.flow : raw; // adm-flow — eski eksportlar
+    if (!src || typeof src !== "object" || !src.nodes) throw new Error("Bu flow fayli emas");
+    const flow = sanitizeFlow({ ...src, id: newId("flow"), enabled: false });
+    if (!Object.keys(flow.nodes).length) throw new Error("Faylda bloklar yo'q");
+    // Boshqa akkauntdagi flow'larga havolalar bu yerda ishlamaydi
+    for (const n of Object.values(flow.nodes)) {
+      if (n.type === "redirect" && !findFlow(req.user, n.flowId)) n.flowId = "";
+      if (n.type === "action") n.actions = n.actions.map((a) => (a.kind === "run_flow" && !findFlow(req.user, a.key) ? { ...a, key: "" } : a));
+    }
+    ensureFlows(req.user).list.unshift(flow);
+    persist(req.user);
+    if (req.is("application/json")) return res.json({ ok: true, id: flow.id });
+    res.redirect(`/flows/${encodeURIComponent(flow.id)}?imported=1`);
+  } catch (err) {
+    const msg = err instanceof SyntaxError ? "JSON fayl buzilgan" : err.message;
+    if (req.is("application/json")) return res.status(400).json({ ok: false, error: msg });
+    res.redirect(`/flows?error=${encodeURIComponent(msg)}`);
+  }
 });
 
 flowsRouter.get("/flows/:id", requireAuth, async (req, res) => {
@@ -217,6 +322,8 @@ flowsRouter.get("/flows/:id", requireAuth, async (req, res) => {
     otherFlows: ensureFlows(u).list.filter((f) => f.id !== flow.id).map((f) => ({ id: f.id, name: f.name })),
     tags: allTags(u).map(([t]) => t).slice(0, 100),
     ai: await aiAvailable(u),
+    validation: validateFlow(flow, ensureFlows(u).list),
+    business: u.businessName || "",
   };
 
   res.send(
@@ -256,6 +363,8 @@ flowsRouter.get("/flows/:id", requireAuth, async (req, res) => {
         .fb-out.url { padding-right:8px }
         .t-message header { color:#c4b5fd } .t-input header { color:#fbbf24 } .t-condition header { color:#34d399 }
         .t-action header { color:#f472b6 } .t-delay header { color:#38bdf8 } .t-ai header { color:#a78bfa } .t-redirect header { color:#94a3b8 }
+        .t-note { background:#3a3417; border-color:rgba(250,204,21,0.35) } .t-note header { color:#fde68a } .t-note .body { color:#fef3c7; max-height:220px }
+        .t-note.c-blue { background:#172a3a; border-color:rgba(56,189,248,.35) } .t-note.c-pink { background:#3a1730; border-color:rgba(244,114,182,.35) } .t-note.c-green { background:#173a25; border-color:rgba(52,211,153,.35) }
         .fb-side { background:#0f1628; border-left:1px solid var(--border); overflow-y:auto; padding:16px }
         .fb-side h3 { margin:0 0 10px; font-size:16px }
         .fb-side label { font-size:12px; margin-top:10px }
@@ -269,7 +378,53 @@ flowsRouter.get("/flows/:id", requireAuth, async (req, res) => {
         .ai-btn { font-size:11.5px; padding:3px 9px; margin:4px 0 0; border-radius:7px }
         .fb-zoom { position:absolute; right:12px; bottom:12px; z-index:5; display:flex; gap:4px }
         .fb-zoom button { margin:0; padding:6px 11px }
-        @media (max-width: 960px) { .fb { grid-template-columns: 1fr; height:auto } .fb-canvas-wrap { height:65vh } .fb-side { border-left:0; border-top:1px solid var(--border) } }
+        .fb-mobile-only { display:none }
+        .fb-tools button:disabled { opacity:.35; cursor:default }
+        .fb-val.good { color:#34d399 } .fb-val.warn { color:#fbbf24 } .fb-val.bad { color:#f87171; border-color:#f87171 }
+        .fb-node.err { border-color:#f87171 } .fb-node.warn { border-color:rgba(251,191,36,.7); border-style:dashed }
+        .fb-node.simcur { box-shadow:0 0 0 3px #f59e0b, 0 0 30px rgba(245,158,11,.45) }
+        .fb-edges path.hit { stroke:transparent; stroke-width:16; opacity:1; pointer-events:stroke; cursor:pointer }
+        .fb-edges path.selected { stroke:#f59e0b !important; stroke-width:3.5; opacity:1 }
+        .fb-edge-x { position:absolute; z-index:3; width:26px; height:26px; border-radius:50%; margin:0; padding:0; font-size:13px; line-height:24px;
+          background:#f59e0b; color:#1c1203; border:2px solid #0b0f19; cursor:pointer; box-shadow:0 4px 12px rgba(0,0,0,.5) }
+        .fb-quick { position:absolute; z-index:8; display:flex; flex-direction:column; gap:3px; width:190px; background:#0f1628; border:1px solid var(--border);
+          border-radius:12px; padding:8px; box-shadow:0 16px 40px rgba(0,0,0,.6) }
+        .fb-quick button { margin:0; padding:6px 10px; font-size:12.5px; text-align:left; background:transparent; border:0; box-shadow:none }
+        .fb-quick button:hover { background:rgba(139,92,246,.2) }
+        .fb-problems { margin-top:10px; display:flex; flex-direction:column; gap:4px; font-size:12.5px }
+        .fb-problems .bad { color:#fca5a5 } .fb-problems .warn { color:#fcd34d }
+        .fb-problem { display:block; width:100%; text-align:left; margin:6px 0 0; padding:8px 10px; font-size:12.5px; white-space:normal; line-height:1.4 }
+        .fb-problem.bad { color:#fca5a5; border-color:rgba(248,113,113,.4) } .fb-problem.warn { color:#fcd34d }
+        .fb-sim { display:flex; flex-direction:column; gap:6px; max-height:52vh; overflow-y:auto; padding:10px; background:#0a0e18; border:1px solid var(--border); border-radius:12px }
+        .fb-sim .b { max-width:85%; padding:8px 11px; border-radius:14px; font-size:13px; white-space:pre-wrap; word-break:break-word }
+        .fb-sim .bot { align-self:flex-start; background:#1e293b; color:#e2e8f0; border-bottom-left-radius:4px }
+        .fb-sim .bot.ai { background:#2e1f5e }
+        .fb-sim .bot .media { font-size:12px; color:#93c5fd; margin-bottom:4px }
+        .fb-sim .bot .links { display:flex; flex-direction:column; gap:4px; margin-top:6px }
+        .fb-sim .bot .links a { font-size:12px; color:#7dd3fc }
+        .fb-sim .user { align-self:flex-end; background:#7c3aed; color:#fff; border-bottom-right-radius:4px }
+        .fb-sim .sys { align-self:center; max-width:95%; background:transparent; color:var(--text-muted); font-size:11.5px; padding:2px 6px; text-align:center }
+        .fb-sim .sys.end { color:#34d399; font-weight:700 }
+        .fb-sim-actions { display:flex; flex-wrap:wrap; gap:6px; margin-top:8px }
+        .fb-sim-actions button { margin:0; padding:7px 12px; font-size:12.5px; border-radius:99px }
+        @media (max-width: 960px) {
+          /* Telefonda builder butun ekranni egallaydi (o'z "←" tugmasi bor) */
+          .fb { display:block; position:fixed; inset:0; z-index:30; background:#0a0e18 }
+          .fb-canvas-wrap { height:100%; min-height:0 }
+          .fb-toolbar { flex-wrap:nowrap; overflow-x:auto; right:8px; left:8px; padding-bottom:4px }
+          .fb-add-group { flex-wrap:nowrap }
+          .fb-status { display:none }
+          .fb-mobile-only { display:inline-flex }
+          /* Inspektor — pastdan chiqadigan varaq (bottom sheet) */
+          .fb-side { position:fixed; left:0; right:0; bottom:0; max-height:72vh; z-index:50; border-left:0; border-top:1px solid var(--border);
+            border-radius:18px 18px 0 0; box-shadow:0 -12px 40px rgba(0,0,0,.6); transform:translateY(105%); transition:transform .22s ease; padding-top:22px }
+          .fb-side.open { transform:none }
+          .fb-side::before { content:""; position:absolute; top:8px; left:50%; width:44px; height:5px; margin-left:-22px; border-radius:99px; background:rgba(255,255,255,.25) }
+          .fb-zoom { position:fixed; right:12px; bottom:16px }
+          /* Saqlash va sozlamalar — doim ko'rinadigan joyda (pastki chap burchak) */
+          #fbSave { position:fixed; left:12px; bottom:16px; z-index:6; padding:10px 16px !important; font-size:14px !important }
+          #fbSettingsBtn { position:fixed; left:132px; bottom:16px; z-index:6; padding:10px 14px !important; font-size:14px !important }
+        }
       </style>
       <div class="fb">
         <div class="fb-canvas-wrap" id="fbWrap">
@@ -278,6 +433,15 @@ flowsRouter.get("/flows/:id", requireAuth, async (req, res) => {
             <span class="fb-add-group">
               ${Object.entries(SHORT_LABELS).map(([k, label]) => `<button class="secondary" data-add="${k}" title="${esc(NODE_TYPES[k])} blokini qo'shish">${label}</button>`).join("")}
             </span>
+            <span class="fb-add-group fb-tools">
+              <button class="secondary" data-act="undo" title="Bekor qilish (Ctrl+Z)" disabled>↶</button>
+              <button class="secondary" data-act="redo" title="Qaytarish (Ctrl+Shift+Z)" disabled>↷</button>
+              <button class="secondary" data-act="arrange" title="Bloklarni avtomatik tartiblash">🧹 Tartiblash</button>
+              <button class="secondary" data-act="sim" title="Flow'ni sinab ko'rish (hech narsa yuborilmaydi)">▶ Sinash</button>
+              <button class="secondary" data-act="versions" title="Versiyalar tarixi">🕘</button>
+            </span>
+            <button class="secondary fb-val" id="fbVal" title="Flow tekshiruvi">…</button>
+            <button class="secondary fb-mobile-only" id="fbSettingsBtn" title="Flow sozlamalari">⚙️</button>
             <span class="fb-status" id="fbStatus">Saqlangan</span>
             <button id="fbSave" class="btn">💾 Saqlash</button>
           </div>
@@ -290,7 +454,7 @@ flowsRouter.get("/flows/:id", requireAuth, async (req, res) => {
         </div>
         <aside class="fb-side" id="fbSide"></aside>
       </div>
-      <script type="application/json" id="fbData">${safeJson(flow)}</script>
+      <script type="application/json" id="fbData">${safeJson(publicFlow(flow))}</script>
       <script type="application/json" id="fbMeta">${safeJson(meta)}</script>
       <script src="/assets/flow-builder.js"></script>`,
       { user: u, active: "flows" }

@@ -6,6 +6,7 @@
  * Sozlash: .env da PAYME_MERCHANT_ID, PAYME_KEY (merchant kaliti).
  * Merchant kabinetda "Endpoint URL" = https://<BASE_URL>/payme
  */
+import { CREDIT_PACKS, CREDIT_ORDER_PREFIX, addCredits } from "./credits.js";
 import { config } from "./config.js";
 import {
   findOrder,
@@ -166,7 +167,10 @@ async function performTransaction(id, params) {
   if (order && order.status !== "paid") {
     await updateOrder(order.id, { status: "paid" });
     const user = await findUserById(order.userId);
-    if (user) activate(user, order.days, order.plan);
+    if (user && String(order.plan || "").startsWith(CREDIT_ORDER_PREFIX)) {
+      const pack = CREDIT_PACKS[order.plan.slice(CREDIT_ORDER_PREFIX.length)];
+      if (pack) addCredits(user, pack.credits);
+    } else if (user) activate(user, order.days, order.plan);
   }
   return ok(id, { transaction: tx.transaction, perform_time: tx.perform_time, state: STATE.PERFORMED });
 }
@@ -191,7 +195,10 @@ async function cancelTransaction(id, params) {
     // To'lov bekor qilinsa (qaytarilsa) — obunani ham to'xtatamiz
     if (wasPerformed) {
       const user = await findUserById(order.userId);
-      if (user) deactivate(user);
+      if (user && String(order.plan || "").startsWith(CREDIT_ORDER_PREFIX)) {
+        const pack = CREDIT_PACKS[order.plan.slice(CREDIT_ORDER_PREFIX.length)];
+        if (pack) addCredits(user, -pack.credits);
+      } else if (user) deactivate(user);
     }
   }
   return ok(id, { transaction: tx.transaction, cancel_time: tx.cancel_time, state: tx.state });

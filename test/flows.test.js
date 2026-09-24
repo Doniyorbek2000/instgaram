@@ -257,3 +257,53 @@ test("flow'ni boshidan ochgan tugma (ice breaker / broadcast) 'boshlandi' deb hi
   await flows.handleFlowInbound(t, "ig:901", { payload: `FLOW:${flow.id}:${flow.start}` }, ctx);
   assert.strictEqual(flow.stats.started, 1);
 });
+
+test("run_flow amali: 'referrer' — xabar taklif qilgan odamga ketadi, {last_referral} bilan", async () => {
+  const t = await newTenant("runflow@x.uz");
+  const thanks = addFlow(t, { name: "Rahmat", triggers: [], start: "m", nodes: [{ id: "m", type: "message", text: "Rahmat! {last_referral} qo'shildi 🎉" }] });
+  const main = addFlow(t, { triggers: [], start: "a", nodes: [{ id: "a", type: "action", actions: [{ kind: "run_flow", key: thanks.id, value: "referrer" }] }] });
+  t.gamification = { participants: { "ig:new": { referredBy: "ig:ref", points: 0 } } };
+  t.contactProfiles = { new: { username: "yangi_dost" } };
+  const { sent, ctx } = capture();
+  await flows.startFlow(t, "ig:new", main, ctx);
+  // referrer uchun alohida ctx (send yo'q) — natijani Inbox tarixidan tekshiramiz
+  assert.strictEqual(sent.length, 0, "mijozning o'ziga hech narsa yuborilmadi");
+  assert.strictEqual(t.chats["ig:ref"].at(-1).text, "Rahmat! @yangi_dost qo'shildi 🎉");
+});
+
+test("referral trigger: do'st tasdiqlanganda taklif qilgan odam uchun flow ishga tushadi", async () => {
+  const t = await newTenant("reftrig@x.uz");
+  addFlow(t, { name: "Taklif", triggers: [{ type: "referral" }], start: "m", nodes: [{ id: "m", type: "message", text: "Do'stingiz {last_referral} qo'shildi!" }] });
+  t.contactMeta = { "tg:2": { tags: [], fields: { name: "Vali" } } };
+  assert.ok(await flows.fireReferralFlows(t, "tg:1", "tg:2"));
+  assert.strictEqual(t.chats["tg:1"].at(-1).text, "Do'stingiz Vali qo'shildi!");
+});
+
+test("react amali va izoh bloki", async () => {
+  const t = await newTenant("react@x.uz");
+  const flow = addFlow(t, {
+    triggers: [], start: "a",
+    nodes: [
+      { id: "a", type: "action", actions: [{ kind: "react" }], next: "m" },
+      { id: "m", type: "message", text: "Salom" },
+      { id: "n1", type: "note", text: "Bu faqat izoh", color: "pink" },
+    ],
+  });
+  assert.strictEqual(flow.nodes.n1.color, "pink");
+  const { sent, ctx } = capture({ messageId: "mid.123" });
+  await flows.startFlow(t, "ig:5", flow, ctx);
+  assert.deepStrictEqual(sent[0], { key: "ig:5", reaction: "love", messageId: "mid.123", commentId: "" });
+  assert.strictEqual(sent[1].text, "Salom");
+  assert.strictEqual(sent.length, 2, "izoh bloki bajarilmaydi");
+});
+
+test("Telegram shartlari: bir nechta kanalga a'zolik (hammasi shart) va boost", async () => {
+  const t = await newTenant("tgcond@x.uz");
+  const member = { "@a": true, "@b": false };
+  const ctx = { checkTgMember: async (_t, ch) => member[ch], checkTgBoost: async (_t, ch) => ch === "@a" };
+  assert.strictEqual(await flows.evaluateCondition(t, "tg:1", { kind: "follows", value: "@a" }, ctx), true);
+  assert.strictEqual(await flows.evaluateCondition(t, "tg:1", { kind: "follows", value: "@a, @b" }, ctx), false);
+  assert.strictEqual(await flows.evaluateCondition(t, "tg:1", { kind: "tg_boost", value: "@a" }, ctx), true);
+  assert.strictEqual(await flows.evaluateCondition(t, "tg:1", { kind: "tg_boost", value: "@b" }, ctx), false);
+  assert.strictEqual(await flows.evaluateCondition(t, "ig:1", { kind: "tg_boost", value: "@a" }, ctx), false);
+});

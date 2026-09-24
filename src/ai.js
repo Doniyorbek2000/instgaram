@@ -1,5 +1,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { persist, getPlatformGeminiKey } from "./db.js";
+import { canUseAi, consumeAi, warnCreditsOut } from "./credits.js";
+import { aiSettings } from "./aiControl.js";
 
 // Global (zaxira) kalitlar — foydalanuvchi o'z kalitini kiritmagan bo'lsa ishlatiladi
 const globalGeminiKey = process.env.GEMINI_API_KEY || "";
@@ -36,7 +38,7 @@ export function buildSystemPrompt(tenant, userText = "", isFirstMessage = true) 
     ? findRelevantChunks(tenant.businessInfo, userText, 4)
     : formatBusinessInfo(tenant.businessInfo);
 
-  return `Sen "${tenant.businessName || "biznes"}" nomli biznesning mijozlar bilan ishlash bo'yicha ADM AI aqlli yordamchisisan. Instagram, Telegram va Facebook messenjerlari orqali yozgan mijozlarga javob berasan.
+  return `Sen "${tenant.businessName || "biznes"}" nomli biznesning mijozlar bilan ishlash bo'yicha Obunext aqlli yordamchisisan. Instagram, Telegram va Facebook messenjerlari orqali yozgan mijozlarga javob berasan.
 
 ${modeGuidance}
 
@@ -54,8 +56,9 @@ Qoidalar:
 - Mijoz ovozli xabar yuborsa — eshitib, mazmuniga javob ber. Rasm yoki video yuborsa — ko'rib, nimaligini aniqlab javob ber.
 - Narx, manzil, yetkazib berish kabi savollarga — FAQAT bazada bor bo'lsa — aniq raqamlar bilan javob ber.
 - Buyurtma bermoqchi bo'lgan mijozdan kerakli ma'lumotlarni so'ra.
-
-# ADM AI Bilimlar Bazasi (Vector RAG Search Matnlari):
+${tenant.settings?.aiStyle ? `- BIZNES USLUBI (egasi belgilagan, doim amal qil): ${String(tenant.settings.aiStyle).slice(0, 1500)}
+` : ""}
+# Obunext Bilimlar Bazasi (Vector RAG Search Matnlari):
 
 ${relevantKb || "Biznes haqida ma'lumot kiritilmagan."}`;
 }
@@ -221,7 +224,7 @@ const FALLBACK_TEXT = {
     greet: (b) => `Assalomu alaykum! 👋 ${b}ga xush kelibsiz! Sizga qanday yordam bera olamiz?`,
     price: (b) => `Assalomu alaykum! ${b} narxlari va xizmatlari bo'yicha batafsil ma'lumot beramiz. 📋 Qaysi xizmatimiz yoki mahsulotimiz qiziqtiryapti?`,
     address: () => `Assalomu alaykum! Manzilimiz va ish soatlarimiz bo'yicha ma'lumot beramiz. 📍 Qaysi hududdansiz?`,
-    who: (b) => `Assalomu alaykum! Men ${b} brendining ADM AI intellektual yordamchisiman. 🤖 Sizga qanday yordam bera olamiz?`,
+    who: (b) => `Assalomu alaykum! Men ${b} brendining Obunext intellektual yordamchisiman. 🤖 Sizga qanday yordam bera olamiz?`,
     kb: (b, info) => `Assalomu alaykum! ${b} bo'yicha ma'lumot:\n\n${info}\n\nQo'shimcha savollaringiz bo'lsa, bemalol so'rang! 😊`,
     fallback: (b) => `Assalomu alaykum! 👋 ${b}ga xush kelibsiz! Xabaringiz qabul qilindi, sizga qanday yordam bera olamiz?`,
   },
@@ -229,7 +232,7 @@ const FALLBACK_TEXT = {
     greet: (b) => `Здравствуйте! 👋 Добро пожаловать в ${b}! Чем можем помочь?`,
     price: (b) => `Здравствуйте! Расскажем подробнее о ценах и услугах ${b}. 📋 Какой товар или услуга вас интересует?`,
     address: () => `Здравствуйте! Расскажем про адрес и часы работы. 📍 Из какого вы региона?`,
-    who: (b) => `Здравствуйте! Я интеллектуальный ассистент ADM AI бренда ${b}. 🤖 Чем могу помочь?`,
+    who: (b) => `Здравствуйте! Я интеллектуальный ассистент Obunext бренда ${b}. 🤖 Чем могу помочь?`,
     kb: (b, info) => `Здравствуйте! Информация о ${b}:\n\n${info}\n\nЕсли есть ещё вопросы — пишите! 😊`,
     fallback: (b) => `Здравствуйте! 👋 Добро пожаловать в ${b}! Ваше сообщение получено, чем можем помочь?`,
   },
@@ -237,7 +240,7 @@ const FALLBACK_TEXT = {
     greet: (b) => `Hello! 👋 Welcome to ${b}! How can we help you?`,
     price: (b) => `Hello! We'd be happy to share pricing and service details for ${b}. 📋 Which product or service are you interested in?`,
     address: () => `Hello! Here's our address and working hours. 📍 Which area are you in?`,
-    who: (b) => `Hello! I'm the ADM AI assistant for ${b}. 🤖 How can I help you?`,
+    who: (b) => `Hello! I'm the Obunext assistant for ${b}. 🤖 How can I help you?`,
     kb: (b, info) => `Hello! Here's some information about ${b}:\n\n${info}\n\nFeel free to ask if you have more questions! 😊`,
     fallback: (b) => `Hello! 👋 Welcome to ${b}! We've received your message — how can we help?`,
   },
@@ -293,6 +296,11 @@ export async function generateReply(tenant, chatKey, { text = "", media = [] } =
   if (provider === "none") {
     return smartFallbackReply(tenant, text);
   }
+  // AI kvotasi/kreditlari tugagan — bot kalit so'z rejimida javob beradi
+  if (!canUseAi(tenant)) {
+    warnCreditsOut(tenant).catch(() => {});
+    return smartFallbackReply(tenant, text);
+  }
 
   tenant.chats ||= {};
   const history = tenant.chats[chatKey] || [];
@@ -305,6 +313,7 @@ export async function generateReply(tenant, chatKey, { text = "", media = [] } =
         : await askClaude(systemPrompt, history, text, media);
 
     if (!reply) return smartFallbackReply(tenant, text);
+    consumeAi(tenant);
 
     const nowIso = new Date().toISOString();
     const summary = text || (media.length ? "[Media xabar]" : "...");
@@ -344,7 +353,7 @@ export async function classifyIntent(tenant, text, rules) {
   if (!candidates.length || !message) return null;
 
   const geminiKey = await resolveGeminiKey(tenant);
-  if (!geminiKey) return null;
+  if (!geminiKey || !canUseAi(tenant) || !aiSettings(tenant).enabled) return null; // kredit tugagan yoki AI o'chiq — faqat kalit so'z qoidalari
 
   const list = candidates
     .map((r, i) => `${i + 1}. ${(r.aiIntent || r.name || r.keyword || "").replace(/\s+/g, " ").slice(0, 300)}`)
@@ -383,7 +392,9 @@ export async function aiAvailable(tenant) {
 export async function generateText(tenant, systemPrompt, prompt, { maxOutputTokens = 2048, json = false, temperature } = {}) {
   const key = await resolveGeminiKey(tenant);
   if (!key) throw new Error("AI kaliti sozlanmagan. Admin paneldan Gemini kalitini kiriting.");
+  if (!canUseAi(tenant)) throw new Error("AI kreditlari tugadi — Obuna & Tariflar sahifasida kredit paketi oling.");
   const out = await askGemini(key, systemPrompt, [], prompt, [], { maxOutputTokens, json, temperature, timeoutMs: 30000 });
+  consumeAi(tenant); // faqat muvaffaqiyatli javob uchun hisoblanadi
   if (!json) return out;
   const cleaned = String(out).replace(/^```(?:json)?\s*/i, "").replace(/```\s*$/, "").trim();
   try {

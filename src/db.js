@@ -67,6 +67,10 @@ function normalizeUser(u) {
   u.flows ||= {}; // Flow builder: {list, sessions}
   u.team ||= []; // Jamoa a'zolari: [{email, role, invitedAt}]
   u.content ||= {}; // AI kontent studiya: saqlangan g'oyalar
+  u.mediaLibrary ||= []; // Yuklangan media fayllar (rasm/video/audio/hujjat)
+  u.tgBusiness ||= {}; // Telegram Business ulanishi: {connectionId, ownerId, enabled, chats}
+  u.apiTokens ||= []; // MCP/API tokenlari (sha256 xesh)
+  u.aiUsage ||= {}; // AI kreditlari: {month, used, bonus}
   return u;
 }
 
@@ -243,6 +247,20 @@ export async function deleteUserSessions(userId, exceptToken = null) {
     }
   }
   if (changed) save();
+}
+
+// ==== Platforma sozlamalari (umumiy: bepul tarif va h.k.) ====
+
+export async function getPlatformSettings() {
+  if (pg.isPgReady()) return pg.getPlatformSettings();
+  return { ...(db.platform.settings || {}) };
+}
+
+export async function setPlatformSettings(patch) {
+  if (pg.isPgReady()) return pg.setPlatformSettings(patch);
+  db.platform.settings = { ...(db.platform.settings || {}), ...patch };
+  save();
+  return db.platform.settings;
 }
 
 // ==== Platforma sozlamalari (tarif narxlari) ====

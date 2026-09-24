@@ -1,5 +1,5 @@
 import { generateReply } from "./ai.js";
-import { isActive } from "./subscription.js";
+import { botEnabled } from "./credits.js";
 import { notifyHandoff, notifyHotLead } from "./notify.js";
 import { findKeywordRule, aiRules } from "./rules.js";
 import { classifyIntent } from "./ai.js";
@@ -8,6 +8,10 @@ import { persist } from "./db.js";
 import { runAutomations, rememberOptions, gateMessage, passesGate, resolvePayload } from "./automation.js";
 import { handleFlowInbound, findFlowTrigger, aiFlowCandidates, startFlow, logToInbox } from "./flows.js";
 import { renderTemplate } from "./templating.js";
+import { aiAllowed, offReply } from "./aiControl.js";
+import { getContactMeta } from "./contacts.js";
+
+const OFF_REPLY_EVERY_MS = 6 * 60 * 60 * 1000;
 import { fireEvent } from "./integrations.js";
 import { chanShort } from "./outbound.js";
 import {
@@ -58,9 +62,9 @@ function normOptions(options) {
  * channel: "instagram" | "facebook" | "whatsapp" | "telegram"
  * payload — bosilgan tugma qiymati; ref — referal parametri; profile — {username, name}
  */
-export async function processMessage(tenant, channel, chatKey, { text = "", media = [], payload = "", ref = "", profile = {} }) {
+export async function processMessage(tenant, channel, chatKey, { text = "", media = [], payload = "", ref = "", profile = {}, messageId = "" }) {
   // 1. Obuna faol emasmi — bot javob bermaydi
-  if (!isActive(tenant)) {
+  if (!botEnabled(tenant)) {
     console.log(
       `[${channel}] ${tenant.businessName}: obuna faol emas — javob berilmadi`
     );
@@ -103,7 +107,7 @@ export async function processMessage(tenant, channel, chatKey, { text = "", medi
 
   // 5a. Flow builder: tugma bosilishi, "ma'lumot yig'ish" blokiga javob,
   // referal havola yoki yangi kontakt triggerlari. Flow xabarlarni o'zi yuboradi.
-  const flowCtx = { text, userText: shownText, profile };
+  const flowCtx = { text, userText: shownText, profile, messageId };
   try {
     const flowPayload = payload || resolvePayload(tenant, fullKey, text);
     let handled = await handleFlowInbound(tenant, fullKey, { text, payload: flowPayload }, flowCtx);
@@ -217,6 +221,21 @@ export async function processMessage(tenant, channel, chatKey, { text = "", medi
       fireEvent(tenant, "lead", { contact: fullKey, channel, phoneOrEmail: leadContact, message: text.slice(0, 300) });
     }
     notifyHotLead(tenant, channel, fullKey, text + (leadContact ? `\n📞 Kontakt: ${leadContact}` : "")).catch(() => {});
+  }
+
+  // 8a. AI avtomatik javob o'chirilgan (umumiy, kanal, jadval yoki shu chat uchun) —
+  // flow/qoidalar yuqorida ishladi, erkin AI javob bermaymiz. Kerak bo'lsa qisqa
+  // zaxira xabar (bir chatga 6 soatda bir martadan ko'p emas).
+  const ai = aiAllowed(tenant, chanShort(channel), fullKey);
+  if (!ai.allowed) {
+    const meta = getContactMeta(tenant, fullKey);
+    const off = offReply(tenant);
+    const due = off && Date.now() - (meta.lastOffReplyAt || 0) > OFF_REPLY_EVERY_MS;
+    const reply = [prefix, due ? off : ""].filter(Boolean).join("\n\n") || null;
+    if (due) meta.lastOffReplyAt = Date.now();
+    logExchange(tenant, fullKey, shownText, reply || "");
+    console.log(`[${channel}] ${tenant.businessName}: AI javob o'chiq (${ai.reason}) — ${reply ? "zaxira xabar" : "jim"}`);
+    return { reply };
   }
 
   // 8. AI javob — fullKey bilan saqlanadi (inbox ko'ra olsin)

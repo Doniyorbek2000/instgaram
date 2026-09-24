@@ -57,7 +57,7 @@ export function createRateLimiter({
         <head>
           <meta charset="utf-8">
           <meta name="viewport" content="width=device-width, initial-scale=1">
-          <title>429 Too Many Requests — ADM AI Security</title>
+          <title>429 Too Many Requests — Obunext Security</title>
           <style>
             body { background: #0b0f19; color: #fff; font-family: system-ui, sans-serif; display: grid; place-items: center; height: 100vh; margin: 0; }
             .card { background: #151d30; padding: 32px; border-radius: 16px; border: 1px solid rgba(244,63,94,0.4); text-align: center; max-width: 440px; box-shadow: 0 20px 50px rgba(0,0,0,0.6); }

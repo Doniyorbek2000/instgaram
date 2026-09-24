@@ -13,7 +13,7 @@
  */
 import { listUsers, persist, updateUser } from "./db.js";
 import { sendReply, splitKey } from "./outbound.js";
-import { isActive } from "./subscription.js";
+import { botEnabled } from "./credits.js";
 
 const MAX_DELAY_MS = 23 * 60 * 60 * 1000;
 const MAX_JOBS_PER_TENANT = 5000;
@@ -75,7 +75,7 @@ export async function runTenantFollowUps(tenant, now = Date.now(), send = sendRe
 
   tenant.followUps = jobs.filter((j) => j.dueAt > now);
   let sent = 0;
-  if (isActive(tenant)) {
+  if (botEnabled(tenant)) {
     for (const job of due) {
       if (now - job.dueAt > STALE_AFTER_MS) continue;
       const { chan, id } = splitKey(job.key);

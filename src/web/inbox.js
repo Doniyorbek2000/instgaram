@@ -1,4 +1,6 @@
 import { Router } from "express";
+import { allTags, normTag, windowStatus, getContactMeta } from "../contacts.js";
+import { aiAllowed, aiSettings } from "../aiControl.js";
 import { requireAuth } from "../auth.js";
 import { page, esc } from "./layout.js";
 import { persist } from "../db.js";
@@ -82,16 +84,22 @@ function appendInboxMessage(user, chatKey, msgObj) {
 }
 
 /**
- * ADM AI style Ultra-Professional Multi-Channel Live Inbox (/inbox)
+ * Obunext style Ultra-Professional Multi-Channel Live Inbox (/inbox)
  * 3-Column Layout: Contact List | Active Chat Stream | Contact CRM Details
  */
 inboxRouter.get("/inbox", requireAuth, (req, res) => {
   const user = req.user;
   user.chats ||= {};
 
-  const activeKey = req.query.chat || Object.keys(user.chats)[0] || "";
+  let activeKey = String(req.query.chat || "");
   const filterChan = req.query.channel || "all";
   const searchQ = (req.query.q || "").toLowerCase().trim();
+  const filterTag = normTag(req.query.tag || "");
+  const filterWin = ["open", "closed"].includes(req.query.window) ? req.query.window : "";
+  const tagOptions = allTags(user);
+  // Filtr parametrlarini havolalarda saqlash uchun
+  const keepQs = (patch = {}) =>
+    new URLSearchParams(Object.fromEntries(Object.entries({ channel: filterChan, tag: filterTag, window: filterWin, q: req.query.q || "", ...patch }).filter(([, v]) => v && v !== "all"))).toString();
 
   // Barcha suhbatlar ro'yxatini normallashtirish va saralash
   user.contactProfiles ||= {};
@@ -111,8 +119,12 @@ inboxRouter.get("/inbox", requireAuth, (req, res) => {
       lastText: lastMsg.text || "",
       displayName,
       profilePic: profile?.profilePic || "",
+      tags: user.contactMeta?.[key]?.tags || [],
+      win: windowStatus(user, key),
     };
   });
+  // Ichki yozuvlar (komment AI tarixi "comment:..." va h.k.) Inbox'da ko'rinmasin
+  chatList = chatList.filter((c) => /^(ig|fb|wa|tg):/.test(c.key));
 
   chatList.sort((a, b) => b.lastTime - a.lastTime);
 
@@ -120,6 +132,8 @@ inboxRouter.get("/inbox", requireAuth, (req, res) => {
   if (filterChan !== "all") {
     chatList = chatList.filter((c) => c.channel.toLowerCase() === filterChan.toLowerCase());
   }
+  if (filterTag) chatList = chatList.filter((c) => c.tags.includes(filterTag));
+  if (filterWin) chatList = chatList.filter((c) => (filterWin === "open" ? c.win.open : !c.win.open));
   if (searchQ) {
     chatList = chatList.filter(
       (c) =>
@@ -129,6 +143,7 @@ inboxRouter.get("/inbox", requireAuth, (req, res) => {
     );
   }
 
+  if (!activeKey) activeKey = chatList[0]?.key || "";
   const rawActiveChat = activeKey ? user.chats[activeKey] : null;
   const activeChatObj = rawActiveChat ? normalizeChatEntry(activeKey, rawActiveChat) : null;
   const activeProfile = activeChatObj ? user.contactProfiles[activeChatObj.chatId || activeChatObj.recipientId] : null;
@@ -159,7 +174,7 @@ inboxRouter.get("/inbox", requireAuth, (req, res) => {
           const msgCount = c.messages.length;
 
           return `
-            <a href="/inbox?chat=${encodeURIComponent(c.key)}&channel=${filterChan}"
+            <a href="/inbox?${keepQs({ chat: c.key })}"
                style="display:flex; align-items:center; gap:12px; padding:12px; border-radius:10px; text-decoration:none; margin-bottom:4px; transition:0.15s; background:${isActive ? "#1e293b" : "transparent"}; border:${isActive ? "1px solid #7c3aed" : "1px solid transparent"}">
               ${avatarHtml(c.profilePic, initial, 40)}
               <div style="flex:1; min-width:0">
@@ -171,10 +186,11 @@ inboxRouter.get("/inbox", requireAuth, (req, res) => {
                 </div>
                 <div style="display:flex; justify-content:space-between; align-items:center">
                   <div style="font-size:12px; color:#94a3b8; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:140px">
-                    ${esc(c.lastText || "Suhbat yo'q")}
+                    ${c.tags.length ? `<span style="color:#fbbf24">#${esc(c.tags[0])}</span> ` : ""}${esc(c.lastText || "Suhbat yo'q")}
                   </div>
                   <div style="display:flex; gap:4px; align-items:center">
                     ${msgCount > 0 ? `<span style="background:#334155; color:#94a3b8; font-size:9px; padding:1px 5px; border-radius:3px">${msgCount}</span>` : ""}
+                    <span title="${esc(c.win.label)}" style="width:8px; height:8px; border-radius:50%; background:${c.win.open ? "#34d399" : "#64748b"}; display:inline-block"></span>
                     ${c.handOff ? `<span style="background:#ef4444; color:#fff; font-size:9px; padding:1px 4px; border-radius:3px; font-weight:700">OP</span>` : ""}
                     ${chanBadge}
                   </div>
@@ -208,7 +224,7 @@ inboxRouter.get("/inbox", requireAuth, (req, res) => {
           ? `<span style="font-size:10px; opacity:0.7; font-weight:700">👤 MIJOZ</span>`
           : isOperator
             ? `<span style="font-size:10px; opacity:0.9; font-weight:700">👤 OPERATOR</span>`
-            : `<span style="font-size:10px; opacity:0.9; font-weight:700">🤖 ADM AI</span>`;
+            : `<span style="font-size:10px; opacity:0.9; font-weight:700">🤖 Obunext</span>`;
 
         return `
           <div style="display:flex; flex-direction:column; max-width:75%; ${alignStyle} padding:10px 14px; border-radius:12px; margin-bottom:10px; box-shadow:0 2px 8px rgba(0,0,0,0.2)">
@@ -239,6 +255,14 @@ inboxRouter.get("/inbox", requireAuth, (req, res) => {
 
         <div style="display:flex; align-items:center; gap:8px; flex:none">
           <button type="button" class="secondary inbox-crm-toggle" onclick="document.querySelector('.inbox-crm').classList.add('show-mobile')" style="padding:8px 12px; font-size:13px; margin:0">👤</button>
+          <!-- Shu chat uchun AI -->
+          ${/^(ig|fb|wa|tg):/.test(activeKey) ? `<form method="post" action="/clients/c/${encodeURIComponent(activeKey)}/ai" style="margin:0">
+            <input type="hidden" name="on" value="${user.contactMeta?.[activeKey]?.aiOff ? "1" : "0"}">
+            <input type="hidden" name="back" value="/inbox?chat=${esc(encodeURIComponent(activeKey))}">
+            <button class="secondary" title="${esc(aiAllowed(user, activeKey.split(":")[0], activeKey).allowed ? "AI shu chatda javob beradi" : "AI shu chatda javob bermaydi")}" style="padding:8px 12px; font-size:13px; margin:0; white-space:nowrap; ${user.contactMeta?.[activeKey]?.aiOff || !aiSettings(user).enabled ? "color:#f87171" : "color:#34d399"}">
+              ${user.contactMeta?.[activeKey]?.aiOff ? "🧠 AI: o'chiq" : aiSettings(user).enabled ? "🧠 AI: yoqilgan" : "🧠 AI: umumiy o'chiq"}
+            </button>
+          </form>` : ""}
           <!-- Operator Mode Switch -->
           <form method="post" action="/inbox/toggle-handoff" style="margin:0">
             <input type="hidden" name="chatKey" value="${esc(activeKey)}">
@@ -296,6 +320,8 @@ inboxRouter.get("/inbox", requireAuth, (req, res) => {
   if (activeChatObj) {
     const msgs = activeChatObj.messages || [];
     const lead = (user.leads || []).find((l) => l.chatKey === activeKey);
+    const activeWin = windowStatus(user, activeKey);
+    const activeMeta = getContactMeta(user, activeKey);
     crmHtml = `
       <div style="padding:20px; background:#0f172a; height:100%; border-left:1px solid var(--border); overflow-y:auto">
         <div style="display:flex; justify-content:space-between; align-items:center">
@@ -310,6 +336,22 @@ inboxRouter.get("/inbox", requireAuth, (req, res) => {
           <b style="color:#fff; font-size:15px; word-break:break-all">${esc(activeDisplayName || activeKey)}</b>
           ${activeDisplayName ? `<div style="font-size:11px; color:#64748b; margin-top:2px; word-break:break-all">${esc(activeKey)}</div>` : ""}
           <div style="font-size:12px; color:#a78bfa; margin-top:4px; font-weight:700">Kanal: ${esc((activeChatObj.channel || "ig").toUpperCase())}</div>
+          <div style="margin-top:8px; font-size:12.5px; font-weight:700; color:${activeWin.open ? "#34d399" : "#f87171"}">${activeWin.open ? "✅" : "❌"} ${esc(activeWin.label)}</div>
+          <a class="btn secondary" href="/clients/c/${encodeURIComponent(activeKey)}" style="margin:10px 0 0; padding:5px 12px; font-size:12px">🪪 Kartochkani ochish</a>
+        </div>
+
+        <div style="margin-top:16px">
+          <div style="font-size:12px; color:#64748b; margin-bottom:6px; font-weight:700">TEGLAR</div>
+          <div style="display:flex; gap:4px; flex-wrap:wrap">
+            ${activeMeta.tags.map((t) => `<form method="post" action="/clients/c/${encodeURIComponent(activeKey)}/tags" style="margin:0"><input type="hidden" name="remove" value="${esc(t)}"><input type="hidden" name="back" value="/inbox?${esc(keepQs({ chat: activeKey }))}"><button class="secondary" style="margin:0; padding:2px 8px; font-size:11.5px">#${esc(t)} ✕</button></form>`).join("") || `<span style="font-size:12px; color:#64748b">Teg yo'q</span>`}
+          </div>
+          <form method="post" action="/clients/c/${encodeURIComponent(activeKey)}/tags" style="display:flex; gap:4px; margin:8px 0 0">
+            <input type="hidden" name="back" value="/inbox?${esc(keepQs({ chat: activeKey }))}">
+            <input name="add" list="inboxTags" placeholder="+ teg" required style="margin:0; padding:6px 10px; font-size:12.5px">
+            <datalist id="inboxTags">${tagOptions.map(([t]) => `<option value="${esc(t)}">`).join("")}</datalist>
+            <button class="secondary" style="margin:0; padding:4px 10px">+</button>
+          </form>
+          ${Object.keys(activeMeta.fields).length ? `<div style="margin-top:12px; font-size:12.5px">${Object.entries(activeMeta.fields).slice(0, 8).map(([k, v]) => `<div style="display:flex; justify-content:space-between; gap:6px"><span style="color:#94a3b8">${esc(k)}</span><b style="color:#fff; word-break:break-all">${esc(v)}</b></div>`).join("")}</div>` : ""}
         </div>
 
         <div style="margin-top:20px; font-size:13px; display:flex; flex-direction:column; gap:12px">
@@ -319,7 +361,7 @@ inboxRouter.get("/inbox", requireAuth, (req, res) => {
           </div>
           <div style="display:flex; justify-content:space-between">
             <span style="color:#94a3b8">Rejim:</span>
-            <b style="color:${activeChatObj.handOff ? "#f87171" : "#34d399"}">${activeChatObj.handOff ? "Operator" : "ADM AI Bot"}</b>
+            <b style="color:${activeChatObj.handOff ? "#f87171" : "#34d399"}">${activeChatObj.handOff ? "Operator" : "Obunext Bot"}</b>
           </div>
           <div style="display:flex; justify-content:space-between">
             <span style="color:#94a3b8">1-xabar:</span>
@@ -386,17 +428,29 @@ inboxRouter.get("/inbox", requireAuth, (req, res) => {
         <div class="inbox-list" style="border-right:1px solid var(--border); background:#0f172a">
           <!-- Search & Filter Bar -->
           <div style="padding:14px; border-bottom:1px solid var(--border)">
-            <form method="get" action="/inbox" style="margin:0 0 10px">
-              <input type="text" name="q" value="${esc(searchQ)}" placeholder="🔍 Qidirish..." autocomplete="off" style="padding:8px 12px; font-size:13px">
+            <form method="get" action="/inbox" style="margin:0 0 10px; display:flex; flex-direction:column; gap:6px">
+              <input type="hidden" name="channel" value="${esc(filterChan)}">
+              <input type="text" name="q" value="${esc(req.query.q || "")}" placeholder="🔍 Qidirish..." autocomplete="off" style="padding:8px 12px; font-size:13px; margin:0">
+              <div style="display:flex; gap:6px">
+                <select name="tag" onchange="this.form.submit()" style="margin:0; padding:6px 8px; font-size:12px">
+                  <option value="">Barcha teglar</option>
+                  ${tagOptions.map(([t, n]) => `<option value="${esc(t)}" ${filterTag === t ? "selected" : ""}>#${esc(t)} (${n})</option>`).join("")}
+                </select>
+                <select name="window" onchange="this.form.submit()" style="margin:0; padding:6px 8px; font-size:12px">
+                  <option value="">Istalgan oyna</option>
+                  <option value="open" ${filterWin === "open" ? "selected" : ""}>✅ Ochiq</option>
+                  <option value="closed" ${filterWin === "closed" ? "selected" : ""}>❌ Yopiq</option>
+                </select>
+              </div>
             </form>
 
             <!-- Channel Filter Pills -->
             <div style="display:flex; gap:4px; overflow-x:auto; padding-bottom:4px">
-              <a href="/inbox?channel=all" style="padding:4px 8px; border-radius:6px; font-size:11px; font-weight:700; background:${filterChan === "all" ? "#7c3aed" : "#1e293b"}; color:#fff; white-space:nowrap">Barchasi</a>
-              <a href="/inbox?channel=ig" style="padding:4px 8px; border-radius:6px; font-size:11px; font-weight:700; background:${filterChan === "ig" ? "#7c3aed" : "#1e293b"}; color:#fff">IG</a>
-              <a href="/inbox?channel=tg" style="padding:4px 8px; border-radius:6px; font-size:11px; font-weight:700; background:${filterChan === "tg" ? "#229ED9" : "#1e293b"}; color:#fff">TG</a>
-              <a href="/inbox?channel=wa" style="padding:4px 8px; border-radius:6px; font-size:11px; font-weight:700; background:${filterChan === "wa" ? "#25D366" : "#1e293b"}; color:#fff">WA</a>
-              <a href="/inbox?channel=fb" style="padding:4px 8px; border-radius:6px; font-size:11px; font-weight:700; background:${filterChan === "fb" ? "#1877F2" : "#1e293b"}; color:#fff">FB</a>
+              <a href="/inbox?${keepQs({ channel: "all" })}" style="padding:4px 8px; border-radius:6px; font-size:11px; font-weight:700; background:${filterChan === "all" ? "#7c3aed" : "#1e293b"}; color:#fff; white-space:nowrap">Barchasi</a>
+              <a href="/inbox?${keepQs({ channel: "ig" })}" style="padding:4px 8px; border-radius:6px; font-size:11px; font-weight:700; background:${filterChan === "ig" ? "#7c3aed" : "#1e293b"}; color:#fff">IG</a>
+              <a href="/inbox?${keepQs({ channel: "tg" })}" style="padding:4px 8px; border-radius:6px; font-size:11px; font-weight:700; background:${filterChan === "tg" ? "#229ED9" : "#1e293b"}; color:#fff">TG</a>
+              <a href="/inbox?${keepQs({ channel: "wa" })}" style="padding:4px 8px; border-radius:6px; font-size:11px; font-weight:700; background:${filterChan === "wa" ? "#25D366" : "#1e293b"}; color:#fff">WA</a>
+              <a href="/inbox?${keepQs({ channel: "fb" })}" style="padding:4px 8px; border-radius:6px; font-size:11px; font-weight:700; background:${filterChan === "fb" ? "#1877F2" : "#1e293b"}; color:#fff">FB</a>
             </div>
           </div>
 

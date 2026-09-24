@@ -26,10 +26,10 @@ export const ROLES = {
 const INVITE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 const MAX_MEMBERS = 50;
 
-const OWNER_ONLY = ["/team", "/account/password", "/settings/password", "/billing/pay", "/admin", "/connect/instagram", "/account/delete"];
+const OWNER_ONLY = ["/team", "/integrations/tokens", "/account/password", "/settings/password", "/billing/pay", "/admin", "/connect/instagram", "/account/delete"];
 const ALWAYS = ["/workspace", "/logout", "/assets/", "/team/join/"];
 const OPERATOR = ["/dashboard", "/inbox", "/clients", "/contacts", "/handoff", "/analytics"];
-const VIEWER_GET = ["/dashboard", "/inbox", "/clients", "/contacts", "/analytics", "/flows", "/triggers", "/forms", "/game", "/broadcasts", "/content", "/growth", "/scheduler", "/templates", "/integrations"];
+const VIEWER_GET = ["/media", "/dashboard", "/inbox", "/clients", "/contacts", "/analytics", "/flows", "/triggers", "/forms", "/game", "/broadcasts", "/content", "/growth", "/scheduler", "/templates", "/integrations"];
 
 const als = new AsyncLocalStorage();
 
@@ -42,7 +42,8 @@ export function canAccess(role, method, path) {
   if (matches(path, ALWAYS)) return true;
   if (matches(path, OWNER_ONLY)) return false;
   if (role === "admin") return true;
-  if (role === "operator") return matches(path, OPERATOR);
+  // Operator mijozlar bilan ishlaydi, lekin kontakt ma'lumotlarini o'chira olmaydi
+  if (role === "operator") return matches(path, OPERATOR) && !path.endsWith("/delete");
   if (role === "viewer") return method === "GET" && matches(path, VIEWER_GET);
   return false;
 }

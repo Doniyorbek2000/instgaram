@@ -1,5 +1,5 @@
 /**
- * ADM AI — PostgreSQL Adapter Layer
+ * Obunext — PostgreSQL Adapter Layer
  * 
  * adm-postgres (postgres:16-alpine) konteyneriga ulanadi.
  * JSON fayl bazasi bilan bir xil API ni ta'minlaydi — db.js bilan to'liq mos.
@@ -51,10 +51,10 @@ async function initPg() {
     await pgPool.query("SELECT 1");
     await runMigrations();
     pgReady = true;
-    console.log("[ADM AI] ✅ PostgreSQL ulanish muvaffaqiyatli! Host:", PG_HOST);
+    console.log("[Obunext] ✅ PostgreSQL ulanish muvaffaqiyatli! Host:", PG_HOST);
   } catch (err) {
     pgReady = false;
-    console.warn("[ADM AI] ⚠️  PostgreSQL ulanmadi — JSON fayl baza ishlatilmoqda:", err.message);
+    console.warn("[Obunext] ⚠️  PostgreSQL ulanmadi — JSON fayl baza ishlatilmoqda:", err.message);
   }
 }
 
@@ -98,6 +98,10 @@ async function runMigrations() {
     ALTER TABLE users ADD COLUMN IF NOT EXISTS flows JSONB DEFAULT '{}';
     ALTER TABLE users ADD COLUMN IF NOT EXISTS team JSONB DEFAULT '[]';
     ALTER TABLE users ADD COLUMN IF NOT EXISTS content JSONB DEFAULT '{}';
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS media_library JSONB DEFAULT '[]';
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS tg_business JSONB DEFAULT '{}';
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS api_tokens JSONB DEFAULT '[]';
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS ai_usage JSONB DEFAULT '{}';
 
     CREATE TABLE IF NOT EXISTS sessions (
       token TEXT PRIMARY KEY,
@@ -176,6 +180,10 @@ function normalizeUser(row) {
     flows: row.flows || {},
     team: row.team || [],
     content: row.content || {},
+    mediaLibrary: row.media_library || [],
+    tgBusiness: row.tg_business || {},
+    apiTokens: row.api_tokens || [],
+    aiUsage: row.ai_usage || {},
     createdAt: row.created_at,
   };
 }
@@ -266,6 +274,10 @@ export async function updateUser(id, patch) {
     flows: "flows",
     team: "team",
     content: "content",
+    mediaLibrary: "media_library",
+    tgBusiness: "tg_business",
+    apiTokens: "api_tokens",
+    aiUsage: "ai_usage",
   };
 
   for (const [key, col] of Object.entries(colMap)) {
@@ -373,6 +385,22 @@ export async function setPlanPrices(prices) {
     [JSON.stringify(prices)]
   );
   return rows[0]?.value || prices;
+}
+
+export async function getPlatformSettings() {
+  if (!pgReady) return {};
+  const { rows } = await pgPool.query("SELECT value FROM platform WHERE key='settings'");
+  return rows[0]?.value || {};
+}
+
+export async function setPlatformSettings(patch) {
+  if (!pgReady) return {};
+  const { rows } = await pgPool.query(
+    `INSERT INTO platform(key, value) VALUES('settings', $1::jsonb)
+     ON CONFLICT (key) DO UPDATE SET value = platform.value || $1::jsonb RETURNING value`,
+    [JSON.stringify(patch || {})]
+  );
+  return rows[0]?.value || {};
 }
 
 export async function getPlatformGeminiKey() {

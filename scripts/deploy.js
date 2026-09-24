@@ -1,5 +1,5 @@
 /**
- * ADM AI — VPS Deploy Script
+ * Obunext — VPS Deploy Script
  * Loyiha fayllari SFTP orqali serverga yuklaydi
  * va docker-compose restart qiladi.
  * 

@@ -1,5 +1,5 @@
 /**
- * ADM AI style Web Post & Reels Scheduler UI (/scheduler)
+ * Obunext style Web Post & Reels Scheduler UI (/scheduler)
  */
 
 import { Router } from "express";

@@ -22,12 +22,19 @@ import { gameRouter } from "./web/game_ui.js";
 import { formsRouter } from "./web/forms_ui.js";
 import { integrationsRouter } from "./web/integrations_ui.js";
 import { contentRouter } from "./web/content_ui.js";
+import { mediaRouter } from "./web/media_ui.js";
+import { aiLearnRouter } from "./web/ai_learn_ui.js";
+import { aiSettingsRouter } from "./web/ai_settings_ui.js";
+import { mcpHandler } from "./mcp.js";
+import { loadPlatformSettings } from "./credits.js";
 import { teamContext } from "./team.js";
 import { telegramRouter } from "./telegram.js";
 import { reportsBotRouter, reportsBotAvailable, setupReportsBotWebhook, checkAndSendDailyReports } from "./reportsBot.js";
 import { checkAndPublishScheduledPosts } from "./postPublisher.js";
 import { runDueFollowUps } from "./followups.js";
 import { runDueBroadcasts } from "./broadcasts.js";
+import { refreshTelegramWebhooks } from "./telegram.js";
+import { listUsers } from "./db.js";
 import { page } from "./web/layout.js";
 import { findUserByPlatformId, persist } from "./db.js";
 import { handleInstagramEntry } from "./handlers/instagram.js";
@@ -47,12 +54,13 @@ app.set("trust proxy", Number(process.env.TRUST_PROXY ?? 1));
 // Imzo tekshiruvi uchun so'rovning xom (raw) tanasini saqlab qo'yamiz
 app.use(
   express.json({
+    limit: "1mb",
     verify: (req, _res, buf) => {
       req.rawBody = buf;
     },
   })
 );
-app.use(express.urlencoded({ extended: false }));
+app.use(express.urlencoded({ extended: false, limit: "1mb" }));
 app.use(attachUser);
 // Jamoa a'zosi egasining ish maydonida bo'lsa — req.user almashtiriladi va roli tekshiriladi
 app.use(teamContext);
@@ -124,6 +132,9 @@ app.use(gameRouter);
 app.use(formsRouter);
 app.use(integrationsRouter);
 app.use(contentRouter);
+app.use(mediaRouter);
+app.use(aiLearnRouter);
+app.use(aiSettingsRouter);
 app.use(telegramRouter);
 app.use(reportsBotRouter);
 
@@ -155,6 +166,15 @@ function isValidSignature(req) {
   return false;
 }
 
+
+// MCP server (Claude va boshqa AI yordamchilar uchun) — token bilan kirish
+app.post(["/mcp", "/mcp/:token"], (req, res) => {
+  mcpHandler(req, res).catch((err) => {
+    console.error("[MCP] xato:", err.message);
+    res.status(500).json({ jsonrpc: "2.0", id: null, error: { code: -32603, message: "Internal error" } });
+  });
+});
+app.get(["/mcp", "/mcp/:token"], (_req, res) => res.set("Allow", "POST").status(405).json({ error: "Use POST (MCP Streamable HTTP)" }));
 
 // Server tirikligini tekshirish (monitoring/uptime uchun)
 app.get("/health", (_req, res) => {
@@ -314,6 +334,13 @@ const server = app.listen(config.port, () => {
 
   // Rejalashtirilgan Instagram postlarini nashr qilish — vaqtga aniqroq mos kelishi
   // kerak bo'lgani uchun kunlik hisobotdan tezroq (har 5 daqiqada) tekshiriladi
+  loadPlatformSettings().catch((err) => console.error("[Platforma] sozlamalar:", err.message));
+
+  // Eski (maxfiy kalitsiz) Telegram webhook'larini xavfsiz holatga o'tkazamiz
+  setTimeout(() => {
+    listUsers().then(refreshTelegramWebhooks).catch((err) => console.error("[Telegram] webhook yangilash:", err.message));
+  }, 5000);
+
   // Obuna eslatmalari va follow-up xabarlar — daqiqa aniqligida
   setInterval(() => {
     runDueFollowUps().catch((err) => console.error("[FollowUp] xato:", err.message));

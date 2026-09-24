@@ -27,6 +27,8 @@ import { googleAuthAvailable, googleAuthUrl, fetchGoogleProfile } from "../googl
 import { updateUser, listUsers, findUserById, persist, createOrder, setPlanPrices, getPlatformGeminiKey, setPlatformGeminiKey } from "../db.js";
 import { config, paymeReady } from "../config.js";
 import { getPlans, PLAN_DEFS, statusInfo, activate, deactivate, creditReferral } from "../subscription.js";
+import { aiStatusLabel, aiSettings } from "../aiControl.js";
+import { aiQuota, getCreditPacks, CREDIT_PACKS, CREDIT_ORDER_PREFIX, platformSettings, savePlatformSettings, addCredits, AI_QUOTA } from "../credits.js";
 import { paymeCheckoutUrl } from "../payme.js";
 import {
   statsSummary,
@@ -186,9 +188,14 @@ web.get("/dashboard", requireAuth, (req, res) => {
   const pending = pendingHandoffs(u);
   const leads = recentLeads(u);
 
+  const aiLeft = aiQuota(u);
   const subBanner = !sub.active
-    ? `<div class="error">${esc(sub.label)}. Bot faoliyati vaqtincha to'xtatilgan — davom ettirish uchun <a href="/billing">obunani rasmiylashtiring</a>.</div>`
-    : "";
+    ? platformSettings().freePlan
+      ? `<div class="info">🆓 ${esc(sub.label)} — bot <b>Bepul</b> tarifda ishlayapti (AI: ${aiLeft.left} javob qoldi). <a href="/billing">Tarifni oshirish</a></div>`
+      : `<div class="error">${esc(sub.label)}. Bot faoliyati vaqtincha to'xtatilgan — davom ettirish uchun <a href="/billing">obunani rasmiylashtiring</a>.</div>`
+    : aiLeft.left <= Math.max(10, aiLeft.quota * 0.1)
+      ? `<div class="info">⚠️ AI javoblar deyarli tugadi: ${aiLeft.left} ta qoldi. <a href="/billing#credits">Kredit olish</a></div>`
+      : "";
 
   // 7-kunlik grafik
   const maxDay = Math.max(1, ...stats.last7.map((d) => d.count));
@@ -231,13 +238,30 @@ web.get("/dashboard", requireAuth, (req, res) => {
       ${saved ? `<div class="ok">O'zgarishlar muvaffaqiyatli saqlandi! ✅</div>` : ""}
       ${req.query.connected ? `<div class="ok">Instagram/Facebook muvaffaqiyatli ulandi 🎉 Endi bot mijozlaringizga avtomatik javob beradi.</div>` : ""}
       ${subBanner}
+      ${(() => {
+        const st = aiStatusLabel(u);
+        return `<div class="card" style="display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap; border:1px solid ${st.on ? "rgba(16,185,129,0.45)" : "rgba(100,116,139,0.6)"}">
+          <div style="display:flex; gap:12px; align-items:center">
+            <span style="width:12px; height:12px; border-radius:50%; background:${st.on ? (st.active ? "#10b981" : "#fbbf24") : "#64748b"}; box-shadow:0 0 0 4px ${st.on ? "rgba(16,185,129,0.15)" : "rgba(100,116,139,0.15)"}"></span>
+            <div><b style="font-size:16px">🧠 AI avtomatik javob</b><div class="hint" style="font-size:13px">${esc(st.label)}</div></div>
+          </div>
+          <div style="display:flex; gap:8px">
+            <a class="btn secondary" href="/ai-settings" style="margin:0">⚙️ Sozlash</a>
+            <form method="post" action="/ai/toggle" style="margin:0">
+              <input type="hidden" name="enabled" value="${aiSettings(u).enabled ? "0" : "1"}">
+              <input type="hidden" name="back" value="/dashboard">
+              <button class="${aiSettings(u).enabled ? "secondary" : ""}" style="margin:0; ${aiSettings(u).enabled ? "color:#f87171" : ""}">${aiSettings(u).enabled ? "⏸️ O'chirish" : "▶️ Yoqish"}</button>
+            </form>
+          </div>
+        </div>`;
+      })()}
 
       <!-- Welcome Hero Banner -->
       <div class="card" style="background: linear-gradient(135deg, rgba(139,92,246,0.15) 0%, rgba(217,70,239,0.15) 100%); border: 1px solid rgba(139,92,246,0.3)">
         <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:16px">
           <div>
             <h1 style="font-size:24px; margin:0">${esc(greet)}, ${esc(u.businessName || "Biznes egasi")}! 🚀</h1>
-            <p class="hint" style="margin:4px 0 14px">ADM AI barcha ijtimoiy tarmoqlardagi mijozlaringiz bilan avtomatik muloqot qilmoqda.</p>
+            <p class="hint" style="margin:4px 0 14px">Obunext barcha ijtimoiy tarmoqlardagi mijozlaringiz bilan avtomatik muloqot qilmoqda.</p>
             <div style="display:flex; gap:10px; flex-wrap:wrap">
               <span class="status-tag">${u.businessInfo ? "✓ AI O'rgatilgan" : "• AI Sozlanmagan"}</span>
               <span class="status-tag" style="background:rgba(59,130,246,0.15); color:#60a5fa; border-color:rgba(59,130,246,0.3)">${channelsReady ? "✓ Kanallar Faol" : "• Kanallar Yo'q"}</span>
@@ -452,7 +476,7 @@ web.get("/billing", requireAuth, async (req, res) => {
         <p class="hint" style="margin:0 0 10px">${esc(p.tagline || "")}</p>
         <div style="font-size:32px; font-weight:800; margin:10px 0; color:#fff">${p.price.toLocaleString("uz")} <span style="font-size:14px; color:#94a3b8; font-weight:500">so'm/oy</span></div>
         <div style="border-top:1px solid var(--border); padding-top:14px; margin-bottom:18px">
-          ${p.features.map((f) => `<div style="display:flex; gap:10px; align-items:center; padding:6px 0; font-size:13.5px; color:#cbd5e1"><span style="color:#a78bfa; font-weight:800">✓</span> ${esc(f)}</div>`).join("")}
+          ${[`${(AI_QUOTA[p.id] || 0).toLocaleString("ru-RU")} ta AI javob / oy`, "Cheksiz flow'lar va ommaviy xabarlar", ...p.features].map((f) => `<div style="display:flex; gap:10px; align-items:center; padding:6px 0; font-size:13.5px; color:#cbd5e1"><span style="color:#a78bfa; font-weight:800">✓</span> ${esc(f)}</div>`).join("")}
         </div>
         ${
           paymeReady
@@ -466,9 +490,41 @@ web.get("/billing", requireAuth, async (req, res) => {
     })
     .join("");
 
+  const ps = platformSettings();
   const statusCard = sub.active
     ? `<div class="ok">${esc(sub.label)}${sub.until ? ` — ${sub.until.toLocaleDateString("uz")}gacha` : ""}. Botingiz uzluksiz ishlayapti.</div>`
-    : `<div class="error">${esc(sub.label)}. Bot to'xtatilgan — to'lovdan so'ng avtomatik faollashadi.</div>`;
+    : ps.freePlan
+      ? `<div class="info">🆓 ${esc(sub.label)} — siz <b>Bepul</b> tarifdasiz: flow'lar (${ps.freeFlowLimit || 3} tagacha), qoidalar va oyiga ${AI_QUOTA.free} ta AI javob ishlaydi. Ommaviy xabarlar va to'liq AI uchun tarif tanlang.</div>`
+      : `<div class="error">${esc(sub.label)}. Bot to'xtatilgan — to'lovdan so'ng avtomatik faollashadi.</div>`;
+  const q = aiQuota(u);
+  const packs = await getCreditPacks();
+  const pct = q.quota ? Math.min(100, Math.round((q.used / q.quota) * 100)) : 100;
+  const planLabel = { free: "🆓 Bepul", trial: "🧪 Sinov", start: "Start", pro: "Pro", business: "Business" }[q.plan] || q.plan;
+  const creditsCard = `
+    <div class="card" id="credits" style="margin-top:20px">
+      <div style="display:flex; justify-content:space-between; gap:12px; flex-wrap:wrap; align-items:center">
+        <div>
+          <h2 style="margin:0">🧠 AI javoblar</h2>
+          <p class="hint" style="margin:4px 0 0">Tarif: <b>${esc(planLabel)}</b> · oylik limit ${q.quota.toLocaleString("ru-RU")} · ${esc(q.month)}</p>
+        </div>
+        <div style="text-align:right">
+          <div style="font-size:28px; font-weight:800">${q.left.toLocaleString("ru-RU")}</div>
+          <div class="hint" style="font-size:12px">qolgan javob${q.bonus ? ` (shundan ${q.bonus.toLocaleString("ru-RU")} — sotib olingan kredit)` : ""}</div>
+        </div>
+      </div>
+      <div style="height:8px; background:rgba(255,255,255,0.06); border-radius:99px; overflow:hidden; margin:14px 0 6px"><div style="height:100%; width:${pct}%; background:${pct >= 90 ? "#f87171" : "var(--grad-primary)"}"></div></div>
+      <p class="hint" style="font-size:12.5px; margin:0">Bu oy ${q.used.toLocaleString("ru-RU")} / ${q.quota.toLocaleString("ru-RU")} ishlatildi. Limit tugasa, bot kalit so'z va flow'lar bilan ishlashda davom etadi. Sotib olingan kreditlar yonmaydi.</p>
+      <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(200px,1fr)); gap:12px; margin-top:16px">
+        ${packs.map((p) => `<div class="card" style="margin:0; text-align:center">
+            <div style="font-size:24px; font-weight:800">+${p.credits.toLocaleString("ru-RU")}</div>
+            <div class="hint">AI javob</div>
+            <div style="font-size:18px; font-weight:700; margin:8px 0">${p.price.toLocaleString("uz")} so'm</div>
+            ${paymeReady
+              ? `<form method="post" action="/billing/credits" style="margin:0"><input type="hidden" name="pack" value="${esc(p.id)}"><button class="secondary" style="width:100%; margin:0">Payme orqali olish</button></form>`
+              : `<div class="status-tag" style="justify-content:center">To'lov tez orada</div>`}
+          </div>`).join("")}
+      </div>
+    </div>`;
 
   res.send(
     page(
@@ -484,10 +540,21 @@ web.get("/billing", requireAuth, async (req, res) => {
       <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 20px; margin-top:20px">
         ${planCards}
       </div>
+      ${creditsCard}
       `,
       { user: u, active: "billing" }
     )
   );
+});
+
+// AI kredit paketini sotib olish (Payme)
+web.post("/billing/credits", requireAuth, async (req, res) => {
+  if (!paymeReady) return res.redirect("/billing#credits");
+  const pack = (await getCreditPacks()).find((p) => p.id === String(req.body?.pack || ""));
+  if (!pack) return res.redirect("/billing#credits");
+  const order = await createOrder({ userId: req.user.id, plan: `${CREDIT_ORDER_PREFIX}${pack.id}`, days: 0, amount: pack.price });
+  const returnUrl = config.baseUrl ? `${config.baseUrl}/billing?paid=1#credits` : "";
+  res.redirect(paymeCheckoutUrl(order, { lang: "uz", returnUrl }));
 });
 
 // Payme to'lovini boshlash — buyurtma yaratib, checkout'ga yo'naltiradi
@@ -699,6 +766,15 @@ web.post("/settings/telegram-bot", requireAuth, async (req, res) => {
 
   const ok = token ? await setupTelegramWebhook(u) : false;
   res.redirect(ok ? "/account?saved=1&tg=ok" : token ? "/account?tg=err" : "/account?saved=1");
+});
+
+// Telegram Business: avtomatik javobni yoqish/o'chirish
+web.post("/settings/telegram-business", requireAuth, async (req, res) => {
+  const u = req.user;
+  u.tgBusiness ||= {};
+  u.tgBusiness.autoReply = req.body?.autoReply === "on";
+  persist(u);
+  res.redirect("/account?saved=1#tg-business");
 });
 
 // WhatsApp Business API sozlamalarini saqlash
@@ -963,7 +1039,7 @@ Biz "Fuqarolar Murojaat Markazi" jamoat tashkilotimiz.
         const steps = [
           { p: 25, t: "🔍 @" + cleanHandle + " Instagram profiliga ulanmoqda..." },
           { p: 50, t: "📄 Bio, kontakt va profil ma'lumotlari ajratib olinmoqda..." },
-          { p: 75, t: "🧠 ADM AI kamchilik va sotuv muammolarini tahlil qilmoqda..." },
+          { p: 75, t: "🧠 Obunext kamchilik va sotuv muammolarini tahlil qilmoqda..." },
           { p: 90, t: "🚀 Sotuvni oshirish bo'yicha tavsiyalar tayyorlanmoqda..." },
         ];
 
@@ -1106,7 +1182,7 @@ Biz "Fuqarolar Murojaat Markazi" jamoat tashkilotimiz.
           <h2 style="margin:0; font-size:22px">🧠 AI Biznes O'rgatish Studiyasi (AI Knowledge Studio)</h2>
           <p class="hint">Sun'iy Intellekt mijozlar bilan muloqotda ushbu ma'lumotlarga tayanadi.</p>
         </div>
-        <span class="status-tag">✨ ADM AI</span>
+        <span class="status-tag">✨ Obunext</span>
       </div>
 
       <!-- Instagram AI Profile Scanner Box -->
@@ -1122,7 +1198,7 @@ Biz "Fuqarolar Murojaat Markazi" jamoat tashkilotimiz.
         </div>
 
         <div style="display:flex; gap:10px; margin-top:12px; flex-wrap:wrap">
-          <input type="text" id="igHandleInputField" placeholder="O'zingiz yoki raqobatchi: @adm_fashion yoki https://instagram.com/adm_fashion" value="${esc(u.meta?.igUsername ? '@' + u.meta.igUsername : '')}" style="flex:1; min-width:240px; margin:0; background:#1e293b; border:1px solid rgba(255,255,255,0.15); font-size:13.5px">
+          <input type="text" id="igHandleInputField" placeholder="O'zingiz yoki raqobatchi: @nur_fashion yoki https://instagram.com/nur_fashion" value="${esc(u.meta?.igUsername ? '@' + u.meta.igUsername : '')}" style="flex:1; min-width:240px; margin:0; background:#1e293b; border:1px solid rgba(255,255,255,0.15); font-size:13.5px">
           <span id="btnScanIg" onclick="event.preventDefault(); window.startInlineIgAudit(); return false;" class="btn" style="padding:8px 20px; font-size:13px; margin:0; cursor:pointer; background:linear-gradient(135deg,#f472b6,#db2777)">
             🚀 Skanerlash va AI Bazasini Yaratish
           </span>
@@ -1156,7 +1232,7 @@ Biz "Fuqarolar Murojaat Markazi" jamoat tashkilotimiz.
 
       <form method="post" action="/settings/business">
         <label>Biznesingiz nomi</label>
-        <input name="businessName" value="${esc(u.businessName || "")}" placeholder="Masalan: ADM Fashion Store" required>
+        <input name="businessName" value="${esc(u.businessName || "")}" placeholder="Masalan: Nur Fashion Store" required>
 
         <div style="display:flex; justify-content:space-between; align-items:center; margin-top:16px; flex-wrap:wrap; gap:8px">
           <label style="margin:0">📚 Bilimlar Bazasi Hujjatlari & Ma'lumotlar (${(u.businessInfo || "").length} ta belgi)</label>
@@ -1172,6 +1248,7 @@ Biz "Fuqarolar Murojaat Markazi" jamoat tashkilotimiz.
               <option value="blogger">📸 Bloger / Ekspert</option>
               <option value="organization">🏢 Tashkilot</option>
             </select>
+            <a href="/ai-learn" class="btn" style="padding:4px 10px; font-size:11.5px; margin:0">🧠 Instagram'dan o'rgatish</a>
             <span id="btnPreviewKb" class="btn secondary" onclick="event.preventDefault(); window.togglePreviewKnowledge(); return false;" style="padding:4px 10px; font-size:11.5px; margin:0; cursor:pointer">👁️ Ko'rish (Preview)</span>
             <span id="btnAddSection" class="btn secondary" onclick="event.preventDefault(); window.appendKnowledgeSection(); return false;" style="padding:4px 10px; font-size:11.5px; margin:0; cursor:pointer">➕ Bo'lim Qo'shish</span>
             <span id="btnClearKb" class="btn secondary" onclick="event.preventDefault(); window.clearKnowledgeBase(); return false;" style="padding:4px 10px; font-size:11.5px; margin:0; color:#f87171; cursor:pointer">🗑️ Barchasini O'chirish</span>
@@ -1182,10 +1259,10 @@ Biz "Fuqarolar Murojaat Markazi" jamoat tashkilotimiz.
 
         <textarea name="businessInfo" id="bizInfo" rows="12" style="margin-top:8px; font-family:monospace; font-size:13.5px" placeholder="Bu yerga mahsulotlaringiz, narxlar, manzil, yetkazib berish va tez-tez beriladigan savollarga javoblarni kiriting...">${esc(u.businessInfo || "")}</textarea>
 
-        <!-- ADM AI Reasoning Mode Toggle -->
+        <!-- Obunext Reasoning Mode Toggle -->
         <div style="background:#0f172a; padding:14px 16px; border-radius:10px; border:1px solid rgba(124,58,237,0.3); margin-top:14px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px">
           <div>
-            <b style="color:#a78bfa; font-size:14.5px">🧠 ADM AI Erkin Fikrlash & Intellekt Rejimi</b>
+            <b style="color:#a78bfa; font-size:14.5px">🧠 Obunext Erkin Fikrlash & Intellekt Rejimi</b>
             <p class="hint" style="margin:2px 0 0; font-size:12px; color:#94a3b8">
               <b>Yoqilgan (ON)</b>: AI o'z intellekti bilan mantiqiy fikrlaydi va mijozga aql bilan maslahat beradi.<br>
               <b>O'chirilgan (OFF - Qat'iy Rejim)</b>: AI faqat va faqat kiritilgan bilimlar bazasi doirasida cheklanib javob beradi.
@@ -1253,6 +1330,32 @@ Biz "Fuqarolar Murojaat Markazi" jamoat tashkilotimiz.
         <button type="submit" class="btn" style="margin-top:14px; background:linear-gradient(135deg, #229ED9 0%, #0088cc 100%)">
           ⚡ Webhookni O'rnatish & Saqlash
         </button>
+      </form>
+    </div>
+
+    <!-- Telegram Business (egasining shaxsiy akkauntidan AI javob) -->
+    <div class="card" id="tg-business" style="border:1px solid rgba(34,158,217,0.5)">
+      <div style="display:flex; justify-content:space-between; align-items:center; gap:10px; flex-wrap:wrap">
+        <div>
+          <h2 style="margin:0">💼 Telegram Business — shaxsiy akkauntingizdan AI javob</h2>
+          <p class="hint" style="margin:4px 0 0">Mijozlar sizning shaxsiy Telegram'ingizga yozadi, AI esa sizning nomingizdan javob beradi. Siz o'zingiz yozsangiz, bot shu chatda 2 soat jim turadi.</p>
+        </div>
+        ${u.tgBusiness?.enabled
+          ? `<span class="status-tag">✅ Ulangan${u.tgBusiness.ownerName ? `: ${esc(u.tgBusiness.ownerName)}` : ""}</span>`
+          : `<span class="badge-warn">Ulanmagan</span>`}
+      </div>
+      ${u.tgBusiness?.enabled && !u.tgBusiness.canReply ? `<div class="error" style="margin-top:10px">Botga "Xabarlarga javob berish" ruxsati berilmagan — Telegram → Business → Chatbots'da yoqing.</div>` : ""}
+      <ol class="hint" style="font-size:13px; line-height:1.8; padding-left:18px; margin:12px 0">
+        <li>Yuqorida Telegram botingizni ulang (webhook o'rnatilgan bo'lishi kerak).</li>
+        <li>Telegram → <b>Sozlamalar → Telegram Business → Chatbotlar</b> (Telegram Premium talab qilinadi).</li>
+        <li>Bot username'ini kiriting${u.settings?.telegramBotUsername ? `: <b>@${esc(u.settings.telegramBotUsername)}</b>` : ""} va <b>"Xabarlarga javob berish"</b> ruxsatini yoqing.</li>
+        <li>Qaysi chatlarga javob berishini tanlang (hammasi yoki tanlanganlar) — shu sahifada holat "Ulangan" bo'ladi.</li>
+      </ol>
+      <form method="post" action="/settings/telegram-business" style="margin:0">
+        <label style="display:flex; gap:8px; align-items:center; cursor:pointer; text-transform:none; letter-spacing:0; font-size:14px; font-weight:600">
+          <input type="checkbox" name="autoReply" ${u.tgBusiness?.autoReply !== false ? "checked" : ""} style="width:auto; margin:0"> AI avtomatik javob bersin
+        </label>
+        <button class="btn" style="margin-top:10px">💾 Saqlash</button>
       </form>
     </div>
 
@@ -1467,6 +1570,21 @@ web.get("/admin", requireAdmin, async (req, res) => {
       </div>
 
       <div class="card">
+        <div class="sec-title"><h2>🆓 Bepul tarif va AI kreditlari</h2></div>
+        <form method="post" action="/admin/platform" style="margin:0">
+          <label style="display:flex; gap:8px; align-items:center; cursor:pointer; text-transform:none; letter-spacing:0; font-size:14px; font-weight:600">
+            <input type="checkbox" name="freePlan" ${platformSettings().freePlan ? "checked" : ""} style="width:auto; margin:0">
+            Sinov/obuna tugagach bot "Bepul" tarifda ishlashda davom etsin (${AI_QUOTA.free} AI javob/oy)
+          </label>
+          <div class="grid cols-3" style="margin-top:10px">
+            <div><label>Bepul tarifda faol flow'lar</label><input name="freeFlowLimit" type="number" min="0" max="50" value="${platformSettings().freeFlowLimit || 3}"></div>
+            ${(await getCreditPacks()).map((p) => `<div><label>+${p.credits} kredit narxi (so'm)</label><input name="credits_${esc(p.id)}" type="number" min="0" step="1000" value="${p.price}"></div>`).join("")}
+          </div>
+          <button>💾 Saqlash</button>
+        </form>
+      </div>
+
+      <div class="card">
         <div class="sec-title"><h2>💵 Tarif narxlari</h2><span class="tag">so'm / oy</span></div>
         <p class="hint">Narxlar barcha bizneslar uchun umumiy. O'zgartirsangiz — obuna sahifasida va marketing saytida darhol yangilanadi.</p>
         <form method="post" action="/admin/plans">
@@ -1509,6 +1627,30 @@ web.post("/admin/plans", requireAdmin, async (req, res) => {
   }
   await setPlanPrices(prices);
   res.redirect("/admin?saved=1");
+});
+
+// Bepul tarif va kredit narxlari (admin)
+web.post("/admin/platform", requireAdmin, async (req, res) => {
+  await savePlatformSettings({
+    freePlan: req.body?.freePlan === "on",
+    freeFlowLimit: Math.min(50, Math.max(0, Number.parseInt(req.body?.freeFlowLimit, 10) || 0)),
+  });
+  const prices = {};
+  for (const id of Object.keys(CREDIT_PACKS)) {
+    const v = Number(req.body?.[`credits_${id}`]);
+    if (Number.isFinite(v) && v > 0) prices[`credits_${id}`] = Math.round(v);
+  }
+  if (Object.keys(prices).length) await setPlanPrices(prices);
+  res.redirect("/admin?saved=1");
+});
+
+// Biznesga qo'lda AI kredit qo'shish/ayirish (admin)
+web.post("/admin/user/:id/credits", requireAdmin, async (req, res) => {
+  const u = await findUserById(req.params.id);
+  if (!u) return res.status(404).send("Biznes topilmadi");
+  const n = Math.trunc(Number(req.body?.credits) || 0);
+  if (n) addCredits(u, n);
+  res.redirect(`/admin/user/${u.id}?saved=1`);
 });
 
 // Platforma Asosiy AI Kalitini saqlash (admin)
@@ -1691,7 +1833,7 @@ RECS:
         score += 5;
       }
       if (gapsArr.length === 0) gapsArr.push("• Profil va bilimlar bazasida jiddiy muammo topilmadi.");
-      if (recsArr.length === 0) recsArr.push("• ADM AI Erkin Fikrlash rejimini yoqilgan holatda saqlang.");
+      if (recsArr.length === 0) recsArr.push("• Obunext Erkin Fikrlash rejimini yoqilgan holatda saqlang.");
       score = Math.min(100, score);
     }
   }
@@ -1771,8 +1913,8 @@ web.get("/admin/user/:id", requireAdmin, async (req, res) => {
 
           <h2 style="margin-top:22px">🔑 AI kaliti (ixtiyoriy)</h2>
           <p class="hint">Bo'sh qoldirsangiz platformaning umumiy kaliti ishlatiladi.
-          Bu biznes uchun alohida ADM AI kaliti kerak bo'lsagina to'ldiring.</p>
-          <label>ADM AI API kaliti</label>
+          Bu biznes uchun alohida Obunext kaliti kerak bo'lsagina to'ldiring.</p>
+          <label>Obunext API kaliti</label>
           <input name="geminiApiKey" value="${esc(u.geminiApiKey)}" placeholder="AIza...">
 
           <button>Saqlash</button>
@@ -1782,6 +1924,10 @@ web.get("/admin/user/:id", requireAdmin, async (req, res) => {
       <div class="card">
         <h2>💳 Obuna (to'lovni tasdiqlash)</h2>
         <p>Holat: <b>${esc(statusInfo(u).label)}</b>${u.subscription.expiresAt ? ` (${new Date(u.subscription.expiresAt).toLocaleDateString("uz")}gача)` : ""} · Tarif: ${esc(u.subscription.plan)}</p>
+        <form method="post" action="/admin/user/${u.id}/credits" style="display:flex;gap:10px;flex-wrap:wrap;align-items:end;margin-bottom:14px">
+          <div><label>AI kreditlari (qolgan: ${aiQuota(u).left})</label><input type="number" name="credits" placeholder="+500 yoki -100" required style="margin:0"></div>
+          <button style="margin:0">Kredit qo'shish</button>
+        </form>
         <form method="post" action="/admin/user/${u.id}/subscription" style="display:flex;gap:10px;flex-wrap:wrap;align-items:end">
           <div style="min-width:160px"><label>Tarif</label>
             <select name="plan">
