@@ -86,7 +86,7 @@ test("5 ta xato urinishdan so'ng IP bloklanadi", async () => {
 });
 
 test("barcha bo'limlar ochiladi", async () => {
-  for (const p of ["/admin", "/admin/businesses", "/admin/businesses?q=guli&status=trial&sort=name", `/admin/businesses/${biz.id}`, "/admin/payments", "/admin/plans", "/admin/ai", "/admin/announce", "/admin/site", "/admin/audit", "/admin/system", "/admin/security"]) {
+  for (const p of ["/admin", "/admin/businesses", "/admin/businesses?q=guli&status=trial&sort=name", `/admin/businesses/${biz.id}`, "/admin/payments", "/admin/plans", "/admin/ai", "/admin/ai-cost", "/admin/ai-cost?m=2020-01", "/admin/announce", "/admin/site", "/admin/audit", "/admin/system", "/admin/security"]) {
     const r = await get(p);
     assert.strictEqual(r.status, 200, p);
   }

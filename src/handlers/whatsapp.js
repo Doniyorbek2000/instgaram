@@ -2,6 +2,8 @@ import { processMessage } from "../respond.js";
 import { isDuplicate } from "../dedup.js";
 import { fetchWhatsAppMedia } from "../media.js";
 import { synthesize, ttsAvailable } from "../tts.js";
+import { canUseAi, consumeAi } from "../credits.js";
+import { ttsCredits, recordAiCost } from "../aiCost.js";
 import { sendReply } from "../outbound.js";
 import {
   markWhatsAppRead,
@@ -52,11 +54,15 @@ export async function handleWhatsAppEntry(tenant, entry) {
 
       // Ovozli javob: tadbirkor yoqib qo'ygan va platformada TTS sozlangan bo'lsa,
       // matn bilan birga ovozli javob ham yuboramiz.
-      const wantVoice = Boolean(tenant.settings?.voiceReplies) && ttsAvailable;
+      // Ovoz ham AI xarajati — kredit tugagan bo'lsa faqat matn yuboriladi
+      const wantVoice = Boolean(tenant.settings?.voiceReplies) && ttsAvailable && canUseAi(tenant);
       if (wantVoice) {
         try {
           const audio = await synthesize(reply);
           if (audio) {
+            const chars = Math.min(600, reply.length);
+            consumeAi(tenant, ttsCredits(chars));
+            recordAiCost(tenant, { kind: "tts", ttsChars: chars });
             const mediaId = await uploadWhatsAppMedia(tenant, audio, "audio/mpeg");
             if (mediaId) await sendWhatsAppAudio(tenant, from, mediaId);
           }

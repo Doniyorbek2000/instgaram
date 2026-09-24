@@ -15,12 +15,14 @@ import { getPlatformSettings, setPlatformSettings, updateUser, persist, getPlanP
 import { isActive } from "./subscription.js";
 import { config } from "./config.js";
 
-export const AI_QUOTA = { free: 50, trial: 300, mini: 200, lite: 500, start: 1000, pro: 3000, business: 10000 };
+export const AI_QUOTA = { free: 50, trial: 100, mini: 200, lite: 500, start: 1000, pro: 3000, business: 6000 };
 
 export const CREDIT_PACKS = {
   c500: { id: "c500", credits: 500, defaultPrice: 29000 },
   c2000: { id: "c2000", credits: 2000, defaultPrice: 99000 },
-  c10000: { id: "c10000", credits: 10000, defaultPrice: 399000 },
+  c8000: { id: "c8000", credits: 8000, defaultPrice: 399000 },
+  // Eski paket: faqat avval yaratilgan buyurtmalarni to'g'ri yakunlash uchun (sotuvda yo'q)
+  c10000: { id: "c10000", credits: 10000, defaultPrice: 399000, legacy: true },
 };
 
 const DEFAULT_SETTINGS = { freePlan: true, freeFlowLimit: 3 };
@@ -96,12 +98,22 @@ export function canUseAi(user) {
   return aiQuota(user).left > 0;
 }
 
-/** Bitta AI javobini hisobdan chiqaradi (avval oylik kvota, keyin bonus kreditlar). */
+/**
+ * AI kreditlarini hisobdan chiqaradi (avval oylik kvota, keyin bonus kreditlar).
+ * n kasr bo'lishi mumkin (masalan qoida tanlash ≈0.1 kredit) — kasrlar yig'ilib,
+ * butun kreditga yetganda yechiladi.
+ */
 export function consumeAi(user, n = 1) {
   if (isAdminUser(user)) return;
   const { quota } = aiQuota(user);
   const u = usage(user);
-  for (let i = 0; i < n; i++) {
+  u.frac = (Number(u.frac) || 0) + Math.max(0, Number(n) || 0);
+  // Oy bo'yicha yechilgan kreditlar (admin → "AI xarajati": 1 kredit tannarxi)
+  const mc = ((u.cost ||= {})[u.month] ||= { usd: 0, calls: 0, in: 0, out: 0, tts: 0, own: 0, kinds: {}, models: {} });
+  mc.credits = (Number(mc.credits) || 0) + Math.max(0, Number(n) || 0);
+  const whole = Math.floor(u.frac + 1e-9);
+  u.frac = Math.max(0, u.frac - whole);
+  for (let i = 0; i < whole; i++) {
     if (u.used < quota) u.used++;
     else if (u.bonus > 0) u.bonus--;
   }
@@ -141,7 +153,7 @@ export function isFlowAllowed(user, flow, list) {
 
 export async function getCreditPacks() {
   const prices = await getPlanPrices();
-  return Object.values(CREDIT_PACKS).map((p) => {
+  return Object.values(CREDIT_PACKS).filter((p) => !p.legacy).map((p) => {
     const custom = Number(prices[`credits_${p.id}`]);
     return { ...p, price: Number.isFinite(custom) && custom > 0 ? custom : p.defaultPrice };
   });

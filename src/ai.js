@@ -1,6 +1,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { persist, getPlatformGeminiKey } from "./db.js";
 import { pushChat, recentHistory, AI_CONTEXT } from "./chatStore.js";
+import { creditsFor, recordAiCost } from "./aiCost.js";
 import { canUseAi, consumeAi, warnCreditsOut } from "./credits.js";
 import { aiSettings } from "./aiControl.js";
 
@@ -17,8 +18,16 @@ const anthropicClient = globalAnthropicKey ? new Anthropic() : null;
 import { findRelevantChunks } from "./rag.js";
 
 /** userText bo'lmaganda (masalan faqat ovoz/rasm xabar, matnsiz) to'liq ma'lumotni beradi */
+// Matnsiz (faqat ovoz/rasm/video) xabarda qidiruv so'rovi yo'q — butun bazani emas,
+// boshidan shu hajmgacha beramiz (50 000 belgilik baza ≈17 000 token bo'lib, bitta javobni
+// 8 barobar qimmatlashtirardi).
+const MEDIA_KB_CHARS = 6000;
+
 function formatBusinessInfo(businessInfo) {
-  return (businessInfo || "").trim();
+  const text = (businessInfo || "").trim();
+  if (text.length <= MEDIA_KB_CHARS) return text;
+  const cut = text.lastIndexOf("\n", MEDIA_KB_CHARS);
+  return text.slice(0, cut > MEDIA_KB_CHARS / 2 ? cut : MEDIA_KB_CHARS);
 }
 
 export function buildSystemPrompt(tenant, userText = "", isFirstMessage = true) {
@@ -146,6 +155,13 @@ export async function askGemini(apiKey, systemPrompt, history, text, media, opts
           .map((p) => p.text || "")
           .join("")
           .trim();
+        if (opts.meter) {
+          const um = data.usageMetadata || {};
+          opts.meter.model = modelName;
+          opts.meter.inTok = Number(um.promptTokenCount) || 0;
+          // "fikrlash" tokenlari ham chiquvchi token sifatida hisoblanadi
+          opts.meter.outTok = (Number(um.candidatesTokenCount) || 0) + (Number(um.thoughtsTokenCount) || 0);
+        }
         if (ans) return ans;
       } else {
         lastError = new Error(`Status ${res.status}: ${data.error?.message || JSON.stringify(data)}`);
@@ -161,7 +177,7 @@ export async function askGemini(apiKey, systemPrompt, history, text, media, opts
 }
 
 /** Claude — matn va rasm */
-async function askClaude(systemPrompt, history, text, media) {
+async function askClaude(systemPrompt, history, text, media, meter = null) {
   const content = [];
   let unsupported = 0;
   for (const m of media) {
@@ -196,6 +212,11 @@ async function askClaude(systemPrompt, history, text, media) {
     ],
     messages,
   });
+  if (meter) {
+    meter.model = CLAUDE_MODEL;
+    meter.inTok = Number(response.usage?.input_tokens) || 0;
+    meter.outTok = Number(response.usage?.output_tokens) || 0;
+  }
 
   return response.content
     .filter((block) => block.type === "text")
@@ -308,14 +329,17 @@ export async function generateReply(tenant, chatKey, { text = "", media = [] } =
   const { shopPrompt } = await import("./shop.js");
   const systemPrompt = buildSystemPrompt(tenant, text, history.length === 0) + shopPrompt(tenant) + actionsPrompt(tenant, chatKey);
 
+  const meter = {};
   try {
     let reply =
       provider === "gemini"
-        ? await askGemini(geminiKey, systemPrompt, history, text, media)
-        : await askClaude(systemPrompt, history, text, media);
+        ? await askGemini(geminiKey, systemPrompt, history, text, media, { meter })
+        : await askClaude(systemPrompt, history, text, media, meter);
 
     if (!reply) return smartFallbackReply(tenant, text);
-    consumeAi(tenant);
+    // Kredit token hajmiga qarab: oddiy javob 1, ovoz/video/katta so'rov — ko'proq
+    consumeAi(tenant, Math.max(1, Math.ceil(creditsFor(meter.inTok, meter.outTok) - 0.05)));
+    recordAiCost(tenant, { kind: "reply", model: meter.model, inTok: meter.inTok, outTok: meter.outTok, ownKey: provider === "gemini" && Boolean(tenant.geminiApiKey) });
     // Yashirin amallar bloki mijozga ketmaydi — ajratib, bajaramiz
     const parsed = extractActions(reply);
     reply = parsed.text;
@@ -365,7 +389,11 @@ export async function classifyIntent(tenant, text, rules) {
     "No words, no punctuation — just the number.";
 
   try {
-    const answer = await askGemini(geminiKey, systemPrompt, [], `Rules:\n${list}\n\nMessage: ${message.slice(0, 1000)}`, []);
+    const meter = {};
+    const answer = await askGemini(geminiKey, systemPrompt, [], `Rules:\n${list}\n\nMessage: ${message.slice(0, 1000)}`, [], { meter, maxOutputTokens: 8 });
+    // Kichik so'rov — kasr kredit (odatda ≈0.1), kasrlar yig'ilib yechiladi
+    consumeAi(tenant, creditsFor(meter.inTok, meter.outTok));
+    recordAiCost(tenant, { kind: "classify", model: meter.model, inTok: meter.inTok, outTok: meter.outTok, ownKey: Boolean(tenant.geminiApiKey) });
     const idx = Number.parseInt(String(answer).match(/\d+/)?.[0] ?? "0", 10);
     return idx >= 1 && idx <= candidates.length ? candidates[idx - 1] : null;
   } catch (err) {
@@ -393,8 +421,11 @@ export async function generateText(tenant, systemPrompt, prompt, { maxOutputToke
   const key = await resolveGeminiKey(tenant);
   if (!key) throw new Error("AI kaliti sozlanmagan. Admin paneldan Gemini kalitini kiriting.");
   if (!canUseAi(tenant)) throw new Error("AI kreditlari tugadi — Obuna & Tariflar sahifasida kredit paketi oling.");
-  const out = await askGemini(key, systemPrompt, [], prompt, [], { maxOutputTokens, json, temperature, timeoutMs: 30000 });
-  consumeAi(tenant); // faqat muvaffaqiyatli javob uchun hisoblanadi
+  const meter = {};
+  const out = await askGemini(key, systemPrompt, [], prompt, [], { maxOutputTokens, json, temperature, timeoutMs: 30000, meter });
+  // Faqat muvaffaqiyatli javob uchun; uzun natija (masalan 6 000 tokenli tahlil) ko'proq kredit
+  consumeAi(tenant, Math.max(1, Math.ceil(creditsFor(meter.inTok, meter.outTok) - 0.05)));
+  recordAiCost(tenant, { kind: "text", model: meter.model, inTok: meter.inTok, outTok: meter.outTok, ownKey: Boolean(tenant.geminiApiKey) });
   if (!json) return out;
   const cleaned = String(out).replace(/^```(?:json)?\s*/i, "").replace(/```\s*$/, "").trim();
   try {
