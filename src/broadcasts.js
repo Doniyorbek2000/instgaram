@@ -10,6 +10,7 @@
 import crypto from "node:crypto";
 import { persist, listUsers } from "./db.js";
 import { sendReply, sendMedia, splitKey, isInternalKey } from "./outbound.js";
+import { trackedUrl } from "./links.js";
 import { sanitizeMedia } from "./mediaStore.js";
 import { renderTemplate } from "./templating.js";
 import { getContactMeta, lastInboundAt } from "./contacts.js";
@@ -54,6 +55,8 @@ export function resolveAudience(tenant, filter = {}, now = Date.now()) {
       if (!ok) return false;
     }
     if (exclude.some((t) => have.includes(t))) return false;
+    // STOP yozgan mijozlarga ommaviy xabar yuborilmaydi
+    if (tenant.contactMeta?.[key]?.optOut) return false;
     // Meta (Instagram, Messenger, WhatsApp) erkin xabarni faqat mijoz oxirgi 24 soatda
     // yozgan bo'lsa qabul qiladi. Telegram'da bunday cheklov yo'q.
     if (only24h && chan !== "tg" && now - lastInboundAt(tenant, key) > WINDOW_MS) return false;
@@ -87,6 +90,7 @@ export function sanitizeBroadcast(body = {}) {
       excludeTags: tagList(body.excludeTags),
       only24h: body.only24h !== "false",
     },
+    stopFooter: body.stopFooter !== "false" && body.stopFooter !== false,
     scheduledAt: Number.isFinite(scheduledAt) && scheduledAt > Date.now() + 30000 ? new Date(scheduledAt).toISOString() : "",
   };
 }
@@ -144,7 +148,9 @@ export async function runBroadcast(tenant, broadcastId, { send = sendReply, send
           ok = r.status !== "empty";
         } else {
           if (b.media) await sendMediaFn(tenant, chan, id, b.media);
-          ok = b.message ? await send(tenant, chan, id, renderTemplate(b.message, tenant, key), b.buttons || []) : Boolean(b.media);
+          const buttons = (b.buttons || []).map((x) => (x.url ? { ...x, url: trackedUrl(tenant, x.url, { key, title: x.title, source: `broadcast:${b.id}` }) } : x));
+          const footer = b.stopFooter === false ? "" : "\n\n— Chiqish uchun STOP deb yozing";
+          ok = b.message ? await send(tenant, chan, id, renderTemplate(b.message, tenant, key) + footer, buttons) : Boolean(b.media);
         }
         if (ok) b.sentCount++;
         else b.failedCount++;

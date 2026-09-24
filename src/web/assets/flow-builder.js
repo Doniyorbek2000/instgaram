@@ -30,7 +30,7 @@
   flow.triggers = flow.triggers || [];
 
   var MEDIA_LABEL = { image: "🖼️ Rasm", video: "🎬 Video", audio: "🎧 Audio", file: "📎 Fayl", post: "📸 Instagram post" };
-  var ICONS = { message: "💬", input: "📝", condition: "🔀", action: "⚡", delay: "⏱️", ai: "🧠", redirect: "↪️", note: "🗒️" };
+  var ICONS = { message: "💬", input: "📝", condition: "🔀", action: "⚡", delay: "⏱️", ai: "🧠", redirect: "↪️", split: "🎲", http: "🌐", note: "🗒️" };
 
   // ---------- yordamchilar ----------
 
@@ -198,6 +198,10 @@
         var f = meta.otherFlows.filter(function (x) { return x.id === n.flowId; })[0];
         return f ? "→ " + f.name : "(flow tanlanmagan)";
       case "note": return n.text || "Izoh yozing…";
+      case "split":
+        var tw = (n.variants || []).reduce(function (a, v) { return a + (Number(v.weight) || 0); }, 0) || 1;
+        return (n.variants || []).map(function (v) { return v.label + " — " + Math.round(((Number(v.weight) || 0) / tw) * 100) + "%"; }).join("\n") || "(variant yo'q)";
+      case "http": return (n.method || "GET") + " " + (n.url || "(URL yo'q)");
       default: return "";
     }
   }
@@ -210,7 +214,9 @@
       case "time": return k + ": " + c.value;
       case "date": return k + ": " + (c.value || "…") + " — " + (c.value2 || "…");
       case "points": return k + " " + (c.op === "lte" ? "≤ " : c.op === "eq" ? "= " : "≥ ") + c.value;
-      case "var": return "{" + c.key + "} " + (c.op === "not_exists" ? "bo'sh" : c.op === "eq" ? "= " + c.value : c.op === "contains" ? "∋ " + c.value : "to'ldirilgan");
+      case "var":
+        var ops = { eq: "= ", contains: "∋ ", gt: "> ", gte: "≥ ", lt: "< ", lte: "≤ " };
+        return "{" + c.key + "} " + (c.op === "not_exists" ? "bo'sh" : ops[c.op] ? ops[c.op] + c.value : "to'ldirilgan");
       case "channel": return k + ": " + c.value;
       case "follows": return k + (c.value ? ": " + c.value : "");
       case "tg_boost": return k + (c.value ? ": " + c.value : "");
@@ -222,6 +228,12 @@
     var k = meta.actionKinds[a.kind] || a.kind;
     if (a.kind === "set_var") return k + ": {" + a.key + "} = " + a.value;
     if (a.kind === "handoff" || a.kind === "react") return k;
+    if (a.kind === "seq_subscribe" || a.kind === "seq_unsubscribe") {
+      var sq = (meta.sequences || []).filter(function (x) { return x.id === a.key; })[0];
+      return k + ": " + (sq ? sq.name : a.kind === "seq_unsubscribe" ? "barchasi" : "?");
+    }
+    if (a.kind === "math") return "🧮 {" + a.key + "} " + (a.value || "");
+    if (a.kind === "opt_out") return a.value === "in" ? "📣 Ommaviy xabarlarga qaytarish" : "🚫 Ommaviy xabarlardan chiqarish";
     if (a.kind === "run_flow") {
       var tf = meta.otherFlows.filter(function (x) { return x.id === a.key; })[0];
       return k + ": " + (tf ? tf.name : "?") + (a.value === "referrer" ? " (taklif qilganga)" : "");
@@ -234,7 +246,8 @@
     var outs = [];
     if (n.type === "message") {
       (n.buttons || []).forEach(function (b) {
-        if (b.url || b._mode === "url") outs.push({ port: null, label: "🔗 " + b.title, cls: "url" });
+        // Havola tugmasi: bosilgandan keyin davom etadigan blokni ulash mumkin (ixtiyoriy)
+        if (b.url || b._mode === "url") outs.push({ port: "btn:" + b.id, label: "🔗 " + b.title, cls: "url", target: b.next });
         else outs.push({ port: "btn:" + b.id, label: "🔘 " + b.title, cls: "btn", target: b.next });
       });
       var hasStepBtn = (n.buttons || []).some(function (b) { return !b.url; });
@@ -242,6 +255,13 @@
     } else if (n.type === "condition") {
       outs.push({ port: "yes", label: "✅ Ha", cls: "yes", target: n.yes });
       outs.push({ port: "no", label: "❌ Yo'q", cls: "no", target: n.no });
+    } else if (n.type === "split") {
+      (n.variants || []).forEach(function (v) {
+        outs.push({ port: "var:" + v.id, label: "🎲 " + v.label + " · " + (Number(v.weight) || 0), cls: "btn", target: v.next });
+      });
+    } else if (n.type === "http") {
+      outs.push({ port: "next", label: "✅ Muvaffaqiyat (2xx)", cls: "yes", target: n.next });
+      outs.push({ port: "fail", label: "❌ Xato / vaqt tugadi", cls: "no", target: n.fail });
     } else if (n.type !== "redirect" && n.type !== "note") {
       outs.push({ port: "next", label: n.type === "input" ? "Javobdan keyin" : n.type === "delay" ? "Kutgandan keyin" : "Keyingi", cls: "", target: n.next });
     }
@@ -252,7 +272,11 @@
     if (port === "next") n.next = target;
     else if (port === "yes") n.yes = target;
     else if (port === "no") n.no = target;
-    else if (port && port.indexOf("btn:") === 0) {
+    else if (port === "fail") n.fail = target;
+    else if (port && port.indexOf("var:") === 0) {
+      var vid = port.slice(4);
+      (n.variants || []).forEach(function (v) { if (v.id === vid) v.next = target; });
+    } else if (port && port.indexOf("btn:") === 0) {
       var id = port.slice(4);
       (n.buttons || []).forEach(function (b) { if (b.id === id) b.next = target; });
     }
@@ -588,6 +612,8 @@
       case "delay": return { minutes: 60, next: null };
       case "ai": return { prompt: "", next: null };
       case "redirect": return { flowId: meta.otherFlows[0] ? meta.otherFlows[0].id : "" };
+      case "split": return { variants: [{ id: uid("v"), label: "A", weight: 50, next: null }, { id: uid("v"), label: "B", weight: 50, next: null }] };
+      case "http": return { method: "GET", url: "https://", headers: "", body: "", map: "", next: null, fail: null };
       case "note": return { text: "", color: "yellow" };
       default: return {};
     }
@@ -643,7 +669,9 @@
       if (n.next === id) n.next = null;
       if (n.yes === id) n.yes = null;
       if (n.no === id) n.no = null;
+      if (n.fail === id) n.fail = null;
       (n.buttons || []).forEach(function (b) { if (b.next === id) b.next = null; });
+      (n.variants || []).forEach(function (v) { if (v.next === id) v.next = null; });
     });
     if (flow.start === id) flow.start = Object.keys(flow.nodes)[0] || null;
     selected = null;
@@ -658,6 +686,7 @@
     copy.x = (src.x || 0) + 40;
     copy.y = (src.y || 0) + 40;
     (copy.buttons || []).forEach(function (b) { b.id = uid("b"); });
+    (copy.variants || []).forEach(function (v) { v.id = uid("v"); });
     flow.nodes[copy.id] = copy;
     selected = copy.id;
     markDirty();
@@ -768,6 +797,8 @@
     if ("yes" in n) n.yes = null;
     if ("no" in n) n.no = null;
     (n.buttons || []).forEach(function (b) { b.id = uid("b"); b.next = null; });
+    if ("fail" in n) n.fail = null;
+    (n.variants || []).forEach(function (v) { v.id = uid("v"); v.next = null; });
     if (n.type === "redirect" && n.flowId === flow.id) n.flowId = "";
     flow.nodes[n.id] = n;
     if (!flow.start && n.type !== "note") flow.start = n.id;
@@ -936,7 +967,7 @@
         : h("button", { type: "button", class: "secondary", style: "margin:0; padding:5px 10px; font-size:12px", text: "🏁 Birinchi blok qilish", title: "Trigger ishlaganda flow shu blokdan boshlanadi", onclick: function () {
             var hasIncoming = Object.keys(flow.nodes).some(function (k) {
               var x = flow.nodes[k];
-              return k !== n.id && (x.next === n.id || x.yes === n.id || x.no === n.id || (x.buttons || []).some(function (b) { return b.next === n.id; }));
+              return k !== n.id && outputs(x).some(function (o) { return o.target === n.id; });
             });
             if (hasIncoming && !confirm("Bu blokka boshqa bloklardan ulanish bor. Flow shu blokdan boshlansinmi?\n\nOldingi bloklar ishlamay qoladi (Ctrl+Z bilan qaytarish mumkin).")) return;
             flow.start = n.id;
@@ -964,7 +995,11 @@
             h("button", { type: "button", class: "fb-x", text: "✕", onclick: function () { n.buttons.splice(i, 1); changed(true); } }),
           ]),
           isUrl
-            ? h("input", { type: "url", value: b.url || "", placeholder: "https://...", style: "margin-top:6px", oninput: function (e) { b.url = e.target.value; changed(); } })
+            ? h("div", {}, [
+                h("input", { type: "url", value: b.url || "", placeholder: "https://...", style: "margin-top:6px", oninput: function (e) { b.url = e.target.value; changed(); } }),
+                h("div", { class: "fb-hint", text: "Bosilgandan keyin (ixtiyoriy) — bosishlar hisoblanadi:" }),
+                targetSelect(n, "btn:" + b.id, b.next),
+              ])
             : h("div", { style: "margin-top:6px" }, [targetSelect(n, "btn:" + b.id, b.next)]),
         ]));
       });
@@ -1010,6 +1045,54 @@
     if (n.type === "note") {
       side.appendChild(field("Izoh matni (faqat siz va jamoangiz ko'radi)", textArea(n, "text", 6, "Masalan: bu tarmoq faqat aksiya davrida ishlaydi")));
       side.appendChild(field("Rang", select([["yellow", "🟨 Sariq"], ["blue", "🟦 Ko'k"], ["pink", "🟪 Pushti"], ["green", "🟩 Yashil"]], n.color || "yellow", function (v) { n.color = v; changed(); })));
+    }
+
+    if (n.type === "split") {
+      side.appendChild(h("p", { class: "fb-hint", text: "Mijozlar variantlarga ulush bo'yicha tasodifiy taqsimlanadi. Qaysi xabar ko'proq sotishini statistikada ko'rasiz." }));
+      var splitStats = (flow.stats && flow.stats.split && flow.stats.split[n.id]) || {};
+      (n.variants = n.variants || []).forEach(function (v, i) {
+        side.appendChild(h("div", { class: "fb-item" }, [
+          h("div", { class: "fb-row" }, [
+            h("input", { type: "text", maxlength: 30, value: v.label, placeholder: "Variant nomi", oninput: function (e) { v.label = e.target.value; changed(); } }),
+            h("input", { type: "number", min: 0, max: 100, value: v.weight, style: "flex:0 0 70px", title: "Ulush", oninput: function (e) { v.weight = Number(e.target.value) || 0; changed(); } }),
+            n.variants.length > 2 ? h("button", { type: "button", class: "fb-x", text: "✕", onclick: function () { n.variants.splice(i, 1); changed(true); } }) : null,
+          ]),
+          h("div", { class: "fb-hint", text: "Ulush: " + (Number(v.weight) || 0) + " · Tushganlar: " + (splitStats[v.id] || 0) }),
+          targetSelect(n, "var:" + v.id, v.next),
+        ]));
+      });
+      if (n.variants.length < 5) {
+        side.appendChild(h("button", { type: "button", class: "secondary fb-add", text: "+ Variant", onclick: function () {
+          n.variants.push({ id: uid("v"), label: String.fromCharCode(65 + n.variants.length), weight: 50, next: null });
+          changed(true);
+        } }));
+      }
+    }
+
+    if (n.type === "http") {
+      side.appendChild(h("div", { class: "fb-row" }, [
+        select((meta.httpMethods || ["GET", "POST"]).map(function (m) { return [m, m]; }), n.method || "GET", function (v) { n.method = v; changed(true); }),
+      ]));
+      side.appendChild(field("URL", textInput(n, "url", { placeholder: "https://api.example.uz/orders?phone={phone}" }), "{o'zgaruvchi}lar URL'da avtomatik kodlanadi. Ichki tarmoq manzillari bloklanadi."));
+      side.appendChild(field("Sarlavhalar (har qatorda Nomi: qiymat)", (function () {
+        var ta = h("textarea", { rows: 2, placeholder: "Authorization: Bearer xxx", oninput: function (e) { n.headers = e.target.value; changed(); } });
+        ta.value = n.headers || "";
+        return ta;
+      })()));
+      if (n.method !== "GET") {
+        side.appendChild(field("So'rov tanasi (JSON yoki matn)", (function () {
+          var ta = h("textarea", { rows: 4, placeholder: '{"phone": "{phone}", "name": "{name}"}', oninput: function (e) { n.body = e.target.value; changed(); } });
+          ta.value = n.body || "";
+          return ta;
+        })()));
+      }
+      side.appendChild(field("Javobdan o'zgaruvchilarga (har qatorda o'zgaruvchi = json.yo'l)", (function () {
+        var ta = h("textarea", { rows: 3, placeholder: "order_status = data.status\nnarx = items.0.price", oninput: function (e) { n.map = e.target.value; changed(); } });
+        ta.value = n.map || "";
+        return ta;
+      })(), "Keyin xabarlarda {order_status} kabi ishlatiladi. {http_status} doim saqlanadi. Vaqt chegarasi — 8 soniya."));
+      side.appendChild(field("✅ Muvaffaqiyatda", targetSelect(n, "next", n.next)));
+      side.appendChild(field("❌ Xato bo'lsa", targetSelect(n, "fail", n.fail)));
     }
 
     if (n.type === "redirect") {
@@ -1129,8 +1212,8 @@
       row.appendChild(numberInput(c, "value", 0, 1000000));
     } else if (c.kind === "var") {
       row.appendChild(textInput(c, "key", { placeholder: "o'zgaruvchi" }));
-      row.appendChild(select([["exists", "to'ldirilgan"], ["not_exists", "bo'sh"], ["eq", "teng"], ["contains", "ichida bor"]], c.op || "exists", function (v) { c.op = v; changed(true); }));
-      if (c.op === "eq" || c.op === "contains") row.appendChild(textInput(c, "value", { placeholder: "qiymat" }));
+      row.appendChild(select([["exists", "to'ldirilgan"], ["not_exists", "bo'sh"], ["eq", "teng"], ["contains", "ichida bor"], ["gt", "> katta"], ["gte", "≥ katta yoki teng"], ["lt", "< kichik"], ["lte", "≤ kichik yoki teng"]], c.op || "exists", function (v) { c.op = v; changed(true); }));
+      if (["eq", "contains", "gt", "gte", "lt", "lte"].indexOf(c.op) >= 0) row.appendChild(textInput(c, "value", { placeholder: /^(g|l)t/.test(c.op || "") ? "son yoki {o'zgaruvchi}" : "qiymat" }));
     } else if (c.kind === "channel") {
       row.appendChild(select([["ig", "Instagram"], ["tg", "Telegram"], ["wa", "WhatsApp"], ["fb", "Messenger"]], c.value || "ig", function (v) { c.value = v; changed(); }));
       if (!c.value) c.value = "ig";
@@ -1167,6 +1250,20 @@
       box.appendChild(h("p", { class: "fb-hint", text: "\"Taklif qilgan odamga\" — xabarlar referal egasiga boradi ({last_referral} — yangi do'st ismi)." }));
     } else if (a.kind === "react") {
       box.appendChild(h("p", { class: "fb-hint", text: "Mijoz xabariga ❤️ (Instagram/Telegram) yoki kommentga layk bosiladi." }));
+    } else if (a.kind === "seq_subscribe" || a.kind === "seq_unsubscribe") {
+      var seqOpts = (meta.sequences || []).map(function (q) { return [q.id, q.name]; });
+      if (a.kind === "seq_unsubscribe") seqOpts.unshift(["all", "Barcha ketma-ketliklar"]);
+      else seqOpts.unshift(["", "— tanlang —"]);
+      box.appendChild(h("div", { style: "margin-top:6px" }, [select(seqOpts, a.key || (a.kind === "seq_unsubscribe" ? "all" : ""), function (v) { a.key = v; changed(); })]));
+      if (!(meta.sequences || []).length) box.appendChild(h("p", { class: "fb-hint", text: "Avval \"Ketma-ketliklar\" bo'limida seriya yarating." }));
+    } else if (a.kind === "math") {
+      box.appendChild(h("div", { class: "fb-row", style: "margin-top:6px" }, [
+        textInput(a, "key", { placeholder: "o'zgaruvchi (masalan jami)" }),
+        textInput(a, "value", { placeholder: "+10, -5, *2, /4, =100 yoki +{narx}" }),
+      ]));
+      box.appendChild(h("p", { class: "fb-hint", text: "Kontakt kartasidagi sonli qiymatni o'zgartiradi. Shartda > / < bilan tekshirish mumkin." }));
+    } else if (a.kind === "opt_out") {
+      box.appendChild(h("div", { style: "margin-top:6px" }, [select([["out", "🚫 Ommaviy xabarlardan chiqarish"], ["in", "📣 Qaytadan qo'shish"]], a.value || "out", function (v) { a.value = v; changed(); })]));
     } else if (a.kind === "set_var") {
       box.appendChild(h("div", { class: "fb-row", style: "margin-top:6px" }, [
         textInput(a, "key", { placeholder: "o'zgaruvchi" }),
@@ -1377,6 +1474,14 @@
       } else if (n.type === "ai") {
         simPush("bot", "🧠 AI javobi" + (n.prompt ? " — " + n.prompt : " (bilim bazasi asosida)"), { ai: true });
         id = n.next;
+      } else if (n.type === "split") {
+        var pick = pickVariantSim(n.variants || []);
+        simPush("sys", "🎲 A/B test: " + (pick ? "\"" + pick.label + "\" varianti tushdi" : "variant yo'q"));
+        id = pick ? pick.next : null;
+      } else if (n.type === "http") {
+        simPush("sys", "🌐 " + (n.method || "GET") + " " + (n.url || "") + " — sinovda so'rov yuborilmaydi, natijani tanlang");
+        sim.wait = { kind: "http", node: n };
+        break;
       } else if (n.type === "redirect") {
         var rf = meta.otherFlows.filter(function (x) { return x.id === n.flowId; })[0];
         simPush("sys", "↪️ " + (rf ? "\"" + rf.name + "\" flow'iga o'tadi" : "Flow tanlanmagan"));
@@ -1391,6 +1496,14 @@
     }
     renderNodes();
     if (panel === "sim" && !selected) renderSide();
+  }
+
+  function pickVariantSim(list) {
+    var ok = list.filter(function (v) { return Number(v.weight) > 0; });
+    var total = ok.reduce(function (a, v) { return a + Number(v.weight); }, 0);
+    var r = Math.random() * total;
+    for (var i = 0; i < ok.length; i++) { r -= Number(ok[i].weight); if (r < 0) return ok[i]; }
+    return ok[ok.length - 1] || null;
   }
 
   function simCheck(kind, text) {
@@ -1449,6 +1562,11 @@
       side.appendChild(h("div", { class: "fb-sim-actions" }, [
         h("button", { type: "button", class: "secondary", style: "color:#34d399", text: "✅ Ha", onclick: function () { simPush("sys", "→ Ha"); simRun(w.node.yes); } }),
         h("button", { type: "button", class: "secondary", style: "color:#f87171", text: "❌ Yo'q", onclick: function () { simPush("sys", "→ Yo'q"); simRun(w.node.no); } }),
+      ]));
+    } else if (w && w.kind === "http") {
+      side.appendChild(h("div", { class: "fb-sim-actions" }, [
+        h("button", { type: "button", class: "secondary", style: "color:#34d399", text: "✅ Muvaffaqiyat", onclick: function () { simPush("sys", "→ Muvaffaqiyat"); simRun(w.node.next); } }),
+        h("button", { type: "button", class: "secondary", style: "color:#f87171", text: "❌ Xato", onclick: function () { simPush("sys", "→ Xato"); simRun(w.node.fail); } }),
       ]));
     } else if (w && w.kind === "input") {
       var inp = h("input", { type: "text", placeholder: w.node.validate === "phone" ? "+998 90 123 45 67" : "Javob yozing…", style: "margin:0" });

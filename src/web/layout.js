@@ -302,6 +302,9 @@ const NAV = [
   ["O'sish", [
     ["/game", "game", "trophy", "Geymifikatsiya"],
     ["/broadcasts", "broadcasts", "megaphone", "Ommaviy xabarlar"],
+    ["/sequences", "sequences", "calendar", "Ketma-ketliklar"],
+    ["/shop", "shop", "card", "Do'kon va buyurtmalar"],
+    ["/growth-tools", "growth-tools", "grid", "QR, vidjet va havolalar"],
     ["/content", "content", "film", "AI Kontent studiya"],
     ["/growth", "growth", "trending", "O'sish vositalari"],
     ["/scheduler", "scheduler", "calendar", "Scheduler"],

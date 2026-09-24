@@ -105,6 +105,17 @@ export async function processMessage(tenant, channel, chatKey, { text = "", medi
     return { reply: HANDOFF_REPLY };
   }
 
+  // 4b. Ommaviy xabarlardan chiqish / qaytish (STOP / START) — Meta siyosati talabi
+  if (text && !payload) {
+    const { handleOptOutText } = await import("./optout.js");
+    const opt = await handleOptOutText(tenant, fullKey, text);
+    if (opt) {
+      fireEvent(tenant, "opt_out", { contact: fullKey, channel, subscribed: !tenant.contactMeta?.[fullKey]?.optOut });
+      logExchange(tenant, fullKey, shownText, opt.reply);
+      return { reply: opt.reply };
+    }
+  }
+
   // 5a. Flow builder: tugma bosilishi, "ma'lumot yig'ish" blokiga javob,
   // referal havola yoki yangi kontakt triggerlari. Flow xabarlarni o'zi yuboradi.
   const flowCtx = { text, userText: shownText, profile, messageId };

@@ -102,6 +102,10 @@ async function runMigrations() {
     ALTER TABLE users ADD COLUMN IF NOT EXISTS tg_business JSONB DEFAULT '{}';
     ALTER TABLE users ADD COLUMN IF NOT EXISTS api_tokens JSONB DEFAULT '[]';
     ALTER TABLE users ADD COLUMN IF NOT EXISTS ai_usage JSONB DEFAULT '{}';
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS sequences JSONB DEFAULT '{}';
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS shop JSONB DEFAULT '{}';
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS tracked_links JSONB DEFAULT '{}';
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS push_subs JSONB DEFAULT '[]';
 
     CREATE TABLE IF NOT EXISTS sessions (
       token TEXT PRIMARY KEY,
@@ -184,6 +188,10 @@ function normalizeUser(row) {
     tgBusiness: row.tg_business || {},
     apiTokens: row.api_tokens || [],
     aiUsage: row.ai_usage || {},
+    sequences: row.sequences || {},
+    shop: row.shop || {},
+    trackedLinks: row.tracked_links || {},
+    pushSubs: row.push_subs || [],
     createdAt: row.created_at,
   };
 }
@@ -278,6 +286,10 @@ export async function updateUser(id, patch) {
     tgBusiness: "tg_business",
     apiTokens: "api_tokens",
     aiUsage: "ai_usage",
+    sequences: "sequences",
+    shop: "shop",
+    trackedLinks: "tracked_links",
+    pushSubs: "push_subs",
   };
 
   for (const [key, col] of Object.entries(colMap)) {

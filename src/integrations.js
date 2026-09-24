@@ -19,9 +19,13 @@ export const INTEGRATION_EVENTS = {
   points_awarded: "Ball berildi (geymifikatsiya)",
   conversion: "Flow'da konversiya qayd etildi",
   flow_event: "Flow'dagi \"Webhook / CRM\" amali",
+  link_click: "Havola bosildi",
+  order_created: "Yangi buyurtma",
+  order_status: "Buyurtma holati o'zgardi",
+  opt_out: "Mijoz ommaviy xabarlardan chiqdi",
 };
 
-const DEFAULT_EVENTS = { form_submitted: true, lead: true, reward_redeemed: true, new_contact: false, points_awarded: false, conversion: true, flow_event: true };
+const DEFAULT_EVENTS = { form_submitted: true, lead: true, reward_redeemed: true, new_contact: false, points_awarded: false, conversion: true, flow_event: true, link_click: false, order_created: true, order_status: true, opt_out: false };
 const TIMEOUT_MS = 6000;
 
 export function ensureIntegrations(tenant) {

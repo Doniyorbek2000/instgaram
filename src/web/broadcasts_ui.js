@@ -98,6 +98,12 @@ broadcastsRouter.get("/broadcasts", requireAuth, async (req, res) => {
               Faqat oxirgi 24 soatda yozganlar (Instagram / Messenger / WhatsApp talabi)
             </label>
             <input type="hidden" name="only24h" value="false">
+            <label style="display:flex; gap:8px; align-items:center; cursor:pointer; margin-top:8px">
+              <input type="checkbox" name="stopFooter" value="true" checked style="width:auto; margin:0">
+              Oxiriga "Chiqish uchun STOP deb yozing" qo'shilsin (tavsiya etiladi — Meta shikoyatlaridan himoya)
+            </label>
+            <input type="hidden" name="stopFooter" value="false">
+            <p class="hint" style="font-size:12px; margin:4px 0 0">STOP yozgan mijozlarga ommaviy xabar va ketma-ketliklar yuborilmaydi (START — qaytadi).</p>
 
             <div class="card" style="margin:12px 0; padding:10px 14px; background:rgba(139,92,246,0.08)">
               <b id="bcCount">…</b> <span class="hint">kontaktga yetkaziladi</span>
@@ -194,6 +200,7 @@ broadcastsRouter.post("/broadcasts/create", requireAuth, (req, res) => {
   const body = {
     ...req.body,
     only24h: [].concat(req.body?.only24h || "false")[0],
+    stopFooter: [].concat(req.body?.stopFooter || "false")[0],
     media: libItem ? { type: libItem.type, url: libItem.url, name: libItem.name } : null,
   };
   if (!isActive(user)) return res.redirect("/broadcasts?error=" + encodeURIComponent("Ommaviy xabarlar pullik tariflarda ishlaydi — Obuna & Tariflar sahifasiga o'ting"));

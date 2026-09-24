@@ -1,7 +1,7 @@
 /**
  * Tayyor flow shablonlari (bir bosishda o'rnatiladi) va avtomatik joylashtirish.
  */
-import { sanitizeFlow } from "./flows.js";
+import { sanitizeFlow, targetsOf } from "./flows.js";
 
 /** Bloklarni daraxt bo'yicha ustun-qator qilib joylashtiradi (x/y berilmagan bo'lsa). */
 export function autoLayout(flow) {
@@ -13,9 +13,7 @@ export function autoLayout(flow) {
   const startId = flow.start && nodes[flow.start] ? flow.start : ids[0];
   level[startId] = 0;
   queue.push(startId);
-  const children = (n) => [
-    n.next, n.yes, n.no, ...(n.buttons || []).map((b) => b.next),
-  ].filter((id) => id && nodes[id]);
+  const children = (n) => targetsOf(n).filter((id) => nodes[id]);
   while (queue.length) {
     const id = queue.shift();
     for (const c of children(nodes[id])) {
@@ -125,6 +123,8 @@ Node ids: short latin like "m1","q1","c1","a1". Node types:
 - {"id","type":"message","text","buttons":[{"id","title"(<=20 chars),"next":nodeId}|{"id","title","url":"https://..."}],"next":nodeId}
 - {"id","type":"input","text":"question","varName":"name|phone|email|any_snake_case","validate":"text"|"name"|"phone"|"email"|"number","next"}
 - {"id","type":"condition","match":"all"|"any","conditions":[{"kind":"tag","op":"has"|"not","value"}|{"kind":"weekday","value":"1,2,3,4,5"}|{"kind":"time","value":"09:00-18:00"}|{"kind":"points","op":"gte"|"lte","value":"10"}|{"kind":"var","key","op":"exists"|"eq","value"}|{"kind":"follows"}],"yes":nodeId,"no":nodeId}
+- {"id","type":"split","variants":[{"id","label","weight":50,"next":nodeId}]}  (A/B test)
+- {"id","type":"http","method":"GET"|"POST","url","headers":"Key: value lines","body","map":"var = json.path lines","next","fail"}
 - {"id","type":"action","actions":[{"kind":"add_tag"|"remove_tag"|"conversion"|"notify"|"handoff"|"webhook","value"}|{"kind":"set_var","key","value"}|{"kind":"add_points","value":"10"}],"next"}
 - {"id","type":"delay","minutes":number,"next"}
 - {"id","type":"ai","prompt":"instruction for AI answer","next"}

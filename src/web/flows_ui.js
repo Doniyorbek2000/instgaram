@@ -14,11 +14,12 @@ import { page, esc } from "./layout.js";
 import { persist } from "../db.js";
 import {
   ensureFlows, findFlow, sanitizeFlow, newId, validateFlow, flowSnapshot,
-  TRIGGER_TYPES, MATCH_TYPES, NODE_TYPES, CONDITION_KINDS, ACTION_KINDS, INPUT_VALIDATIONS,
+  TRIGGER_TYPES, MATCH_TYPES, NODE_TYPES, CONDITION_KINDS, ACTION_KINDS, INPUT_VALIDATIONS, HTTP_METHODS,
 } from "../flows.js";
 import { FLOW_TEMPLATES, buildTemplate, autoLayout, AI_FLOW_PROMPT } from "../flowTemplates.js";
 import { generateText, aiAvailable } from "../ai.js";
 import { allTags } from "../contacts.js";
+import { ensureSequences } from "../sequences.js";
 
 export const flowsRouter = Router();
 
@@ -42,7 +43,7 @@ function safeJson(value) {
   return JSON.stringify(value).replace(/</g, "\\u003c").replace(/>/g, "\\u003e").replace(/&/g, "\\u0026");
 }
 
-const SHORT_LABELS = { message: "💬 Xabar", input: "📝 Savol", condition: "🔀 Shart", action: "⚡ Amal", delay: "⏱️ Kutish", ai: "🧠 AI", redirect: "↪️ O'tish", note: "🗒️ Izoh" };
+const SHORT_LABELS = { message: "💬 Xabar", input: "📝 Savol", condition: "🔀 Shart", action: "⚡ Amal", delay: "⏱️ Kutish", ai: "🧠 AI", split: "🎲 A/B", http: "🌐 HTTP", redirect: "↪️ O'tish", note: "🗒️ Izoh" };
 
 function flowSummary(flow) {
   const s = flow.stats || {};
@@ -322,6 +323,8 @@ flowsRouter.get("/flows/:id", requireAuth, async (req, res) => {
     conditionKinds: CONDITION_KINDS,
     actionKinds: ACTION_KINDS,
     inputValidations: INPUT_VALIDATIONS,
+    httpMethods: HTTP_METHODS,
+    sequences: ensureSequences(u).list.map((q) => ({ id: q.id, name: q.name })),
     otherFlows: ensureFlows(u).list.filter((f) => f.id !== flow.id).map((f) => ({ id: f.id, name: f.name })),
     tags: allTags(u).map(([t]) => t).slice(0, 100),
     ai: await aiAvailable(u),
@@ -365,7 +368,7 @@ flowsRouter.get("/flows/:id", requireAuth, async (req, res) => {
         .fb-out.yes .port { background:#34d399 } .fb-out.no .port { background:#f87171 } .fb-out.btn .port { background:#38bdf8 }
         .fb-out.url { padding-right:8px }
         .t-message header { color:#c4b5fd } .t-input header { color:#fbbf24 } .t-condition header { color:#34d399 }
-        .t-action header { color:#f472b6 } .t-delay header { color:#38bdf8 } .t-ai header { color:#a78bfa } .t-redirect header { color:#94a3b8 }
+        .t-action header { color:#f472b6 } .t-delay header { color:#38bdf8 } .t-split header { color:#fb923c } .t-http header { color:#2dd4bf } .t-ai header { color:#a78bfa } .t-redirect header { color:#94a3b8 }
         .t-note { background:#3a3417; border-color:rgba(250,204,21,0.35) } .t-note header { color:#fde68a } .t-note .body { color:#fef3c7; max-height:220px }
         .t-note.c-blue { background:#172a3a; border-color:rgba(56,189,248,.35) } .t-note.c-pink { background:#3a1730; border-color:rgba(244,114,182,.35) } .t-note.c-green { background:#173a25; border-color:rgba(52,211,153,.35) }
         .fb-side { background:#0f1628; border-left:1px solid var(--border); overflow-y:auto; padding:16px }

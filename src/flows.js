@@ -10,6 +10,8 @@
  *   delay     — N daqiqa kutish (navbat orqali, server qayta ishga tushsa ham saqlanadi)
  *   ai        — AI javobi (biznes bilim bazasi asosida)
  *   redirect  — boshqa flow'ga o'tish
+ *   split     — A/B test: mijozlar variantlarga ulush bo'yicha tasodifiy taqsimlanadi
+ *   http      — tashqi API'ga so'rov, javobdan o'zgaruvchilarga yozish (Muvaffaqiyat / Xato)
  *
  * Triggerlar: DM kalit so'z, komment, jonli efir kommenti, story javobi,
  * story mention, yangi kontakt, referal havola (ig.me/m/<user>?ref=...).
@@ -31,6 +33,8 @@ import { startHandoff } from "./engagement.js";
 import { sendTelegram } from "./notify.js";
 import * as game from "./gamification.js";
 import { isFlowAllowed } from "./credits.js";
+import { trackedUrl } from "./links.js";
+import { isSafeUrl } from "./integrations.js";
 
 export const TRIGGER_TYPES = {
   keyword: "✉️ Direct'da kalit so'z",
@@ -59,8 +63,12 @@ export const NODE_TYPES = {
   delay: "⏱️ Kutish",
   ai: "🧠 AI javob",
   redirect: "↪️ Boshqa flow",
+  split: "🎲 A/B test",
+  http: "🌐 HTTP so'rov",
   note: "🗒️ Izoh",
 };
+
+export const HTTP_METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE"];
 
 export const CONDITION_KINDS = {
   tag: "Teg",
@@ -85,6 +93,10 @@ export const ACTION_KINDS = {
   webhook: "Webhook / CRM ga yuborish",
   run_flow: "Boshqa flow'ni ishga tushirish",
   react: "❤️ Xabarga reaksiya",
+  math: "🧮 Hisoblash (o'zgaruvchi)",
+  seq_subscribe: "📅 Ketma-ketlikka qo'shish",
+  seq_unsubscribe: "📅 Ketma-ketlikdan chiqarish",
+  opt_out: "🚫 Ommaviy xabarlardan chiqarish",
 };
 
 export const INPUT_VALIDATIONS = { text: "Matn", name: "Ism", phone: "Telefon", email: "Email", number: "Raqam" };
@@ -192,6 +204,28 @@ function sanitizeNode(n, ids) {
       return { ...base, prompt: str(n.prompt, 1000), next: ref(n.next) };
     case "redirect":
       return { ...base, flowId: str(n.flowId, 60) };
+    case "split": {
+      const variants = (Array.isArray(n.variants) ? n.variants : [])
+        .slice(0, 5)
+        .map((v, i) => ({
+          id: ID_RE.test(v?.id || "") ? v.id : newId("v"),
+          label: str(v?.label, 30).trim() || `Variant ${String.fromCharCode(65 + i)}`,
+          weight: num(v?.weight, 0, 100, 50),
+          next: ref(v?.next),
+        }));
+      return { ...base, variants };
+    }
+    case "http":
+      return {
+        ...base,
+        method: HTTP_METHODS.includes(String(n.method).toUpperCase()) ? String(n.method).toUpperCase() : "GET",
+        url: str(n.url, 1000).trim(),
+        headers: str(n.headers, 1000),
+        body: str(n.body, 4000),
+        map: str(n.map, 1000),
+        next: ref(n.next),
+        fail: ref(n.fail),
+      };
     case "note":
       return { ...base, text: str(n.text, 2000), color: ["yellow", "blue", "pink", "green"].includes(n.color) ? n.color : "yellow" };
     default:
@@ -354,6 +388,12 @@ export async function evaluateCondition(tenant, key, c, ctx = {}) {
       if (c.op === "not_exists") return !val;
       if (c.op === "eq") return normalizeText(val) === normalizeText(c.value);
       if (c.op === "contains") return normalizeText(val).includes(normalizeText(c.value));
+      if (["gt", "gte", "lt", "lte"].includes(c.op)) {
+        const a = toNumber(val);
+        const b = toNumber(renderTemplate(c.value, tenant, key));
+        if (a === null || b === null) return false;
+        return c.op === "gt" ? a > b : c.op === "gte" ? a >= b : c.op === "lt" ? a < b : a <= b;
+      }
       return Boolean(val);
     }
     case "follows": {
@@ -378,6 +418,12 @@ export async function evaluateCondition(tenant, key, c, ctx = {}) {
     default:
       return false;
   }
+}
+
+/** "12 500", "12,5", "12.5 so'm" → 12500 / 12.5; son bo'lmasa null. */
+export function toNumber(v) {
+  const m = String(v ?? "").replace(/\s+/g, "").replace(",", ".").match(/-?\d+(\.\d+)?/);
+  return m ? Number(m[0]) : null;
 }
 
 async function defaultTgMember(tenant, channel, id) {
@@ -460,6 +506,36 @@ async function runActions(tenant, key, flow, node, ctx) {
       case "react":
         await reactToMessage(tenant, key, ctx);
         break;
+      case "math": {
+        // value: "+10", "-5", "*2", "/4", "=100" (o'zgaruvchi bilan: "+{narx}")
+        if (!a.key) break;
+        const field = a.key.toLowerCase();
+        const m = String(value).trim().match(/^([+\-*/=])?\s*(.+)$/);
+        const n = m ? toNumber(m[2]) : null;
+        if (n === null) break;
+        const cur = toNumber(getContactMeta(tenant, key).fields[field]) ?? 0;
+        const op = m[1] || "=";
+        let res = op === "+" ? cur + n : op === "-" ? cur - n : op === "*" ? cur * n : op === "/" ? (n ? cur / n : cur) : n;
+        res = Math.round(res * 100) / 100;
+        setFields(tenant, key, { [field]: String(res) });
+        break;
+      }
+      case "seq_subscribe": {
+        const { subscribe } = await import("./sequences.js");
+        if (a.key) subscribe(tenant, key, a.key);
+        break;
+      }
+      case "seq_unsubscribe": {
+        const { unsubscribe, unsubscribeAll } = await import("./sequences.js");
+        if (!a.key || a.key === "all") unsubscribeAll(tenant, key);
+        else unsubscribe(tenant, key, a.key);
+        break;
+      }
+      case "opt_out": {
+        const { setOptOut } = await import("./optout.js");
+        setOptOut(tenant, key, value !== "in");
+        break;
+      }
       case "webhook":
         fireEvent(
           tenant,
@@ -605,7 +681,9 @@ export async function runFrom(tenant, key, flow, nodeId, ctx = {}, depth = 0) {
     if (node.type === "message") {
       const buttons = node.buttons || [];
       const options = buttons.map((b) =>
-        b.url ? { title: b.title, url: b.url } : { title: b.title, payload: `FLOW:${flow.id}:${b.next || "_end"}` }
+        b.url
+          ? { title: b.title, url: trackedUrl(tenant, renderTemplate(b.url, tenant, key), { key, flowId: flow.id, nodeId: node.id, buttonId: b.id, title: b.title, next: b.next || "" }) }
+          : { title: b.title, payload: `FLOW:${flow.id}:${b.next || "_end"}` }
       );
       let text = renderTemplate(node.text, tenant, key);
       if (node.media) {
@@ -682,6 +760,23 @@ export async function runFrom(tenant, key, flow, nodeId, ctx = {}, depth = 0) {
       continue;
     }
 
+    if (node.type === "split") {
+      const v = pickVariant(node.variants || []);
+      if (v) {
+        const st = ((flow.stats ||= {}).split ||= {});
+        const row = (st[node.id] ||= {});
+        row[v.id] = (row[v.id] || 0) + 1;
+      }
+      current = v?.next || null;
+      continue;
+    }
+
+    if (node.type === "http") {
+      const ok = await runHttpNode(tenant, key, node, ctx);
+      current = ok ? node.next : node.fail;
+      continue;
+    }
+
     if (node.type === "redirect") {
       const target = findFlow(tenant, node.flowId);
       setSession(tenant, key, null);
@@ -699,6 +794,87 @@ export async function runFrom(tenant, key, flow, nodeId, ctx = {}, depth = 0) {
   bumpDaily(tenant, flow, "completed");
   persist(tenant);
   return { status: "completed" };
+}
+
+/** A/B test: ulush (weight) bo'yicha tasodifiy variant. */
+export function pickVariant(variants, rnd = Math.random) {
+  const list = (variants || []).filter((v) => v.weight > 0);
+  const total = list.reduce((s, v) => s + v.weight, 0);
+  if (!total) return null;
+  let r = rnd() * total;
+  for (const v of list) {
+    if ((r -= v.weight) < 0) return v;
+  }
+  return list[list.length - 1];
+}
+
+/** JSON yo'li: "data.items.0.name" */
+export function jsonPath(obj, path) {
+  let cur = obj;
+  for (const part of String(path || "").split(".").map((x) => x.trim()).filter(Boolean)) {
+    if (cur === null || cur === undefined) return undefined;
+    cur = cur[/^\d+$/.test(part) && Array.isArray(cur) ? Number(part) : part];
+  }
+  return cur;
+}
+
+const HTTP_TIMEOUT_MS = 8000;
+const HTTP_MAX_BYTES = 256 * 1024;
+
+/**
+ * Tashqi API'ga so'rov. URL, sarlavha va tanada {o'zgaruvchi}lar ishlatiladi.
+ * Javob JSON bo'lsa "o'zgaruvchi = yo'l" qatorlari bo'yicha kontakt kartasiga yoziladi.
+ * {http_status} har doim saqlanadi. Qaytaradi: true — 2xx javob.
+ */
+export async function runHttpNode(tenant, key, node, ctx = {}) {
+  const url = renderTemplate(node.url, tenant, key, {}, { encode: true });
+  if (!isSafeUrl(url)) {
+    setFields(tenant, key, { http_status: "blocked" });
+    return false;
+  }
+  const headers = { "User-Agent": "Obunext-Flow/1.0" };
+  for (const line of String(node.headers || "").split("\n")) {
+    const i = line.indexOf(":");
+    if (i > 0) {
+      const name = line.slice(0, i).trim();
+      if (/^[\w-]{1,60}$/.test(name) && !/^(host|content-length|connection)$/i.test(name)) headers[name] = renderTemplate(line.slice(i + 1).trim(), tenant, key);
+    }
+  }
+  const method = node.method || "GET";
+  let body;
+  if (method !== "GET" && node.body) {
+    body = renderTemplate(node.body, tenant, key);
+    if (!Object.keys(headers).some((h) => h.toLowerCase() === "content-type")) {
+      headers["Content-Type"] = /^\s*[[{]/.test(body) ? "application/json" : "text/plain";
+    }
+  }
+  const fetchFn = ctx.fetch || fetch;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), HTTP_TIMEOUT_MS);
+  try {
+    const res = await fetchFn(url, { method, headers, body, signal: controller.signal, redirect: "manual" });
+    const raw = (await res.text()).slice(0, HTTP_MAX_BYTES);
+    let data = null;
+    try { data = JSON.parse(raw); } catch { data = null; }
+    const fields = { http_status: String(res.status) };
+    for (const line of String(node.map || "").split("\n")) {
+      const i = line.indexOf("=");
+      if (i <= 0) continue;
+      const name = line.slice(0, i).trim().toLowerCase().replace(/[^a-z0-9_]/g, "_");
+      const path = line.slice(i + 1).trim();
+      if (!name) continue;
+      const v = data !== null ? jsonPath(data, path) : path === "" || path === "." ? raw : undefined;
+      if (v !== undefined && v !== null) fields[name] = typeof v === "object" ? JSON.stringify(v).slice(0, 1000) : String(v).slice(0, 1000);
+    }
+    setFields(tenant, key, fields);
+    return res.status >= 200 && res.status < 300;
+  } catch (err) {
+    console.error(`[Flow HTTP] ${tenant.businessName}: ${method} ${url.slice(0, 80)} — ${err.message}`);
+    setFields(tenant, key, { http_status: err.name === "AbortError" ? "timeout" : "error" });
+    return false;
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 /** Flow'ni boshidan ishga tushiradi (trigger ishlaganda). */
@@ -852,14 +1028,14 @@ export function validateFlow(flow, allFlows = []) {
     if (reach.has(id) || !nodes[id]) continue;
     reach.add(id);
     const n = nodes[id];
-    [n.next, n.yes, n.no, ...(n.buttons || []).map((b) => b.next)].filter(Boolean).forEach((x) => stack.push(x));
+    targetsOf(n).forEach((x) => stack.push(x));
   }
 
   // START noto'g'ri blokka qo'yilgan bo'lsa (unga boshqa bloklardan kirish bor, flow'ning
   // haqiqiy boshi esa boshqa blok) — aniq maslahat va bir tugmali tuzatish
   const incoming = new Set();
   for (const n of Object.values(nodes)) {
-    [n.next, n.yes, n.no, ...(n.buttons || []).map((b) => b.next)].filter((x) => x && x !== n.id).forEach((x) => incoming.add(x));
+    targetsOf(n).filter((x) => x !== n.id).forEach((x) => incoming.add(x));
   }
   if (flow.start && nodes[flow.start] && incoming.has(flow.start)) {
     const roots = ids.filter((id) => id !== flow.start && nodes[id].type !== "note" && !incoming.has(id));
@@ -899,7 +1075,20 @@ export function validateFlow(flow, allFlows = []) {
         if (a.kind === "run_flow" && (!a.key || !flowIds.has(a.key))) errors.push({ nodeId: n.id, msg: `${label(n)}: ishga tushiriladigan flow topilmadi` });
         if ((a.kind === "add_tag" || a.kind === "remove_tag") && !a.value) errors.push({ nodeId: n.id, msg: `${label(n)}: teg yozilmagan` });
         if (a.kind === "set_var" && !a.key) errors.push({ nodeId: n.id, msg: `${label(n)}: o'zgaruvchi nomi yozilmagan` });
+        if (a.kind === "math" && !a.key) errors.push({ nodeId: n.id, msg: `${label(n)}: hisoblash uchun o'zgaruvchi nomi yozilmagan` });
+        if (a.kind === "seq_subscribe" && !a.key) errors.push({ nodeId: n.id, msg: `${label(n)}: ketma-ketlik tanlanmagan` });
       });
+    }
+    if (n.type === "split") {
+      const vs = n.variants || [];
+      if (vs.length < 2) warnings.push({ nodeId: n.id, msg: `${label(n)}: A/B test uchun kamida 2 ta variant kerak` });
+      if (vs.length && !vs.some((v) => v.weight > 0)) errors.push({ nodeId: n.id, msg: `${label(n)}: barcha variantlar ulushi 0%` });
+      vs.forEach((v) => { if (!v.next) warnings.push({ nodeId: n.id, msg: `${label(n)}: "${v.label}" varianti ulanmagan (flow tugaydi)` }); });
+    }
+    if (n.type === "http") {
+      if (!n.url) errors.push({ nodeId: n.id, msg: `${label(n)}: so'rov manzili (URL) yozilmagan` });
+      else if (!/^https?:\/\//i.test(n.url)) errors.push({ nodeId: n.id, msg: `${label(n)}: URL http:// yoki https:// bilan boshlanishi kerak` });
+      if (!n.next && !n.fail) warnings.push({ nodeId: n.id, msg: `${label(n)}: Muvaffaqiyat/Xato chiqishlari ulanmagan` });
     }
     if (n.type === "delay" && !n.next) warnings.push({ nodeId: n.id, msg: `${label(n)}: kutishdan keyin hech narsa yo'q` });
     if (n.type === "redirect" && (!n.flowId || !flowIds.has(n.flowId) || n.flowId === flow.id)) {
@@ -907,6 +1096,11 @@ export function validateFlow(flow, allFlows = []) {
     }
   }
   return { errors, warnings };
+}
+
+/** Blokdan chiqadigan barcha ulanishlar. */
+export function targetsOf(n) {
+  return [n.next, n.yes, n.no, n.fail, ...(n.buttons || []).map((b) => b.next), ...(n.variants || []).map((v) => v.next)].filter(Boolean);
 }
 
 /** Versiyalar tarixi uchun flow'ning tahrirlanadigan qismi. */

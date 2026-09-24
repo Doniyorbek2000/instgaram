@@ -132,11 +132,14 @@ export async function setIceBreakers(tenant, items = []) {
 }
 
 /** Instagram Direct (DM) xabariga oddiy matnli javob yuboradi. */
-export async function sendDirectMessage(tenant, igsid, text) {
+export async function sendDirectMessage(tenant, igsid, text, { humanAgent = false } = {}) {
   const token = igToken(tenant);
   if (!token || !igsid || !text) return null;
 
   const payload = { recipient: { id: igsid }, message: { text: String(text) } };
+  // Operator (inson) javobi: 24 soatdan keyin 7 kungacha Meta HUMAN_AGENT belgisiga ruxsat beradi.
+  // Faqat Inbox'dan qo'lda yozilgan javoblar uchun — avtomatik xabarlarda ishlatilmaydi.
+  if (humanAgent) Object.assign(payload, { messaging_type: "MESSAGE_TAG", tag: "HUMAN_AGENT" });
 
   const res1 = await igGraphPost("me/messages", payload, token);
   if (res1 && !res1.error) return res1;
