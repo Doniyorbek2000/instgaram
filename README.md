@@ -16,7 +16,7 @@ Instagram, Facebook va WhatsApp uchun **veb-platforma ko'rinishidagi AI avtomatl
 | 🗣️ **Suhbat tarixi** | Har mijoz bilan kontekst saqlanadi — tabiiy muloqot |
 | 🔵 **Facebook bilan ulash** | Tadbirkor Instagram'ini bir tugma bilan o'zi ulaydi (OAuth, tokenlar avtomatik) |
 | 👥 **Multi-tenant** | Bitta serverda istalgancha biznes — har birining o'z kanallari va AI bilimi |
-| 💳 **Oylik obuna** | 14 kun bepul sinov, so'ng oylik to'lov; obuna tugasa bot avtomatik to'xtaydi |
+| 💳 **Oylik obuna** | 3 kun bepul sinov, so'ng oylik to'lov (Payme); obuna tugasa bot avtomatik to'xtaydi |
 | 🎤 **Ovozli javob** | WhatsApp'da matn bilan birga ovozli javob (Google TTS, ixtiyoriy) |
 | 📊 **Statistika** | Xabarlar, noyob mijozlar, buyurtma so'rovlari, kanal va kun kesimida |
 | 🧑‍🤝‍🧑 **Mini-CRM** | Oxirgi mijozlar ro'yxati — kim, qaysi kanaldan, nima yozgani |
@@ -60,136 +60,79 @@ Tabiiy javob mijozga qaytariladi
 
 ## Rollar
 
-- **Dasturchi / admin (siz)** — platformani o'rnatadi, AI kalitini bir marta `.env` ga qo'yadi va har bir biznesning Meta tokenlarini admin-panelda kiritadi. Tadbirkorlar texnik narsalarga tegmaydi.
-- **Tadbirkor (mijoz)** — faqat ro'yxatdan o'tadi va o'z biznesini AI'ga o'rgatadi. Token yoki kalit kiritmaydi.
+- **Platforma egasi (admin)** — `adm.obunext.uz` dagi alohida admin panel (telefon + parol, audit jurnali): bizneslar, to'lovlar, tariflar, AI xarajati, tizim holati va zaxira nusxalar.
+- **Tadbirkor (mijoz)** — ro'yxatdan o'tadi, biznesini AI'ga o'rgatadi, Instagram'ini bir tugma bilan ulaydi. Token yoki kalit kiritmaydi.
+- **Jamoa a'zosi** — egasi taklif qilgan xodim (administrator / operator / kuzatuvchi).
 
-## O'rnatish (dasturchi)
+## Tezkor start (dasturchi)
 
-Talablar: Node.js 18+ (media tahlili uchun 18.17+ tavsiya).
-
-> 📋 Qadam-baqadam ishga tushirish: **[SETUP.md](SETUP.md)** — faqat kalitlarni ulaysiz.
+Talablar: Node.js 20.16+, Docker (production).
 
 ```bash
 npm install
 cp .env.example .env
-npm start
+npm run dev          # http://localhost:3015
+npm run check        # lint + 220+ test (~5 soniya)
 ```
 
-Server startda yetishmayotgan sozlamalarni ogohlantiradi. `GET /health` orqali tirikligini tekshirish mumkin.
+- Batafsil sozlash va **Meta Developer panel** ro'yxati: [SETUP.md](SETUP.md)
+- Serverga joylash, zaxira, monitoring: [DEPLOY.md](DEPLOY.md) — `npm run deploy`
+- Meta App Review tayyorgarligi: [APP_REVIEW.md](APP_REVIEW.md)
 
-**Production'ga joylash** (Docker, PM2, HTTPS, backup): **[DEPLOY.md](DEPLOY.md)**. Eng oson yo'l:
+## Obuna va to'lov
 
-```bash
-cp .env.example .env   # to'ldiring
-docker compose up -d --build
-```
+- Yangi biznes **3 kun bepul** sinaydi (`src/trial.js` — sayt matnlari shu qiymat bilan test orqali solishtiriladi).
+- To'lov **Payme** orqali avtomatik (fiskal chek bilan); obuna tugasa bot to'xtaydi, flow/qoidalar bepul tarifda ishlashda davom etadi.
+- Tariflar va narxlar — admin panel → Tariflar (`src/subscription.js` da standart qiymatlar).
 
-`.env` da to'ldiring:
-- `VERIFY_TOKEN`, `APP_SECRET` — Meta webhook uchun
-- `GEMINI_API_KEY` — [aistudio.google.com/apikey](https://aistudio.google.com/apikey) dan olingan **platforma kaliti** (barcha bizneslar uchun bitta; bepul tarif bor)
-- `ADMIN_EMAILS` — admin bo'ladigan email(lar), vergul bilan
+## Xavfsizlik
 
-So'ng shu `ADMIN_EMAILS` dagi email bilan ro'yxatdan o'ting — avtomatik admin bo'lasiz.
+| | |
+|---|---|
+| Webhooklar | `X-Hub-Signature-256` imzosi (secret yo'q bo'lsa — rad etiladi); faqat aniq ID bo'yicha biznesga yo'naltiriladi |
+| Maxfiy ma'lumotlar | Meta/Telegram tokenlari, to'lov kalitlari, SMS/SMTP parollari bazada AES-256-GCM bilan shifrlangan (`DATA_ENCRYPTION_KEY`) |
+| Sessiyalar | Bazada faqat sha256 xeshi; parol — scrypt (asinxron), kamida 8 belgi |
+| Admin panel | Alohida domen (`ADMIN_HOST`), kodda standart parol yo'q, IP bo'yicha brute-force bloki, audit jurnali |
+| CSRF | SameSite cookie + Origin tekshiruvi |
+| SSRF | Foydalanuvchi URL'lari (webhook, Sheets, CRM, flow HTTP bloki) DNS orqali tekshiriladi, redirectlar qadam-baqadam |
+| Meta callback'lari | `/meta/deauthorize`, `/meta/data-deletion` — imzolangan so'rov |
+| Zaxira | Kunlik; serverdan tashqariga (Telegram) faqat shifrlangan nusxa |
 
-Brauzerda `http://localhost:3000`. Production'da domen ulang (webhook uchun HTTPS shart; test uchun `ngrok http 3000`).
+## Ishonchlilik
 
-### Bizneslarni ulash (admin panel)
-
-`/admin` sahifasida barcha ro'yxatdan o'tgan bizneslar ko'rinadi. Har biriga:
-1. Biznesning Facebook sahifasi/Instagram Business akkaunt/WhatsApp ma'lumotini olasiz.
-2. "Sozlash" tugmasi orqali uning tokenlarini kiritasiz:
-   - Page Access Token, Page ID, Instagram Business ID
-   - WhatsApp Token, Phone Number ID
-3. Saqlash bilan o'sha biznes boti ishga tushadi.
-
-Kerak bo'lsa, alohida biznesga o'z Gemini kalitini ham berish mumkin (bo'sh qoldirsangiz platforma kaliti ishlaydi).
-
-## Foydalanish (tadbirkor)
-
-1. **Ro'yxatdan o'ting** — saytda email va parol bilan. Darhol **14 kunlik bepul sinov** boshlanadi.
-2. **AI'ni o'rgating** — panelda biznesingiz haqida yozing: mahsulotlar, narxlar, manzil, ish vaqti, yetkazib berish, to'lovlar, savol-javoblar. Oddiy matn, kod kerak emas.
-3. **Instagram'ni ulang** — dashboarddagi **"🔵 Facebook bilan ulash"** tugmasini bosasiz, Facebook'da ruxsat berasiz, tizim tokenlarni o'zi oladi. (WhatsApp uchun texnik jamoaga murojaat.)
-4. Bo'ldi — mijozlaringizga AI javob bera boshlaydi.
-5. **Obunani to'lang** — sinov tugagach, `/billing` sahifasidan tarifni tanlab to'lang, aks holda bot to'xtaydi.
-
-> "Facebook bilan ulash" tugmasi platformada `FB_APP_ID` sozlangan bo'lsa ko'rinadi. Aks holda tokenlarni admin qo'lda kiritadi.
-
-## Obuna (oylik to'lov)
-
-- Yangi biznes **14 kun bepul** sinaydi.
-- Sinov yoki obuna tugasa bot avtomatik javob berishni to'xtatadi.
-- To'lovni tadbirkor amalga oshiradi (hozircha karta orqali, chekni yuboradi), admin `/admin` panelida tasdiqlab, obunani `+30 kun` yoki `+365 kun` faollashtiradi.
-- Tariflar: **Start** (matn javoblari) va **Pro** (ovoz/rasm/video + TTS + operator rejimi). Narxlar `src/subscription.js` da.
-- Payme/Click avtomatik to'lovi — kelajakda qo'shiladigan joy tayyor.
-
-## Statistika, operator va ovozli javob
-
-- **Statistika**: dashboardda jami xabarlar, noyob mijozlar, buyurtma so'rovlari, oxirgi 7 kun grafigi va kanal kesimi.
-- **Operator chaqirish**: mijoz "operator", "odam bilan gaplashaman" desa, bot 2 soatga jim bo'ladi va murojaat panelda ko'rinadi. Siz Instagram/WhatsApp ilovasidan javob berasiz, so'ng "Hal qilindi" bosasiz.
-- **Ovozli javob (TTS)**: `.env` da `GOOGLE_TTS_API_KEY` sozlansa, tadbirkor dashboardda yoqishi mumkin — WhatsApp'da matn bilan birga ovozli javob ketadi.
-
-## Meta App sozlash (bir marta, server egasi)
-
-1. [developers.facebook.com](https://developers.facebook.com) da App yarating.
-2. Webhooks bo'limida Callback URL: `https://domeningiz/webhook`, Verify Token: `.env` dagi `VERIFY_TOKEN`.
-3. Obunalar: **Instagram** — `messages`, `comments`; **Page** — `messages`, `feed`; **WhatsApp** — `messages`.
-4. Production uchun App Review: `instagram_manage_messages`, `instagram_manage_comments`, `pages_messaging` ruxsatlari.
-
-## Muhim Meta qoidalari
-
-- DM'da bot mijoz yozganidan keyin **24 soat ichida** erkin javob bera oladi.
-- Kommentga shaxsiy javob (Private Reply) komment yozilganidan keyin **7 kun ichida** mumkin.
-
-## Zaxira nusxa va tiklash
-
-- Server har kuni avtomatik zaxira oladi: `backups/obunext-<vaqt>-db.ndjson.gz` (PostgreSQL jadvallari yoki `db.json`) va `backups/obunext-<vaqt>-files.tar.gz` (`data/`: media, suhbat arxivi). Oxirgi `BACKUP_KEEP` (14) ta saqlanadi.
-- `.env`da `TELEGRAM_BOT_TOKEN` va `ADMIN_TELEGRAM_CHAT_ID` bo'lsa, baza nusxasi har kuni Telegram'ga ham yuboriladi (serverdan tashqari nusxa).
-- Admin panel → **Tizim holati**: oxirgi zaxira, "Hozir zaxira olish", fayllarni yuklab olish, oxirgi xatolar.
-- Tiklash (server to'xtatilgan holda): `node scripts/restore.mjs backups/obunext-...-db.ndjson.gz`, fayllar uchun `tar -xzf backups/obunext-...-files.tar.gz -C .`
-
-## Email va ogohlantirishlar
-
-- `SMTP_HOST`, `SMTP_USER`, `SMTP_PASS` (`SMTP_PORT`, `SMTP_FROM`) — parolni tiklash, email tasdiqlash va obuna eslatmalari. SMTP bo'lmasa tiklash havolasi faqat Telegram (ulangan bo'lsa) orqali keladi.
-- `ADMIN_TELEGRAM_CHAT_ID` — kutilmagan server xatolari, baza muammosi va saytdan kelgan murojaatlar shu chatga yuboriladi.
-
-## Test
-
-```bash
-npm test
-```
+- Kiruvchi webhook 200 qaytarishdan oldin bazaga yoziladi — deploy yoki yiqilishda yo'qolmaydi, qayta ishga tushganda davom ettiriladi.
+- PostgreSQL ulanmasa server to'xtaydi (JSON'ga jimgina o'tib ma'lumotni ikkiga bo'lmaydi); Docker qayta urinadi.
+- Fon vazifalari (ommaviy xabar, follow-up, zaxira) Postgres qulfi bilan faqat bitta jarayonda ishlaydi.
+- Deploy: build ishlab turgan sayt yonida, sog'liq tekshiruvi, xato bo'lsa avtomatik rollback.
 
 ## Loyiha tuzilishi
 
 ```
 src/
-  index.js              — Express server: veb-panel + multi-tenant webhook
-  config.js             — .env sozlamalari
-  db.js                 — foydalanuvchilar bazasi (JSON fayl), platforma ID routing
-  auth.js               — ro'yxat/kirish, scrypt parol hash, cookie sessiyalar
-  web/
-    layout.js           — HTML shablon
-    routes.js           — sahifalar: tadbirkor dashboardi + admin panel
-  ai.js                 — multimodal AI (Gemini: matn+ovoz+rasm+video; Claude: matn+rasm)
-  respond.js            — javob orkestratori: obuna → operator → statistika → AI
-  subscription.js       — obuna: trial, tariflar, faollashtirish, gating
-  engagement.js         — statistika + operator chaqirish (handoff)
-  tts.js                — Google TTS bilan ovozli javob (ixtiyoriy)
-  media.js              — IG/WhatsApp mediani yuklab olish (base64)
-  oauth.js              — "Facebook bilan ulash" (OAuth, tokenlarni avtomatik olish)
-  notify.js             — Telegram bildirishnomalari
-  dedup.js              — takroriy webhook xabarlarini filtrlash
-  autoReply.js          — kalit so'z qoidalari (zaxira rejim)
-  graph.js              — Meta Graph API so'rovlari (retry bilan)
-  handlers/             — Instagram, Facebook, WhatsApp hodisalari
-  services/             — javob yuborish (matn + ovoz, har biznes tokeni bilan)
-rules.json              — zaxira javob qoidalari
-business.md             — biznes ma'lumotlari namunasi (panelga ko'chirish uchun)
-data/db.json            — JSON baza (PostgreSQL yo'q bo'lsa; avtomatik yaratiladi, git'ga kirmaydi)
-data/messages/          — JSON rejimida to'liq suhbat arxivi (PostgreSQL'da `messages` jadvali)
+  index.js            — Express server: marshrutlar, webhook navbati, fon vazifalari
+  env.js, paths.js    — .env yuklash (testlarda emas), DATA_DIR
+  config.js           — sozlamalar
+  db.js / pgdb.js     — ma'lumotlar qatlami (PostgreSQL; lokal ishlab chiqishda JSON fayl)
+  secretBox.js        — maxfiy maydonlarni shifrlash
+  auth.js             — ro'yxat/kirish, sessiyalar, parolni tiklash
+  csrf.js, netguard.js, securityHeaders.js — xavfsizlik qatlamlari
+  metaCallbacks.js    — Meta deauthorize / data deletion
+  monitor.js          — xatolar, Telegram ogohlantirish, strukturalangan log, X-Request-Id
+  ai.js               — Gemini (asosiy) + Claude (zaxira)
+  handlers/, services/ — Instagram, Facebook, WhatsApp hodisalari va javob yuborish
+  flows.js, rules.js, broadcasts.js, sequences.js, … — avtomatlashtirish
+  admin/              — platforma admin paneli
+  web/                — biznes kabineti va ommaviy sayt (server tomonda HTML)
+scripts/
+  deploy.js           — deploy (rollback bilan)
+  ssh.js              — server buyruqlari (status, logs, users, …)
+  restore.mjs         — zaxiradan tiklash (shifrlangan nusxani ham ochadi)
+  pg_backup.sh        — server cron'i uchun pg_dump
+test/                 — node:test; har fayl vaqtinchalik papkada, .env o'qilmaydi
 ```
 
-## Kengaytirish g'oyalari
+## Ma'lum cheklovlar va keyingi qadamlar
 
-- IG/Messenger uchun ovozli javob (hozir TTS faqat WhatsApp'da)
-- Buyurtmalarni alohida ro'yxat sifatida boshqarish (CRM)
-- PostgreSQL'ga o'tish (hozir JSON fayl — kichik/o'rta yuk uchun yetarli)
+- **Ma'lumotlar modeli:** har bir biznesning barcha ma'lumoti (kontaktlar, flow sessiyalari, statistika) `users` jadvalidagi JSONB ustunlarda va xotiradagi keshda. Yuzlab faol biznesgacha yetarli; undan keyin kontaktlar/sessiyalarni alohida jadvallarga ajratish va gorizontal kengaytirish kerak bo'ladi.
+- **Katta fayllar:** `web/routes.js`, `web/assets/flow-builder.js`, `web/site.js` (1000+ qator) — bo'limlarga ajratish rejalashtirilgan.
+- **Tiplar:** TypeScript/JSDoc tiplari yo'q; ESLint CI'da ishlaydi.

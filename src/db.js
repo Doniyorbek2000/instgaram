@@ -1,18 +1,11 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync, renameSync } from "node:fs";
-import { fileURLToPath } from "node:url";
 import path from "node:path";
 import crypto from "node:crypto";
 import * as pg from "./pgdb.js";
+import { DATA_DIR as dataDir } from "./paths.js";
+import { TRIAL_DAYS } from "./trial.js";
 
-
-const dataDir = path.join(
-  path.dirname(fileURLToPath(import.meta.url)),
-  "..",
-  "data"
-);
 const dbPath = path.join(dataDir, "db.json");
-
-const TRIAL_DAYS = 3;
 
 let db = { users: [], sessions: {}, platform: { prices: {} }, orders: {}, paymeTx: {} };
 
@@ -184,26 +177,24 @@ export async function updateUser(id, patch) {
 /**
  * Kiruvchi webhookni qaysi foydalanuvchiga tegishli ekanini topadi.
  * kind: "ig" | "page" | "whatsapp", platformId: Meta yuborgan ID
+ *
+ * Faqat ANIQ moslik. ID hech kimga mos kelmasa — null (hodisa tashlab yuboriladi).
+ * "Tokeni bor birinchi biznes"ga yo'naltirish kabi taxminiy fallback BO'LMAYDI:
+ * bu bir biznes mijozining xabarini boshqa biznesga (va uning AI'siga) yuborardi.
  */
 export async function findUserByPlatformId(kind, platformId) {
-  if (pg.isPgReady()) {
-    const u = await pg.findUserByPlatformId(kind, platformId);
-    if (u !== undefined) return u;
-  }
+  if (pg.isPgReady()) return pg.findUserByPlatformId(kind, platformId);
   const id = String(platformId || "");
   if (!id) return null;
-  const users = db.users || [];
-  const found = users.find((u) => {
-    if (kind === "ig") return u.meta?.igUserId === id || u.meta?.pageId === id;
-    if (kind === "page") return u.meta?.pageId === id || u.meta?.igUserId === id;
-    if (kind === "whatsapp") return u.meta?.whatsappPhoneNumberId === id || u.meta?.whatsappPhoneId === id;
-    return false;
-  });
-  if (found) return found;
-  if (kind === "ig") {
-    return users.find((u) => u.meta?.igAccessToken) || null;
-  }
-  return null;
+  return (db.users || []).find((u) => matchesPlatformId(u, kind, id)) || null;
+}
+
+/** Biznes berilgan platforma ID'siga egami? */
+function matchesPlatformId(u, kind, id) {
+  const m = u?.meta || {};
+  if (kind === "ig" || kind === "page") return m.igUserId === id || m.pageId === id;
+  if (kind === "whatsapp") return m.whatsappPhoneNumberId === id || m.whatsappPhoneId === id;
+  return false;
 }
 
 // ==== Sessiyalar ====
@@ -214,9 +205,23 @@ export async function createSession(userId) {
     if (tok) return tok;
   }
   const token = crypto.randomBytes(32).toString("hex");
-  db.sessions[token] = { userId, createdAt: Date.now() };
+  db.sessions[pg.hashSessionToken(token)] = { userId, createdAt: Date.now() };
   save();
   return token;
+}
+
+/** JSON rejimidagi sessiya kaliti: xesh (eski yozuvlar — ochiq token — ham o'qiladi). */
+function sessionKey(token) {
+  if (!token) return null;
+  const hashed = pg.hashSessionToken(token);
+  if (db.sessions[hashed]) return hashed;
+  if (db.sessions[token]) {
+    db.sessions[hashed] = db.sessions[token];
+    delete db.sessions[token];
+    save();
+    return hashed;
+  }
+  return null;
 }
 
 export async function getSessionUser(token) {
@@ -224,10 +229,11 @@ export async function getSessionUser(token) {
     const u = await pg.getSessionUser(token);
     if (u !== undefined) return u;
   }
-  const session = token && db.sessions[token];
+  const key = sessionKey(token);
+  const session = key && db.sessions[key];
   if (!session) return null;
   if (Date.now() - session.createdAt > 30 * 24 * 60 * 60 * 1000) {
-    delete db.sessions[token];
+    delete db.sessions[key];
     save();
     return null;
   }
@@ -236,8 +242,9 @@ export async function getSessionUser(token) {
 
 export async function deleteSession(token) {
   if (pg.isPgReady()) { await pg.deleteSession(token); return; }
-  if (token && db.sessions[token]) {
-    delete db.sessions[token];
+  const key = sessionKey(token);
+  if (key) {
+    delete db.sessions[key];
     save();
   }
 }
@@ -249,8 +256,9 @@ export async function deleteSession(token) {
 export async function deleteUserSessions(userId, exceptToken = null) {
   if (pg.isPgReady()) { await pg.deleteUserSessions(userId, exceptToken); return; }
   let changed = false;
+  const keep = exceptToken ? new Set([exceptToken, pg.hashSessionToken(exceptToken)]) : new Set();
   for (const [token, session] of Object.entries(db.sessions)) {
-    if (session.userId === userId && token !== exceptToken) {
+    if (session.userId === userId && !keep.has(token)) {
       delete db.sessions[token];
       changed = true;
     }

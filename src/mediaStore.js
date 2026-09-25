@@ -11,11 +11,11 @@
 import crypto from "node:crypto";
 import { mkdirSync, writeFileSync, unlinkSync, existsSync, createReadStream, statSync } from "node:fs";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
 import { config } from "./config.js";
 import { persist } from "./db.js";
+import { DATA_DIR } from "./paths.js";
 
-export const uploadsDir = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "data", "uploads");
+export const uploadsDir = path.join(DATA_DIR, "uploads");
 export const MAX_UPLOAD_BYTES = 25 * 1024 * 1024;
 const MAX_LIBRARY = 300;
 

@@ -14,6 +14,7 @@
 import { listUsers, persist, updateUser } from "./db.js";
 import { sendReply, splitKey } from "./outbound.js";
 import { botEnabled } from "./credits.js";
+import { windowStatus } from "./contacts.js";
 
 const MAX_DELAY_MS = 23 * 60 * 60 * 1000;
 const MAX_JOBS_PER_TENANT = 5000;
@@ -78,6 +79,12 @@ export async function runTenantFollowUps(tenant, now = Date.now(), send = sendRe
   if (botEnabled(tenant)) {
     for (const job of due) {
       if (now - job.dueAt > STALE_AFTER_MS) continue;
+      // Meta siyosati: Instagram/Messenger/WhatsApp'da mijoz oxirgi 24 soatda yozmagan
+      // bo'lsa, erkin xabar yuborilmaydi (Telegram'da cheklov yo'q)
+      if (!windowStatus(tenant, job.key, now).open) {
+        console.log(`[FollowUp] ${tenant.businessName}: ${job.key} — 24 soatlik oyna yopiq, ${job.kind} o'tkazib yuborildi`);
+        continue;
+      }
       const { chan, id } = splitKey(job.key);
       try {
         if (job.kind === "flow") {

@@ -2,10 +2,7 @@ import { Router } from "express";
 import crypto from "node:crypto";
 import multer from "multer";
 import mammoth from "mammoth";
-// pdf-parse'ning asosiy index.js fayli import qilinganda debug-rejim kodi ishga
-// tushib, mavjud bo'lmagan test fayl bilan xato beradi (mashhur, hujjatlashtirilgan
-// muammo) — shuning uchun ichki lib fayli to'g'ridan-to'g'ri import qilinadi.
-import pdfParse from "pdf-parse/lib/pdf-parse.js";
+import { pdfToText } from "../pdfText.js";
 import {
   oauthAvailable,
   authUrl,
@@ -18,8 +15,6 @@ import {
   logout,
   parseSid,
   requireAuth,
-  requireAdmin,
-  isAdmin,
   changePassword,
   loginOrRegisterWithGoogle,
   requestPasswordReset,
@@ -28,11 +23,11 @@ import {
   verifyEmailToken,
 } from "../auth.js";
 import { googleAuthAvailable, googleAuthUrl, fetchGoogleProfile } from "../googleAuth.js";
-import { updateUser, listUsers, findUserById, persist, createOrder, setPlanPrices, getPlatformGeminiKey, setPlatformGeminiKey } from "../db.js";
+import { updateUser, listUsers, persist, createOrder, getPlatformGeminiKey } from "../db.js";
 import { config, paymeReady } from "../config.js";
-import { getPlans, PLAN_DEFS, statusInfo, activate, deactivate, creditReferral } from "../subscription.js";
+import { getPlans, statusInfo, creditReferral } from "../subscription.js";
 import { aiStatusLabel, aiSettings } from "../aiControl.js";
-import { aiQuota, getCreditPacks, CREDIT_PACKS, CREDIT_ORDER_PREFIX, platformSettings, savePlatformSettings, addCredits, AI_QUOTA, consumeAi, canUseAi } from "../credits.js";
+import { aiQuota, getCreditPacks, CREDIT_ORDER_PREFIX, platformSettings, AI_QUOTA, consumeAi, canUseAi } from "../credits.js";
 import { creditsFor, recordAiCost } from "../aiCost.js";
 import { paymeCheckoutUrl } from "../payme.js";
 import {
@@ -41,8 +36,7 @@ import {
   resolveHandoff,
   recentLeads,
 } from "../engagement.js";
-import { ttsAvailable } from "../tts.js";
-import { telegramAvailable, sendTelegram } from "../notify.js";
+import { sendTelegram } from "../notify.js";
 import { page, esc } from "./layout.js";
 import { brandIcon } from "./icons.js";
 import { getBusinessDiscovery } from "../services/instagram.js";
@@ -50,6 +44,7 @@ import { authPage } from "./site.js";
 import { pickLang, t } from "./i18n.js";
 import { mailReady } from "../mailer.js";
 import { createRateLimiter } from "../rateLimit.js";
+import { TRIAL_DAYS } from "../trial.js";
 
 const authRateLimiter = createRateLimiter({
   windowMs: 15 * 60 * 1000,
@@ -72,11 +67,6 @@ const cookieOpts =
   "HttpOnly; Path=/; SameSite=Lax; Max-Age=2592000" +
   (config.baseUrl.startsWith("https") ? "; Secure" : "");
 
-// Platformada AI kaliti sozlanganmi? (dasturchi .env orqali kiritadi)
-const platformAiReady = Boolean(
-  process.env.GEMINI_API_KEY || process.env.ANTHROPIC_API_KEY
-);
-
 // ==== Bosh sahifa ====
 
 web.get("/", (req, res) => {
@@ -88,7 +78,7 @@ web.get("/", (req, res) => {
     page(
       "Bosh sahifa",
       `<div class="hero">
-        <span class="eyebrow">🚀 14 kun bepul sinov</span>
+        <span class="eyebrow">🚀 ${TRIAL_DAYS} kun bepul sinov</span>
         <h1>Biznesingizni <span class="gradient-text">AI'ga topshiring</span></h1>
         <p class="lede">Instagram, WhatsApp va Facebook'da mijozlaringizga 24/7 avtomatik javob beruvchi aqlli yordamchi. Siz faqat ro'yxatdan o'tib, biznesingizni o'rgatasiz — qolganini AI bajaradi.</p>
         <p><a href="/register" class="btn">Bepul boshlash →</a> &nbsp; <a href="/login" class="btn secondary">Kirish</a></p>
@@ -225,12 +215,8 @@ web.get("/auth/google/callback", async (req, res) => {
 
 // ==== Tadbirkor boshqaruv paneli — faqat AI o'qitish ====
 
-const badge = (on) =>
-  on ? `<span class="badge on">ulangan</span>` : `<span class="badge off">kutilmoqda</span>`;
-
 web.get("/dashboard", requireAuth, (req, res) => {
   const u = req.user;
-  const admin = isAdmin(u);
   const saved = req.query.saved;
   const channelsReady = Boolean(u.meta.igAccessToken || u.meta.pageAccessToken || u.meta.whatsappToken || u.settings?.telegramBotToken);
   const sub = statusInfo(u);
@@ -805,8 +791,7 @@ web.post("/account/upload-document", requireAuth, (req, res) => {
         const result = await mammoth.extractRawText({ buffer: file.buffer });
         text = result.value || "";
       } else if (ext === "pdf") {
-        const result = await pdfParse(file.buffer);
-        text = result.text || "";
+        text = await pdfToText(file.buffer);
       } else if (["txt", "md", "json", "csv"].includes(ext)) {
         text = file.buffer.toString("utf-8");
       } else {
@@ -1519,8 +1504,8 @@ Biz "Fuqarolar Murojaat Markazi" jamoat tashkilotimiz.
       <form method="post" action="/account/password">
         <label>Joriy parol</label>
         <input name="oldPassword" type="password" required placeholder="••••••••">
-        <label>Yangi parol (kamida 6 belgi)</label>
-        <input name="newPassword" type="password" required minlength="6" placeholder="••••••••">
+        <label>Yangi parol (kamida 8 belgi)</label>
+        <input name="newPassword" type="password" required minlength="8" placeholder="••••••••">
         <button class="secondary" style="margin-top:14px">O'zgartirish</button>
       </form>
     </div>

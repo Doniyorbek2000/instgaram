@@ -44,7 +44,6 @@ export function resolveAudience(tenant, filter = {}, now = Date.now()) {
   const tags = tagList(filter.tags);
   const exclude = tagList(filter.excludeTags);
   const tagMode = filter.tagMode === "all" ? "all" : "any";
-  const only24h = filter.only24h !== false && filter.only24h !== "false";
 
   return allContacts(tenant).filter((key) => {
     const { chan } = splitKey(key);
@@ -62,8 +61,10 @@ export function resolveAudience(tenant, filter = {}, now = Date.now()) {
     // STOP yozgan mijozlarga ommaviy xabar yuborilmaydi
     if (tenant.contactMeta?.[key]?.optOut) return false;
     // Meta (Instagram, Messenger, WhatsApp) erkin xabarni faqat mijoz oxirgi 24 soatda
-    // yozgan bo'lsa qabul qiladi. Telegram'da bunday cheklov yo'q.
-    if (only24h && chan !== "tg" && channel !== "sms" && channel !== "email" && now - lastInboundAt(tenant, key) > WINDOW_MS) return false;
+    // yozgan bo'lsa qabul qiladi — bu Meta siyosati, shuning uchun bu kanallarda filtr
+    // DOIM qo'llanadi (eski "only24h" sozlamasidan qat'i nazar). Telegram, SMS, Email'da cheklov yo'q.
+    const metaChannel = chan !== "tg" && channel !== "sms" && channel !== "email";
+    if (metaChannel && now - lastInboundAt(tenant, key) > WINDOW_MS) return false;
     return true;
   });
 }

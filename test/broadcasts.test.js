@@ -1,11 +1,7 @@
+import "./_setup.js";
 import test from "node:test";
 import assert from "node:assert";
-import { rmSync } from "node:fs";
-import { fileURLToPath } from "node:url";
-import path from "node:path";
 
-const dataDir = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "data");
-rmSync(dataDir, { recursive: true, force: true });
 process.env.GEMINI_API_KEY = "";
 process.env.FREE_MODE = "false";
 
@@ -35,7 +31,8 @@ test("auditoriya: ichki 'comment:' kalitlari kirmaydi, 24 soat oynasi Telegram'g
   const t = await tenantWithContacts("aud@x.uz");
   assert.deepStrictEqual(bc.allContacts(t).sort(), ["ig:1", "ig:2", "tg:3", "wa:4"]);
   assert.deepStrictEqual(bc.resolveAudience(t, {}).sort(), ["ig:1", "tg:3", "wa:4"]);
-  assert.deepStrictEqual(bc.resolveAudience(t, { only24h: false }).sort(), ["ig:1", "ig:2", "tg:3", "wa:4"]);
+  // Meta siyosati: Instagram/WhatsApp'da 24 soatlik oyna o'chirib bo'lmaydi
+  assert.deepStrictEqual(bc.resolveAudience(t, { only24h: false }).sort(), ["ig:1", "tg:3", "wa:4"]);
 });
 
 test("auditoriya: kanal, teglar (istalgani/barchasi) va istisno teg", async () => {

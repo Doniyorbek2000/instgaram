@@ -1,14 +1,12 @@
+import "./_setup.js";
 import test from "node:test";
 import assert from "node:assert";
-import { rmSync, existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { gunzipSync } from "node:zlib";
-import { fileURLToPath } from "node:url";
 import path from "node:path";
 import express from "express";
 
-const root = path.join(path.dirname(fileURLToPath(import.meta.url)), "..");
-rmSync(path.join(root, "data"), { recursive: true, force: true });
-process.env.BACKUP_DIR = path.join(root, "data", "_test_backups");
+process.env.BACKUP_DIR = path.join(process.env.DATA_DIR, "_test_backups");
 delete process.env.TELEGRAM_BOT_TOKEN;
 delete process.env.ADMIN_TELEGRAM_CHAT_ID;
 
@@ -38,7 +36,7 @@ test("parolni tiklash: havola emailga keladi, bir marta ishlaydi, eski sessiyala
   const token = decodeURIComponent(mail.text.match(/token=([^\s]+)/)[1]);
   assert.ok(!JSON.stringify(user.meta).includes(token.split(".")[1]), "token ochiq saqlanmaydi");
   assert.strictEqual((await requestPasswordReset("ops@test.uz", "https://x.uz")).throttled, true, "1 daqiqada bir marta");
-  assert.strictEqual((await resetPasswordWithToken(token, "123")).error.includes("6"), true);
+  assert.strictEqual((await resetPasswordWithToken(token, "123")).error.includes("8"), true);
   const ok = await resetPasswordWithToken(token, "yangiParol9");
   assert.ok(ok.ok && ok.token);
   assert.strictEqual((await resetPasswordWithToken(token, "boshqaParol9")).error, "invalid", "qayta ishlamaydi");

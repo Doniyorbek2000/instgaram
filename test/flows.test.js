@@ -1,11 +1,7 @@
+import "./_setup.js";
 import test from "node:test";
 import assert from "node:assert";
-import { rmSync } from "node:fs";
-import { fileURLToPath } from "node:url";
-import path from "node:path";
 
-const dataDir = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "data");
-rmSync(dataDir, { recursive: true, force: true });
 process.env.GEMINI_API_KEY = "";
 process.env.ANTHROPIC_API_KEY = "";
 process.env.FREE_MODE = "false";
@@ -120,6 +116,7 @@ test("kutish bloki navbatga qo'yiladi va muddati kelganda flow davom etadi", asy
     ],
   });
   const { sent, ctx } = capture();
+  t.chats = { ...(t.chats || {}), "ig:7": [{ role: "user", text: "salom", at: new Date().toISOString() }] };
   const r = await flows.startFlow(t, "ig:7", flow, ctx);
   assert.strictEqual(r.status, "delayed");
   assert.deepStrictEqual(sent.map((m) => m.text), ["Birinchi"]);

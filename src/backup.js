@@ -13,14 +13,13 @@
 import { createWriteStream, existsSync, mkdirSync, readdirSync, statSync, unlinkSync, readFileSync } from "node:fs";
 import { createGzip } from "node:zlib";
 import { execFile } from "node:child_process";
-import { fileURLToPath } from "node:url";
 import path from "node:path";
 import * as pg from "./pgdb.js";
 import { getPlatformSettings, setPlatformSettings } from "./db.js";
+import { ROOT_DIR, DATA_DIR as dataDir } from "./paths.js";
+import { encryptBuffer } from "./secretBox.js";
 
-const root = path.join(path.dirname(fileURLToPath(import.meta.url)), "..");
-export const backupDir = process.env.BACKUP_DIR || path.join(root, "backups");
-const dataDir = path.join(root, "data");
+export const backupDir = process.env.BACKUP_DIR || path.join(ROOT_DIR, "backups");
 const KEEP = Math.max(1, Number(process.env.BACKUP_KEEP) || 14);
 const TG_LIMIT = 48 * 1024 * 1024;
 export const BACKUP_NAME_RE = /^obunext-\d{8}-\d{6}-(db\.ndjson\.gz|files\.tar\.gz)$/;
@@ -68,7 +67,11 @@ async function dumpDatabase(file) {
 function tarData(file) {
   return new Promise((resolve) => {
     if (!existsSync(dataDir)) return resolve(false);
-    execFile("tar", ["-czf", file, "-C", root, "data"], { timeout: 10 * 60 * 1000 }, (err) => {
+    // Zaxira papkasi data/ ichida bo'lsa (testlar), arxiv o'zini o'zi qamrab olmasin
+    const exclude = path.relative(path.dirname(dataDir), backupDir);
+    const args = ["-czf", file, "-C", path.dirname(dataDir)];
+    if (!exclude.startsWith("..")) args.push(`--exclude=${exclude.split(path.sep).join("/")}`);
+    execFile("tar", [...args, path.basename(dataDir)], { timeout: 10 * 60 * 1000 }, (err) => {
       if (err) console.error("[Zaxira] fayllar arxivi:", err.message);
       resolve(!err);
     });
@@ -81,14 +84,18 @@ async function sendToTelegram(file, caption) {
   if (!token || !chatId) return "sozlanmagan";
   const size = statSync(file).size;
   if (size > TG_LIMIT) return `katta (${Math.round(size / 1048576)} MB) — faqat serverda`;
+  // Server tashqarisiga faqat shifrlangan nusxa chiqadi (ichida parol izlari, tokenlar,
+  // mijozlar yozishmalari bor). Kalit yo'q bo'lsa — ochiq nusxani yubormaymiz.
+  const sealed = encryptBuffer(readFileSync(file));
+  if (!sealed) return "o'tkazib yuborildi — DATA_ENCRYPTION_KEY yo'q (ochiq nusxa serverdan chiqarilmaydi)";
   const form = new FormData();
   form.append("chat_id", chatId);
-  form.append("caption", caption);
-  form.append("document", new Blob([readFileSync(file)]), path.basename(file));
+  form.append("caption", `${caption} · shifrlangan (restore.mjs ochadi)`);
+  form.append("document", new Blob([sealed]), `${path.basename(file)}.enc`);
   try {
     const res = await fetch(`https://api.telegram.org/bot${token}/sendDocument`, { method: "POST", body: form, signal: AbortSignal.timeout(120000) });
     const data = await res.json().catch(() => ({}));
-    return data.ok ? "telegram" : `telegram xato: ${data.description || res.status}`;
+    return data.ok ? "telegram (shifrlangan)" : `telegram xato: ${data.description || res.status}`;
   } catch (err) {
     return `telegram xato: ${err.message}`;
   }

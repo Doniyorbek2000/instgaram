@@ -1,4 +1,4 @@
-import { config, graphUrl } from "./config.js";
+import { graphUrl } from "./config.js";
 
 const MAX_MEDIA_BYTES = 15 * 1024 * 1024; // 15 MB — Gemini inline limitiga mos
 

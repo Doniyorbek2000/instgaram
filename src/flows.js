@@ -36,6 +36,7 @@ import * as game from "./gamification.js";
 import { isFlowAllowed } from "./credits.js";
 import { trackedUrl } from "./links.js";
 import { isSafeUrl } from "./integrations.js";
+import { safeFetch } from "./netguard.js";
 
 export const TRIGGER_TYPES = {
   keyword: "✉️ Direct'da kalit so'z",
@@ -903,7 +904,9 @@ export async function runHttpNode(tenant, key, node, ctx = {}) {
       headers["Content-Type"] = /^\s*[[{]/.test(body) ? "application/json" : "text/plain";
     }
   }
-  const fetchFn = ctx.fetch || fetch;
+  // safeFetch: domen DNS orqali tekshiriladi (javob kontakt kartasiga yoziladi — ichki
+  // tarmoq javobini o'qib olishga yo'l qo'yilmasin)
+  const fetchFn = ctx.fetch || safeFetch;
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), HTTP_TIMEOUT_MS);
   try {

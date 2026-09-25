@@ -10,6 +10,7 @@
  * }
  */
 import { persist } from "./db.js";
+import { safeFetch } from "./netguard.js";
 
 export const INTEGRATION_EVENTS = {
   form_submitted: "Forma to'ldirildi (lid)",
@@ -35,7 +36,11 @@ export function ensureIntegrations(tenant) {
   return tenant.integrations;
 }
 
-/** Faqat http(s) va ichki tarmoqqa ishora qilmaydigan URL'larni qabul qiladi (SSRF himoyasi). */
+/**
+ * Formada saqlashdan oldingi tezkor tekshiruv (sinxron, DNS'siz): http(s) va ko'rinib
+ * turgan ichki manzillar rad etiladi. Haqiqiy himoya so'rov paytida — safeFetch
+ * (netguard.js) domenni DNS orqali IP'ga aylantirib, ichki tarmoqqa yo'l qo'ymaydi.
+ */
 export function isSafeUrl(raw) {
   let u;
   try { u = new URL(String(raw || "")); } catch { return false; }
@@ -53,12 +58,12 @@ async function postJson(url, body) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
   try {
-    const res = await fetch(url, {
+    // Apps Script 302 bilan javob beradi — safeFetch redirectni har qadamda tekshirib kuzatadi
+    const res = await safeFetch(url, {
       method: "POST",
       headers: { "Content-Type": "application/json", "User-Agent": "Obunext-Webhook/1.0" },
       body: JSON.stringify(body),
       signal: controller.signal,
-      redirect: "follow", // Apps Script 302 bilan javob beradi
     });
     return { ok: res.ok, status: res.status };
   } catch (err) {

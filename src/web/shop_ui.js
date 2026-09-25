@@ -6,7 +6,7 @@ import { Router } from "express";
 import { requireAuth } from "../auth.js";
 import { page, esc } from "./layout.js";
 import { persist } from "../db.js";
-import { ensureShop, sanitizeProduct, findProduct, findOrder, setOrderStatus, ORDER_STATUSES, formatMoney, paymentLinks } from "../shop.js";
+import { ensureShop, sanitizeProduct, findProduct, findOrder, setOrderStatus, ORDER_STATUSES, formatMoney, paymentLinks, MAX_PRODUCTS } from "../shop.js";
 import { displayName } from "../contacts.js";
 import { config } from "../config.js";
 
@@ -161,7 +161,7 @@ shopRouter.post(["/shop/products", "/shop/products/:id"], requireAuth, (req, res
   const p = sanitizeProduct({ ...req.body, active: req.body?.active === "on" }, existing || {});
   if (!p.name) return res.redirect(`/shop?tab=products&error=${encodeURIComponent("Mahsulot nomini kiriting")}`);
   if (existing) shop.products[shop.products.indexOf(existing)] = p;
-  else if (shop.products.length >= 300) return res.redirect(`/shop?tab=products&error=${encodeURIComponent("Katalogda 300 tagacha mahsulot bo'lishi mumkin")}`);
+  else if (shop.products.length >= MAX_PRODUCTS) return res.redirect(`/shop?tab=products&error=${encodeURIComponent(`Katalogda ${MAX_PRODUCTS} tagacha mahsulot bo'lishi mumkin`)}`);
   else shop.products.unshift(p);
   persist(req.user);
   res.redirect("/shop?tab=products&saved=1");

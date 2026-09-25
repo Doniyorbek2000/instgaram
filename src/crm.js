@@ -18,6 +18,7 @@
 import { persist } from "./db.js";
 import { isSafeUrl, ensureIntegrations } from "./integrations.js";
 import { getContactMeta } from "./contacts.js";
+import { safeFetch } from "./netguard.js";
 
 const TIMEOUT_MS = 8000;
 
@@ -68,7 +69,8 @@ export function saveCrmSettings(tenant, body = {}) {
   return errors;
 }
 
-async function request(url, { method = "POST", token = "", body, fetchFn = fetch } = {}) {
+// safeFetch: Bitrix24 webhook manzilini biznes o'zi kiritadi — ichki tarmoqqa yo'l qo'yilmasin
+async function request(url, { method = "POST", token = "", body, fetchFn = safeFetch } = {}) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
   try {

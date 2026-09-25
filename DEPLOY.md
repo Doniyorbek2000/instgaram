@@ -1,70 +1,124 @@
 # Serverga joylash (production)
 
-## Variant 1 — Docker (tavsiya etiladi)
+Arxitektura: **nginx (HTTPS) → Docker: `bot` (Node 20, root emas) + `postgres:16`**.
+Kod faqat Docker image ichida; `data/` (media, suhbat arxivi) va `backups/` volume sifatida ulanadi.
 
-Talab: server (VPS), Docker + Docker Compose o'rnatilgan, domen.
-
-```bash
-git clone <repo> && cd In-adm
-cp .env.example .env    # to'ldiring (SETUP.md ga qarang)
-docker compose up -d --build
-```
-
-- Server 3000-portda ishlaydi. `data/` papka volume sifatida ulanadi — konteyner o'chsa ham ma'lumotlar saqlanadi.
-- Loglar: `docker compose logs -f`
-- Yangilash: `git pull && docker compose up -d --build`
-- To'xtatish: `docker compose down` (ma'lumotlar `data/` da qoladi)
-
-## Variant 2 — To'g'ridan-to'g'ri (Node + PM2)
+## Kundalik deploy
 
 ```bash
-npm ci --omit=dev
-npm install -g pm2
-pm2 start src/index.js --name ai-bot
-pm2 save && pm2 startup    # server qayta yuklanganda avtomatik ishga tushadi
+npm run deploy                    # testlar → arxiv → build → almashtirish → /health → (xato bo'lsa) rollback
+npm run deploy -- --allow-dirty   # commit qilinmagan o'zgarishlar bilan
 ```
 
-## HTTPS va domen
+Deploy nima qiladi:
 
-Meta webhook uchun HTTPS **shart**. Eng oson yo'l — Nginx + Certbot (Let's Encrypt):
+1. `npm test` o'tishi shart.
+2. Faqat git'dagi fayllar arxivlanadi. `.env`, `data/`, `backups/` **hech qachon** yuborilmaydi — serverdagi `.env` o'zgarmaydi.
+3. Serverda joriy image `instagram-bot:rollback` deb belgilanadi, yangisi alohida papkada build qilinadi (sayt ishlab turadi).
+4. Faqat `bot` konteyneri almashtiriladi (bir necha soniya).
+5. `/health` 90 soniyada `ok` bo'lmasa — avtomatik oldingi image'ga qaytariladi va loglar ko'rsatiladi.
+
+Server bilan ishlash:
+
+```bash
+npm run server status        # konteynerlar, /health, oxirgi loglar
+npm run server logs 300      # bot loglari
+npm run server users         # bizneslar ro'yxati
+npm run server ssl-renew     # certbot sinov yangilanishi
+npm run server "<buyruq>"    # ixtiyoriy buyruq
+```
+
+Lokal `.env` da: `SSH_HOST`, `SSH_USER`, `SSH_KEY_PATH` (tavsiya) yoki `SSH_PASSWORD`.
+
+## Birinchi o'rnatish (yangi server)
+
+```bash
+# Serverda
+apt install -y docker.io docker-compose-v2 nginx certbot python3-certbot-nginx
+mkdir -p /opt/instagram && cd /opt/instagram
+nano .env            # .env.example asosida to'ldiring
+chmod 600 .env
+```
+
+`.env` da production uchun **majburiy**: `APP_SECRET`, `VERIFY_TOKEN`, `BASE_URL`, `ADMIN_HOST`,
+`ADMIN_LOGIN`/`ADMIN_PASSWORD`, `DATA_ENCRYPTION_KEY` (`openssl rand -hex 32` — nusxasini xavfsiz joyda saqlang),
+`PG_USER`/`PG_PASS`/`PG_DB`, `GEMINI_API_KEY`.
+
+Keyin lokal kompyuterdan `npm run deploy`.
+
+### nginx
+
+Har bir domen uchun (`obunext.uz`, `adm.obunext.uz`):
 
 ```nginx
 server {
-  server_name bot.example.uz;
-  location / {
-    proxy_pass http://127.0.0.1:3000;
-    proxy_set_header Host $host;
-    proxy_set_header X-Real-IP $remote_addr;
-  }
+    listen 80;
+    server_name obunext.uz www.obunext.uz;
+    client_max_body_size 25m;
+
+    location / {
+        proxy_pass http://127.0.0.1:3015;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Request-Id $request_id;
+        proxy_read_timeout 120s;
+    }
 }
 ```
 
 ```bash
-sudo certbot --nginx -d bot.example.uz
+ln -s /etc/nginx/sites-available/obunext.uz /etc/nginx/sites-enabled/
+nginx -t && systemctl reload nginx
+certbot --nginx -d obunext.uz -d www.obunext.uz --redirect
+certbot --nginx -d adm.obunext.uz --redirect
 ```
 
-So'ng `.env` da `BASE_URL=https://bot.example.uz` qiling.
+`Host $host` muhim: ilova admin panelni faqat `ADMIN_HOST` domenida ochadi va buni `Host` sarlavhasi bo'yicha tekshiradi.
 
-## Zaxira nusxa (backup)
+## Zaxira nusxa
 
-Ma'lumotlar `data/db.json` da. Kunlik avtomatik zaxira uchun cron:
+Ikki mustaqil qatlam:
+
+| | Nima | Qayerda |
+|---|---|---|
+| Ilova ichida (har kuni) | Postgres jadvallari (ndjson) + `data/` arxivi | `backups/obunext-*`, shifrlangan nusxa Telegram'ga (`ADMIN_TELEGRAM_CHAT_ID`) |
+| Server cron | `pg_dump` | `backups/<db>-YYYY-MM-DD.sql.gz` |
+
+Cron (bir marta):
 
 ```bash
-crontab -e
-# quyidagini qo'shing (har kuni soat 3:00 da):
-0 3 * * * /yo'l/In-adm/scripts/backup.sh >> /var/log/bot-backup.log 2>&1
+30 3 * * * /opt/instagram/scripts/pg_backup.sh >> /var/log/instagram-backup.log 2>&1
 ```
 
-Zaxiralar `backups/` papkada, oxirgi 30 tasi saqlanadi.
+Tiklash (bot to'xtatilgan holda):
+
+```bash
+docker compose stop bot
+docker compose run --rm bot node scripts/restore.mjs backups/obunext-...-db.ndjson.gz
+# Telegram'dagi shifrlangan nusxa ham shu buyruq bilan ochiladi (.enc), .env'da o'sha DATA_ENCRYPTION_KEY bo'lsa
+tar -xzf backups/obunext-...-files.tar.gz -C .
+docker compose up -d bot
+```
 
 ## Monitoring
 
-- `GET /health` → `{"status":"ok"}` — uptime xizmatlariga (UptimeRobot va h.k.) shu manzilni bering.
-- Docker healthcheck avtomatik ishlaydi (`docker ps` da holat ko'rinadi).
+- `GET /health` → `{"status":"ok"}` (Postgres ulanmagan bo'lsa 503) — UptimeRobot va h.k.ga shu manzilni bering.
+- Kutilmagan xatolar, baza muammosi va zaxira xatosi `ADMIN_TELEGRAM_CHAT_ID` ga yuboriladi.
+- `LOG_FORMAT=json` — loglar bir qatorli JSON (Loki/ELK uchun). Har bir so'rovda `X-Request-Id`.
+- Docker loglari aylanadi (20 MB × 5).
 
 ## Xavfsizlik eslatmalari
 
-- `.env` va `data/` ni hech qachon git'ga qo'ymang (`.gitignore` da bor).
-- Server portini (3000) faqat Nginx orqali oching, tashqariga to'g'ridan-to'g'ri chiqarmang.
-- Muntazam yangilab turing: `npm audit` va `git pull`.
-- Ko'p yuk (minglab biznes) bo'lsa — JSON bazadan PostgreSQL'ga o'tishni rejalashtiring.
+- Server portini (3015) faqat `127.0.0.1` da oching — tashqariga faqat nginx.
+- SSH: parol o'rniga kalit, root kirishni cheklang (`PermitRootLogin prohibit-password`).
+- `DATA_ENCRYPTION_KEY` ni yo'qotmang: usiz shifrlangan tokenlarni ochib bo'lmaydi.
+- CI (`.github/workflows/test.yml`): lint, testlar, `npm audit`, Docker build — har push'da.
+
+## Cheklovlar (ma'lum)
+
+- Ilova **bitta nusxada** ishlashga mo'ljallangan: bizneslar xotiradagi keshda turadi. Ikkinchi nusxa
+  ishga tushsa, fon vazifalari Postgres qulfi tufayli ikki marta ishlamaydi, lekin ma'lumotlar keshi
+  sinxron emas — gorizontal kengaytirish uchun ma'lumotlar modelini alohida jadvallarga ajratish kerak.

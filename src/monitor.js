@@ -4,6 +4,9 @@
  * .env: TELEGRAM_BOT_TOKEN + ADMIN_TELEGRAM_CHAT_ID.
  * Bir xil xato 30 daqiqada ko'pi bilan bir marta yuboriladi (spam bo'lmasin).
  */
+import { AsyncLocalStorage } from "node:async_hooks";
+import crypto from "node:crypto";
+
 const THROTTLE_MS = 30 * 60 * 1000;
 const lastSent = new Map(); // kalit -> vaqt
 const recent = []; // admin panel uchun oxirgi xatolar
@@ -43,6 +46,49 @@ export async function alertAdmin(key, text, { fetchFn = fetch } = {}) {
 }
 
 const describe = (err) => (err?.stack || err?.message || String(err)).split("\n").slice(0, 4).join("\n");
+
+/**
+ * LOG_FORMAT=json bo'lsa console.* chiqishi bir qatorli JSON'ga aylanadi
+ * ({ ts, level, msg, reqId? }) — Loki/ELK/Datadog kabi tizimlar to'g'ridan-to'g'ri o'qiydi.
+ * Aks holda (standart) oddiy matn qoladi, faqat vaqt belgisi qo'shiladi.
+ */
+export function installLogger() {
+  if (installLogger.done) return;
+  installLogger.done = true;
+  const json = process.env.LOG_FORMAT === "json";
+  const fmt = (a) => (a instanceof Error ? describe(a) : typeof a === "string" ? a : (() => { try { return JSON.stringify(a); } catch { return String(a); } })());
+  for (const [method, level] of [["log", "info"], ["info", "info"], ["warn", "warn"], ["error", "error"]]) {
+    const orig = console[method].bind(console);
+    console[method] = (...args) => {
+      const ts = new Date().toISOString();
+      if (!json) return orig(ts, ...args);
+      const reqId = requestContext.getStore()?.id;
+      orig(JSON.stringify({ ts, level, msg: args.map(fmt).join(" "), ...(reqId ? { reqId } : {}) }));
+    };
+  }
+}
+
+const requestContext = new AsyncLocalStorage();
+
+/**
+ * Har bir so'rovga ID beradi (X-Request-Id — nginx yuborgan bo'lsa o'shani) va
+ * sekin (>3 s) yoki xato (5xx) so'rovlarni logga yozadi. Loglardagi reqId orqali
+ * bitta so'rovga tegishli barcha yozuvlarni topish mumkin.
+ */
+export function requestLogger(req, res, next) {
+  const incoming = String(req.get("x-request-id") || "");
+  const id = /^[\w-]{8,64}$/.test(incoming) ? incoming : crypto.randomBytes(8).toString("hex");
+  req.id = id;
+  res.setHeader("X-Request-Id", id);
+  const started = process.hrtime.bigint();
+  res.on("finish", () => {
+    const ms = Number(process.hrtime.bigint() - started) / 1e6;
+    if (res.statusCode >= 500 || ms > 3000) {
+      requestContext.run({ id }, () => console.warn(`[HTTP] ${req.method} ${req.path} → ${res.statusCode} (${Math.round(ms)} ms)`));
+    }
+  });
+  requestContext.run({ id }, next);
+}
 
 /** Jarayon darajasidagi xatolarni ushlaydi (index.js da bir marta). */
 export function installProcessHandlers() {

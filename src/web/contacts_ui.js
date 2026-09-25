@@ -16,7 +16,6 @@ import { getContactMeta, addTags, removeTag, setFields, displayName, allTags, wi
 import { ensureFlows, startFlow, activeFlowSession, findFlow } from "../flows.js";
 import { splitKey } from "../outbound.js";
 import * as game from "../gamification.js";
-import { aiAllowed } from "../aiControl.js";
 import { deleteHistory } from "../chatStore.js";
 
 export const contactsRouter = Router();

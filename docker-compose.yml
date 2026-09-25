@@ -1,6 +1,7 @@
 services:
   bot:
     build: .
+    image: instagram-bot:latest
     restart: unless-stopped
     # Deploy paytida jarayondagi xabarlar tugatilishi uchun (src/index.js shutdown)
     stop_grace_period: 25s
@@ -10,13 +11,20 @@ services:
       - .env
     environment:
       PG_HOST: postgres
+      PORT: 3015
+    # Kod faqat image ichida (deploy build qiladi) — src/ papkasi ulanmaydi,
+    # aks holda ishlayotgan kod image'dagidan farq qilib qolardi.
     volumes:
       - ./data:/app/data
       - ./backups:/app/backups
-      - ./src:/app/src
     depends_on:
       postgres:
         condition: service_healthy
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "5"
 
   postgres:
     image: postgres:16-alpine
@@ -32,6 +40,11 @@ services:
       interval: 5s
       timeout: 5s
       retries: 10
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "3"
 
 volumes:
   pgdata:

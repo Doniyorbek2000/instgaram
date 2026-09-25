@@ -2,15 +2,14 @@
 // Ko'rilgan ID'lar xotirada tekshiriladi (tez, sinxron) va bazaga ham yoziladi —
 // server qayta ishga tushsa ham takroriy javob yuborilmaydi.
 import { existsSync, mkdirSync, readFileSync, writeFileSync, renameSync } from "node:fs";
-import { fileURLToPath } from "node:url";
 import path from "node:path";
 import * as pg from "./pgdb.js";
+import { DATA_DIR as dataDir } from "./paths.js";
 
 const seen = new Map(); // id -> vaqt (ms)
 const TTL_MS = 24 * 60 * 60 * 1000;
 const MAX = 50000;
 
-const dataDir = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "data");
 const filePath = path.join(dataDir, "seen-events.json");
 
 function prune(now = Date.now()) {

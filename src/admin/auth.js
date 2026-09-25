@@ -4,22 +4,16 @@
  *  - Login: telefon raqami (faqat raqamlar solishtiriladi) + parol
  *  - Parol hech qayerda ochiq saqlanmaydi: scrypt(parol, salt) izi.
  *    Ustuvorlik: paneldagi "Xavfsizlik"da o'zgartirilgan parol (platforma sozlamasi)
- *    → .env (ADMIN_LOGIN / ADMIN_PASSWORD) → dastlabki (quyidagi iz).
+ *    → .env (ADMIN_LOGIN / ADMIN_PASSWORD). Kodda standart parol YO'Q: ikkalasi ham
+ *    bo'lmasa admin panelga kirib bo'lmaydi (server ishga tushishda ogohlantiradi).
  *  - Sessiya: HMAC imzoli cookie ("adm"), 12 soat; parol o'zgarsa barcha sessiyalar bekor
- *  - Brute-force himoyasi: IP bo'yicha 5 ta xato → 15 daqiqa blok
+ *  - Brute-force himoyasi: IP bo'yicha 5 ta xato → 15 daqiqa blok. IP — req.ip (Express
+ *    "trust proxy" orqali nginx qo'shgan haqiqiy manzil), mijoz yuborgan X-Forwarded-For emas.
  *  - Audit jurnali: har bir admin amali (kim, qachon, IP, nima)
  */
 import crypto from "node:crypto";
+import { promisify } from "node:util";
 import { getPlatformSettings, setPlatformSettings } from "../db.js";
-
-// Dastlabki admin: +998 94 939 22 50. Parolning faqat scrypt izi (ochiq matn emas).
-// Birinchi kirishdan keyin "Xavfsizlik" bo'limida parolni almashtirish tavsiya etiladi.
-const DEFAULT_ADMIN = {
-  login: "998949392250",
-  salt: "0f5f7b2d01041c91eb80c6940c630ede",
-  hash: "5b09e888aa638fb809a023b2125040b15025894167c14456685072e2877a23394bb411a16737637762e096963737650e9ce35e728cb34fd534eb11dd484adcf4",
-  version: "default",
-};
 
 const SESSION_MS = 12 * 60 * 60 * 1000;
 const MAX_FAILS = 5;
@@ -28,18 +22,34 @@ const MAX_AUDIT = 500;
 const COOKIE = "adm";
 
 export const normalizeLogin = (v) => String(v || "").replace(/\D/g, "");
-const scrypt = (password, salt) => crypto.scryptSync(String(password ?? ""), salt, 64).toString("hex");
+const scryptAsync = promisify(crypto.scrypt);
+const scrypt = async (password, salt) => (await scryptAsync(String(password ?? ""), salt, 64)).toString("hex");
 
+// .env'dagi parol izi bir marta hisoblanadi (scrypt qimmat)
+let envCache = null;
+
+/** Joriy admin hisobi yoki null (hech narsa sozlanmagan). */
 async function credentials() {
   const s = (await getPlatformSettings()) || {};
   if (s.adminAuth?.hash && s.adminAuth?.salt && s.adminAuth?.login) return s.adminAuth;
   if (process.env.ADMIN_LOGIN && process.env.ADMIN_PASSWORD) {
-    const salt = crypto.createHash("sha256").update(`env:${process.env.ADMIN_LOGIN}`).digest("hex").slice(0, 32);
-    const hash = scrypt(process.env.ADMIN_PASSWORD, salt);
-    return { login: normalizeLogin(process.env.ADMIN_LOGIN), salt, hash, version: `env-${hash.slice(0, 10)}` };
+    const id = `${process.env.ADMIN_LOGIN}\n${process.env.ADMIN_PASSWORD}`;
+    if (envCache?.id !== id) {
+      const salt = crypto.createHash("sha256").update(`env:${process.env.ADMIN_LOGIN}`).digest("hex").slice(0, 32);
+      const hash = await scrypt(process.env.ADMIN_PASSWORD, salt);
+      envCache = { id, creds: { login: normalizeLogin(process.env.ADMIN_LOGIN), salt, hash, version: `env-${hash.slice(0, 10)}` } };
+    }
+    return envCache.creds;
   }
-  return DEFAULT_ADMIN;
+  return null;
 }
+
+/** Admin hisobi sozlanganmi? (index.js startda tekshiradi) */
+export async function adminConfigured() {
+  return Boolean(await credentials());
+}
+
+const NOT_CONFIGURED = "Admin hisobi sozlanmagan: serverdagi .env fayliga ADMIN_LOGIN va ADMIN_PASSWORD kiriting.";
 
 async function secret() {
   const s = (await getPlatformSettings()) || {};
@@ -85,8 +95,9 @@ export async function verifyAdmin(login, password, ip = "") {
   const locked = lockInfo(ip);
   if (locked) return { error: `Juda ko'p noto'g'ri urinish. ${locked} daqiqadan so'ng qayta urinib ko'ring.` };
   const c = await credentials();
+  if (!c) return { error: NOT_CONFIGURED };
   const okLogin = safeEqual(normalizeLogin(login), c.login);
-  const okPass = safeEqual(scrypt(password, c.salt), c.hash); // login noto'g'ri bo'lsa ham hisoblanadi (vaqt bo'yicha farq bo'lmasin)
+  const okPass = safeEqual(await scrypt(password, c.salt), c.hash); // login noto'g'ri bo'lsa ham hisoblanadi (vaqt bo'yicha farq bo'lmasin)
   if (okLogin && okPass) {
     if (fails.delete(ip)) await saveFails();
     return { ok: true, version: c.version };
@@ -104,6 +115,7 @@ export async function verifyAdmin(login, password, ip = "") {
 // ---------- sessiya ----------
 export async function issueSession() {
   const c = await credentials();
+  if (!c) throw new Error(NOT_CONFIGURED);
   const exp = Date.now() + SESSION_MS;
   const nonce = crypto.randomBytes(8).toString("hex");
   const body = `${exp}.${nonce}.${c.version}`;
@@ -117,7 +129,7 @@ export async function checkSession(token) {
   const [exp, nonce, version, sig] = parts;
   if (!/^\d+$/.test(exp) || Number(exp) < Date.now()) return false;
   const c = await credentials();
-  if (version !== String(c.version)) return false; // parol o'zgargan — eski sessiyalar bekor
+  if (!c || version !== String(c.version)) return false; // parol o'zgargan — eski sessiyalar bekor
   const expected = crypto.createHmac("sha256", await secret()).update(`${exp}.${nonce}.${version}`).digest("hex");
   return safeEqual(sig, expected);
 }
@@ -138,22 +150,19 @@ export function sessionCookie(req, value, maxAgeSec = SESSION_MS / 1000) {
 /** Parolni almashtiradi (joriy parol tekshiriladi). Barcha sessiyalar bekor bo'ladi. */
 export async function changeAdminPassword(current, next, newLogin = "") {
   const c = await credentials();
-  if (!safeEqual(scrypt(current, c.salt), c.hash)) return { error: "Joriy parol noto'g'ri" };
+  if (!c) return { error: NOT_CONFIGURED };
+  if (!safeEqual(await scrypt(current, c.salt), c.hash)) return { error: "Joriy parol noto'g'ri" };
   const pw = String(next || "");
   if (pw.length < 10 || !/\d/.test(pw) || !/[a-zA-Z]/.test(pw)) return { error: "Yangi parol kamida 10 belgi, harf va raqamdan iborat bo'lsin" };
   const login = normalizeLogin(newLogin) || c.login;
   if (login.length < 9) return { error: "Login (telefon raqami) noto'g'ri" };
   const salt = crypto.randomBytes(16).toString("hex");
-  await setPlatformSettings({ adminAuth: { login, salt, hash: scrypt(pw, salt), version: crypto.randomBytes(6).toString("hex"), updatedAt: new Date().toISOString() } });
+  await setPlatformSettings({ adminAuth: { login, salt, hash: await scrypt(pw, salt), version: crypto.randomBytes(6).toString("hex"), updatedAt: new Date().toISOString() } });
   return { ok: true };
 }
 
-export async function usingDefaultPassword() {
-  return (await credentials()).version === "default";
-}
-
 export async function adminLogin() {
-  return (await credentials()).login;
+  return (await credentials())?.login || "";
 }
 
 // ---------- audit ----------
@@ -169,8 +178,13 @@ export async function auditLog() {
   return Array.isArray(s.adminAudit) ? s.adminAudit : [];
 }
 
+/**
+ * Mijozning haqiqiy IP manzili. X-Forwarded-For'ning chap qiymatini mijozning o'zi
+ * yozadi (soxtalash mumkin) — shuning uchun faqat Express'ning req.ip'i ishlatiladi:
+ * u "trust proxy" sozlamasiga ko'ra nginx qo'shgan ishonchli qiymatni oladi.
+ */
 export function clientIp(req) {
-  return String(req.get?.("x-forwarded-for") || "").split(",")[0].trim() || req.socket?.remoteAddress || "";
+  return req.ip || req.socket?.remoteAddress || "";
 }
 
 /** Middleware: admin sessiyasi bo'lmasa login sahifasiga. POST'larda Origin tekshiriladi (CSRF). */

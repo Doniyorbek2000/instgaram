@@ -1,12 +1,9 @@
+import "./_setup.js";
 import test from "node:test";
 import assert from "node:assert";
-import { rmSync, readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
-import path from "node:path";
+import { readFileSync } from "node:fs";
 import express from "express";
 
-const dataDir = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "data");
-rmSync(dataDir, { recursive: true, force: true });
 process.env.GEMINI_API_KEY = "";
 
 const { register } = await import("../src/auth.js");

@@ -17,12 +17,17 @@ export const oauthAvailable = Boolean(
 
 export const redirectUri = `${config.baseUrl}/connect/instagram/callback`;
 
-// Instagram Login ruxsatlari (eski instagram_basic/pages_* lar bekor qilingan)
+// Instagram Login ruxsatlari (eski instagram_basic/pages_* lar bekor qilingan).
+// Post rejalashtirish (media_publish) va statistika (insights) uchun qo'shimcha ruxsatlar
+// kerak: instagram_business_content_publish, instagram_business_manage_insights. Ular
+// App Review'dan o'tgach .env → IG_EXTRA_SCOPES orqali yoqiladi (tasdiqlanmagan ruxsatni
+// so'rash oddiy foydalanuvchilarda ulanishni buzishi mumkin).
 const SCOPES = [
   "instagram_business_basic",
   "instagram_business_manage_messages",
   "instagram_business_manage_comments",
-].join(",");
+  ...String(process.env.IG_EXTRA_SCOPES || "").split(",").map((s) => s.trim()).filter((s) => /^instagram_business_[a-z_]+$/.test(s)),
+].filter((s, i, a) => a.indexOf(s) === i).join(",");
 
 // Webhookda kerak bo'ladigan maydonlar
 const SUBSCRIBE_FIELDS = "messages,comments,live_comments,messaging_postbacks";

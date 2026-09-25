@@ -1,81 +1,91 @@
 # Ishga tushirish qo'llanmasi (dasturchi uchun)
 
-Loyiha to'liq tayyor. Faqat quyidagi kalitlarni ulasangiz, tizim to'liq ishlaydi.
+## 1. Lokal ishga tushirish
 
-## 1. O'rnatish
+Talab: Node.js 20.16+.
 
 ```bash
 npm install
-cp .env.example .env
+cp .env.example .env     # kerakli qiymatlarni to'ldiring
+npm run dev              # http://localhost:3015
+npm run check            # lint + testlar
 ```
 
-## 2. `.env` ni to'ldirish
+`PG_*` bo'sh bo'lsa ma'lumotlar `data/db.json` fayliga yoziladi (lokal ishlab chiqish uchun qulay).
+Testlar `.env` ni o'qimaydi va `data/` ga tegmaydi — har fayl vaqtinchalik papkada ishlaydi.
+
+## 2. `.env` — asosiylari
 
 | O'zgaruvchi | Nima | Qayerdan |
 |---|---|---|
-| `VERIFY_TOKEN` | O'zingiz o'ylab topgan maxfiy so'z | ixtiyoriy matn |
-| `APP_SECRET` | Webhook imzosini tekshirish | Meta App → Settings → Basic → App Secret |
-| `ADMIN_EMAILS` | Admin bo'ladigan email(lar) | o'z emailingiz |
-| `GEMINI_API_KEY` | Platforma AI kaliti (barcha bizneslar uchun) | https://aistudio.google.com/apikey (bepul) |
-| `FB_APP_ID` | "Facebook bilan ulash" uchun (ixtiyoriy) | Meta App → Settings → Basic → App ID |
-| `BASE_URL` | Serverning tashqi manzili (OAuth uchun) | masalan `https://bot.example.uz` |
-| `GOOGLE_TTS_API_KEY` | Ovozli javob (ixtiyoriy) | Google Cloud Console → TTS API |
+| `APP_SECRET` | Webhook imzosi (majburiy) | Meta App → Settings → Basic → App Secret |
+| `VERIFY_TOKEN` | Webhook tasdiqlash so'zi | o'zingiz o'ylab topasiz |
+| `IG_APP_ID`, `IG_APP_SECRET` | "Instagram bilan ulash" | Meta App → Instagram → API setup with Instagram login |
+| `BASE_URL` | Tashqi manzil | `https://obunext.uz` |
+| `ADMIN_HOST` | Admin panel domeni | `adm.obunext.uz` |
+| `ADMIN_LOGIN`, `ADMIN_PASSWORD` | Admin panelga birinchi kirish | o'zingiz |
+| `DATA_ENCRYPTION_KEY` | Tokenlarni shifrlash | `openssl rand -hex 32` |
+| `GEMINI_API_KEY` | Asosiy AI | https://aistudio.google.com/apikey |
+| `ANTHROPIC_API_KEY` | Zaxira AI (ixtiyoriy) | https://platform.claude.com |
 
-## 3. Ishga tushirish
+To'liq ro'yxat va izohlar — `.env.example`.
 
-```bash
-npm start
-```
+## 3. Meta Developer panel (developers.facebook.com → App 993539666776696)
 
-Server startda yetishmayotgan sozlamalarni ogohlantiradi. `http://localhost:3000` — admin panel.
+### App settings → Basic
+- **App domains:** `obunext.uz`
+- **Privacy Policy URL:** `https://obunext.uz/privacy-policy`
+- **Terms of Service URL:** `https://obunext.uz/terms`
+- **User data deletion → Data deletion instructions URL:** `https://obunext.uz/data-deletion`
+- **App icon** (1024×1024 — repodagi `app-icon-1024.png`), **Category**, **Contact email**
+- **App Secret** → serverdagi `.env` → `APP_SECRET` bilan bir xil bo'lsin
 
-`ADMIN_EMAILS` dagi email bilan ro'yxatdan o'ting — avtomatik admin bo'lasiz.
+### Use cases → Instagram → API setup with Instagram login
+- **Webhooks → Callback URL:** `https://obunext.uz/webhook`, **Verify token:** `.env` → `VERIFY_TOKEN` → *Verify and save*
+- **Webhook fields** (Subscribe): `messages`, `comments`, `live_comments`, `messaging_postbacks`
+  (story javoblari va mention'lar `messages` orqali keladi)
+- **Business login settings → OAuth redirect URIs:** `https://obunext.uz/connect/instagram/callback`
+- **Deauthorize callback URL:** `https://obunext.uz/meta/deauthorize`
+- **Data deletion request URL:** `https://obunext.uz/meta/data-deletion`
+  (imzolangan so'rov qabul qilinadi, ulanish uziladi, IG suhbatlari o'chiriladi, Meta'ga tasdiq kodi qaytadi)
 
-## 4. Meta App va webhook (bir marta)
+### Messenger (Facebook sahifa) — ishlatilsa
+- Webhook: `https://obunext.uz/webhook`, fields: `messages`, `messaging_postbacks`, `feed`
 
-1. https://developers.facebook.com da App yarating.
-2. Serverni internetga chiqaring (production: domen + HTTPS; test: `ngrok http 3000`).
-3. Meta App → Webhooks:
-   - **Callback URL**: `https://sizning-domen/webhook`
-   - **Verify Token**: `.env` dagi `VERIFY_TOKEN`
-4. Obunalar:
-   - **Instagram**: `messages`, `comments`
-   - **Page**: `messages`, `feed`
-   - **WhatsApp**: `messages`
-5. Instagram Business akkauntni Facebook sahifaga ulang.
+### WhatsApp — ishlatilsa
+- Configuration → Webhook: `https://obunext.uz/webhook`, field: `messages`
 
-## 5. Instagram'ni ulash — 2 usul
+### App Review → Permissions and features
+| Ruxsat | Kerak | Holat |
+|---|---|---|
+| `instagram_business_basic` | ulash | Advanced access so'raladi |
+| `instagram_business_manage_messages` | Direct javoblar | Advanced access so'raladi |
+| `instagram_business_manage_comments` | kommentlarga javob | Advanced access so'raladi |
+| `instagram_business_content_publish` | post rejalashtirish | tasdiqlangach `.env` → `IG_EXTRA_SCOPES` |
+| `instagram_business_manage_insights` | statistika bo'limi | tasdiqlangach `.env` → `IG_EXTRA_SCOPES` |
 
-### Usul A — "Facebook bilan ulash" (tavsiya etiladi, self-service)
+Tushuntirish matnlari, screencast rejasi va test ko'rsatmalari — [APP_REVIEW.md](APP_REVIEW.md).
 
-`FB_APP_ID` va `BASE_URL` sozlangan bo'lsa, tadbirkor **o'zi** ulaydi:
-1. Meta App → **Facebook Login** mahsulotini qo'shing.
-2. **Valid OAuth Redirect URIs** ga qo'shing: `<BASE_URL>/connect/facebook/callback`
-3. Tadbirkor dashboardda **"🔵 Facebook bilan ulash"** tugmasini bosadi → Facebook'da ruxsat beradi → tizim sahifa va Instagram tokenlarini **avtomatik oladi** va sahifani webhooklarga ulaydi.
+### Business verification
+Business Settings → Security Center → Start verification (kompaniya hujjatlari). App Review uchun talab qilinadi.
 
-Sizga qo'lda hech narsa kiritish kerak emas. Tadbirkorda bir nechta sahifa bo'lsa, qaysi birini ulashni o'zi tanlaydi.
+### App roles
+App Review tugaguncha faqat **Instagram Tester** roli berilgan akkauntlar ulana oladi:
+App roles → Roles → Add People → Instagram Tester.
 
-### Usul B — Admin qo'lda kiritadi (OAuth sozlanmagan bo'lsa)
+## 4. Google (ixtiyoriy — "Google bilan kirish")
 
-`/admin` panelda har bir biznes uchun:
-1. **Page Access Token**, **Page ID**, **Instagram Business ID** (IG + FB uchun).
-2. **WhatsApp Token** va **Phone Number ID** (WhatsApp uchun — hozircha faqat shu usul).
+Google Cloud Console → Credentials → OAuth Client ID (Web):
+**Authorized redirect URI:** `https://obunext.uz/auth/google/callback`
 
-### Obuna
+## 5. Tekshirish
 
-To'lov kelgach `/admin` da obunani `+30 kun` yoki `+365 kun` faollashtirasiz.
-Bo'ldi — o'sha biznesning boti ishlay boshlaydi.
+- `GET /health` → `{"status":"ok"}`
+- Meta panelda *Verify and save* → ✅
+- Test xabar yuboring — `npm run server logs` da `[Webhook] instagram | id: ...` ko'rinadi.
+  `Hodisa uchun biznes topilmadi` chiqsa — biznesning Instagram ID'si panelda to'g'ri ulanmagan.
 
-## Tekshirish
+## Meta qoidalari
 
-- `GET /health` → `{"status":"ok"}` — server tirik.
-- Meta panelda webhook "Verify and Save" bosilganda ✅ chiqishi kerak.
-- Test xabar yuboring — server logida `[IG Direct] ...` ko'rinadi.
-
-## Muhim eslatmalar
-
-- Meta qoidasi: DM'da bot mijoz yozganidan keyin **24 soat** ichida erkin javob beradi.
+- DM'da bot mijoz yozganidan keyin **24 soat** ichida erkin javob beradi.
 - Kommentga shaxsiy javob **7 kun** ichida mumkin.
-- Production uchun Meta App Review kerak: `instagram_manage_messages`,
-  `instagram_manage_comments`, `pages_messaging`.
-- Ma'lumotlar `data/db.json` da (git'ga kirmaydi) — muntazam zaxira nusxa oling.

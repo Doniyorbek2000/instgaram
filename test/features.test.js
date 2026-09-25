@@ -1,11 +1,6 @@
+import "./_setup.js";
 import test from "node:test";
 import assert from "node:assert";
-import { rmSync } from "node:fs";
-import { fileURLToPath } from "node:url";
-import path from "node:path";
-
-const dataDir = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "data");
-rmSync(dataDir, { recursive: true, force: true });
 
 process.env.IG_APP_ID = "";
 process.env.IG_APP_SECRET = "";
@@ -186,5 +181,4 @@ test("5 marta xato parol kiritilsa akkaunt vaqtincha bloklanadi", async () => {
   const res = await login("lock@x.uz", "parol123");
   assert.match(res.error, /urinish/);
 });
-
 

@@ -10,11 +10,12 @@ import { adminPage, barChart, money, fmtDate } from "./layout.js";
 import { businessSummary, platformStats, statusPill } from "./stats.js";
 import {
   verifyAdmin, issueSession, readCookie, checkSession, sessionCookie, requireAdminSession,
-  audit, auditLog, clientIp, changeAdminPassword, usingDefaultPassword, adminLogin,
+  audit, auditLog, clientIp, changeAdminPassword, adminLogin,
 } from "./auth.js";
+import { hashPassword } from "../auth.js";
 import {
   listUsers, findUserById, updateUser, dbStatus, persist, listOrders, findOrder, updateOrder, deleteUser,
-  createSession, deleteUserSessions, getPlanPrices, setPlanPrices, getPlatformGeminiKey, setPlatformGeminiKey, listPaymeTx,
+  createSession, deleteUserSessions, setPlanPrices, getPlatformGeminiKey, setPlatformGeminiKey, listPaymeTx,
 } from "../db.js";
 import { getPlans, PLAN_DEFS, activate, deactivate } from "../subscription.js";
 import { addCredits, CREDIT_PACKS, CREDIT_ORDER_PREFIX, getCreditPacks, platformSettings, savePlatformSettings, AI_QUOTA } from "../credits.js";
@@ -35,7 +36,6 @@ import { siteSettings, saveSiteSettings, contactMessages, updateContactMessages 
 export const adminRouter = Router();
 
 const CHAN = { ig: "IG", fb: "FB", wa: "WA", tg: "TG" };
-const back = (req, fallback) => (typeof req.body?.back === "string" && /^\/admin(\/|\?|$)/.test(req.body.back) ? req.body.back : fallback);
 const flashOf = (req) => (req.query.ok ? [String(req.query.ok), "ok"] : req.query.err ? [String(req.query.err), "bad"] : ["", "ok"]);
 const go = (res, url, key, msg) => res.redirect(`${url}${url.includes("?") ? "&" : "?"}${key}=${encodeURIComponent(msg)}`);
 
@@ -97,13 +97,6 @@ adminRouter.post("/admin/logout", async (req, res) => {
 
 // Qolgan barcha /admin sahifalari — faqat admin sessiyasi bilan
 adminRouter.use("/admin", requireAdminSession);
-
-// Dastlabki (repodagi) parol bilan ishlash mumkin emas — avval parolni almashtirish shart
-adminRouter.use("/admin", async (req, res, next) => {
-  if (req.path === "/security" || req.path === "/logout" || !(await usingDefaultPassword())) return next();
-  if (req.method !== "GET") return res.status(403).send("Avval dastlabki admin parolini almashtiring");
-  go(res, "/admin/security", "err", "Davom etish uchun dastlabki parolni almashtiring");
-});
 
 // ================= Boshqaruv (dashboard) =================
 
@@ -427,7 +420,7 @@ adminRouter.post("/admin/businesses/:id/impersonate", withBusiness(async (req, r
 adminRouter.post("/admin/businesses/:id/reset-password", withBusiness(async (req, res, u, url) => {
   const tmp = crypto.randomBytes(6).toString("base64url");
   const salt = crypto.randomBytes(16).toString("hex");
-  const passwordHash = crypto.scryptSync(tmp, salt, 64).toString("hex");
+  const passwordHash = await hashPassword(tmp, salt);
   await updateUser(u.id, { salt, passwordHash });
   Object.assign(u, { salt, passwordHash });
   await deleteUserSessions(u.id);
@@ -814,9 +807,7 @@ adminRouter.get("/admin/backups/:name", async (req, res) => {
 // ================= Xavfsizlik =================
 
 adminRouter.get("/admin/security", async (req, res) => {
-  const def = await usingDefaultPassword();
   const body = `
-    ${def ? `<div class="flash warn">Dastlabki parol ishlatilmoqda. Xavfsizlik uchun uni hozir almashtiring.</div>` : ""}
     <form method="post" action="/admin/security" class="card" style="max-width:520px" autocomplete="off">
       <h2>🔐 Admin login va parol</h2>
       <label>Login (telefon raqam)</label><input name="login" value="+${esc(await adminLogin())}" inputmode="tel">

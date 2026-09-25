@@ -1,15 +1,9 @@
+import "./_setup.js";
 import test from "node:test";
 import assert from "node:assert";
-import { rmSync } from "node:fs";
-import { fileURLToPath } from "node:url";
-import path from "node:path";
 import express from "express";
 
-const dataDir = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "data");
-rmSync(dataDir, { recursive: true, force: true });
 process.env.GEMINI_API_KEY = "";
-delete process.env.ADMIN_LOGIN;
-delete process.env.ADMIN_PASSWORD;
 process.env.FREE_MODE = "false";
 
 const { register, login, attachUser } = await import("../src/auth.js");
@@ -21,6 +15,7 @@ const { user: biz } = await register("biznes@test.uz", "parol123", "Guli Shop");
 const { user: other } = await register("boshqa@test.uz", "parol123", "=HYPERLINK(1)");
 
 const app = express();
+app.set("trust proxy", 1); // production kabi: nginx orqasida
 app.use(express.urlencoded({ extended: false }));
 app.use(adminRouter);
 app.get("/whoami", attachUser, (req, res) => res.json({ id: req.user?.id || null }));
@@ -41,7 +36,15 @@ test("sessiyasiz admin sahifalari yopiq", async () => {
   assert.strictEqual((await post("/admin/businesses/x/block", { on: "1" })).status, 401);
 });
 
+test("admin hisobi sozlanmagan bo'lsa hech kim kira olmaydi (kodda standart parol yo'q)", async () => {
+  const r = await post("/admin/login", { login: "998949392250", password: "949392250Adm" }, { "x-forwarded-for": "10.0.0.5" });
+  assert.strictEqual(r.status, 401);
+  assert.match(await r.text(), /ADMIN_LOGIN va ADMIN_PASSWORD/);
+});
+
 test("noto'g'ri parol rad etiladi, to'g'risi bilan kiriladi (telefon har xil formatda)", async () => {
+  process.env.ADMIN_LOGIN = "+998 94 939 22 50";
+  process.env.ADMIN_PASSWORD = "949392250Adm";
   const bad = await post("/admin/login", { login: "+998 94 939 22 50", password: "xato" }, { "x-forwarded-for": "10.0.0.9" });
   assert.strictEqual(bad.status, 401);
   assert.match(await bad.text(), /Login yoki parol noto/);
@@ -51,14 +54,7 @@ test("noto'g'ri parol rad etiladi, to'g'risi bilan kiriladi (telefon har xil for
   const set = ok.headers.get("set-cookie");
   assert.match(set, /^adm=.+; Path=\/admin; HttpOnly; SameSite=Strict/);
   cookie = set.split(";")[0];
-  // Dastlabki parol bilan faqat "Xavfsizlik" sahifasi ochiladi
-  const dash = await get("/admin");
-  assert.strictEqual(dash.status, 302);
-  assert.match(dash.headers.get("location"), /^\/admin\/security/);
-  assert.strictEqual((await post("/admin/announce", { text: "x" })).status, 403);
-  const sec = await get("/admin/security");
-  assert.strictEqual(sec.status, 200);
-  assert.match(await sec.text(), /Dastlabki parol ishlatilmoqda/);
+  assert.strictEqual((await get("/admin")).status, 200);
 });
 
 test("parolni o'zgartirish: eski sessiya va eski parol ishlamaydi", async () => {
@@ -81,6 +77,14 @@ test("parolni o'zgartirish: eski sessiya va eski parol ishlamaydi", async () => 
 test("5 ta xato urinishdan so'ng IP bloklanadi", async () => {
   for (let i = 0; i < 5; i++) await post("/admin/login", { login: "998949392250", password: `x${i}` }, { "x-forwarded-for": "10.0.0.77" });
   const r = await post("/admin/login", { login: "998949392250", password: "YangiParol2026" }, { "x-forwarded-for": "10.0.0.77" });
+  assert.strictEqual(r.status, 401);
+  assert.match(await r.text(), /Juda ko/);
+});
+
+test("X-Forwarded-For'ni soxtalab blokni chetlab bo'lmaydi", async () => {
+  // Hujumchi har urinishda chap qiymatni o'zgartiradi; nginx esa haqiqiy IP'ni oxiriga qo'shadi
+  for (let i = 0; i < 5; i++) await post("/admin/login", { login: "998949392250", password: `y${i}` }, { "x-forwarded-for": `1.2.3.${i}, 10.0.0.88` });
+  const r = await post("/admin/login", { login: "998949392250", password: "YangiParol2026" }, { "x-forwarded-for": "9.9.9.9, 10.0.0.88" });
   assert.strictEqual(r.status, 401);
   assert.match(await r.text(), /Juda ko/);
 });

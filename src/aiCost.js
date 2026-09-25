@@ -18,7 +18,7 @@ export const DEFAULT_AI_PRICING = {
   models: {
     "gemini-3.5-flash-lite": [0.3, 2.5],
     "gemini-3.6-flash": [0.75, 3.75],
-    claude: [3, 15],
+    claude: [5, 25], // claude-opus-5 (standart zaxira model)
   },
   unknownModel: [0.75, 3.75], // ro'yxatda yo'q model — ehtiyotkor narx
   ttsPerMChars: /wavenet|neural|studio|chirp/i.test(process.env.TTS_VOICE || "") ? 16 : 4,

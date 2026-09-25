@@ -35,7 +35,7 @@ const STATUS_MESSAGES = {
   cancelled: "Buyurtma №{num} bekor qilindi. Savollar bo'lsa, shu yerga yozing.",
 };
 
-const MAX_PRODUCTS = 300;
+export const MAX_PRODUCTS = 300;
 const MAX_ORDERS = 3000;
 
 export function ensureShop(tenant) {

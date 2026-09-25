@@ -8,17 +8,17 @@
  *    data/messages/<biznes>/<suhbat>.jsonl fayllari. Hech narsa o'chirilmaydi.
  */
 import { appendFile, mkdir, readFile, rm } from "node:fs/promises";
-import { fileURLToPath } from "node:url";
 import path from "node:path";
 import crypto from "node:crypto";
 import * as pg from "./pgdb.js";
+import { DATA_DIR } from "./paths.js";
 
 export const CHAT_CACHE = 60; // faol suhbatda keshlanadigan xabarlar
 export const AI_CONTEXT = 16; // AI'ga beriladigan oxirgi xabarlar
 const IDLE_KEEP = 4; // 14 kundan beri jim suhbatda keshda qoladiganlar
 const IDLE_MS = 14 * 86400000;
 
-const archiveDir = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "data", "messages");
+const archiveDir = path.join(DATA_DIR, "messages");
 const safeId = (v) => String(v || "").replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 80) || "_";
 const chatFile = (tenantId, key) => path.join(archiveDir, safeId(tenantId), crypto.createHash("sha1").update(String(key)).digest("hex").slice(0, 32) + ".jsonl");
 

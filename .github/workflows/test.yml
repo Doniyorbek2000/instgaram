@@ -1,4 +1,4 @@
-name: Tests
+name: CI
 
 on:
   push:
@@ -6,7 +6,7 @@ on:
   pull_request:
 
 jobs:
-  test:
+  check:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -16,4 +16,11 @@ jobs:
           node-version: 20
           cache: npm
       - run: npm ci
-      - run: npm test
+      - name: Lint
+        run: npm run lint
+      - name: Testlar
+        run: npm test
+      - name: Bog'liqliklar zaifligi (production)
+        run: npm audit --omit=dev --audit-level=high
+      - name: Docker image build
+        run: docker build -t obunext-ci .

@@ -3,6 +3,8 @@
  * Zaxira nusxadan tiklash.
  *
  *   node scripts/restore.mjs backups/obunext-YYYYMMDD-HHMMSS-db.ndjson.gz
+ *   node scripts/restore.mjs obunext-...-db.ndjson.gz.enc   (Telegram'dagi shifrlangan nusxa;
+ *                                                          .env'da o'sha DATA_ENCRYPTION_KEY bo'lishi shart)
  *
  * PostgreSQL rejimida (.env'da PG_* bo'lsa) jadvallarga yoziladi — mavjud qatorlar
  * o'zgarmaydi (ON CONFLICT DO NOTHING; platforma sozlamalari esa zaxiradagisi bilan
@@ -11,24 +13,27 @@
  *
  * Server to'xtatilgan holda ishga tushiring.
  */
-import "dotenv/config";
-import { createReadStream, existsSync, renameSync, writeFileSync, mkdirSync } from "node:fs";
+import "../src/env.js";
+import { createReadStream, existsSync, renameSync, writeFileSync, mkdirSync, readFileSync } from "node:fs";
+import { Readable } from "node:stream";
 import { createGunzip } from "node:zlib";
 import { createInterface } from "node:readline";
-import { fileURLToPath } from "node:url";
 import path from "node:path";
+import { DATA_DIR } from "../src/paths.js";
+import { decryptBuffer, isEncryptedBuffer } from "../src/secretBox.js";
 
 const file = process.argv[2];
 if (!file || !existsSync(file)) {
-  console.error("Foydalanish: node scripts/restore.mjs <obunext-...-db.ndjson.gz>");
+  console.error("Foydalanish: node scripts/restore.mjs <obunext-...-db.ndjson.gz[.enc]>");
   process.exit(1);
 }
 
-const root = path.join(path.dirname(fileURLToPath(import.meta.url)), "..");
 const pg = await import("../src/pgdb.js");
 await pg.pgInit;
 
-const lines = createInterface({ input: createReadStream(file).pipe(createGunzip()), crlfDelay: Infinity });
+const head = readFileSync(file).subarray(0, 16);
+const source = isEncryptedBuffer(head) ? Readable.from([decryptBuffer(readFileSync(file))]) : createReadStream(file);
+const lines = createInterface({ input: source.pipe(createGunzip()), crlfDelay: Infinity });
 const batches = {};
 const counts = {};
 let meta = null;
@@ -54,7 +59,7 @@ for await (const line of lines) {
       console.error("Bu JSON rejimidagi zaxira, server esa PostgreSQL'ga ulangan. PG_* sozlamalarini vaqtincha olib tashlab, qayta ishga tushiring.");
       process.exit(1);
     }
-    const dbFile = path.join(root, "data", "db.json");
+    const dbFile = path.join(DATA_DIR, "db.json");
     mkdirSync(path.dirname(dbFile), { recursive: true });
     if (existsSync(dbFile)) renameSync(dbFile, `${dbFile}.bak-${Date.now()}`);
     writeFileSync(dbFile, JSON.stringify(r, null, 2));

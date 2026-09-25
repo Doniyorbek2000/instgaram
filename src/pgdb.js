@@ -14,23 +14,22 @@
  *   - platform    : global sozlamalar (tarif narxlari)
  */
 
+import "./env.js";
 import crypto from "node:crypto";
+import { TRIAL_DAYS } from "./trial.js";
+import { sealColumn, openColumn, encrypt, decrypt, encryptionEnabled, isEncrypted, SECRET_PATHS } from "./secretBox.js";
 
 const PG_HOST = process.env.PG_HOST || "adm-postgres";
 const PG_PORT = parseInt(process.env.PG_PORT || "5432", 10);
 const PG_USER = process.env.PG_USER || "admin";
 // Maxfiy — hech qanday fallback yo'q. .env da PG_PASS bo'lmasa, ulanish
-// muvaffaqiyatsiz bo'lib, initPg() quyida avtomatik JSON-fayl bazaga o'tadi.
+// muvaffaqiyatsiz bo'ladi va index.js serverni to'xtatadi (PG_ALLOW_JSON_FALLBACK=true bo'lmasa).
 const PG_PASS = process.env.PG_PASS || "";
 const PG_DB   = process.env.PG_DB   || "admai";
 
-const TRIAL_DAYS = 3;
+/** Sessiya tokeni bazada faqat xesh ko'rinishida saqlanadi (baza/zaxira sizsa ham sessiyalar o'g'irlanmaydi). */
+export const hashSessionToken = (token) => crypto.createHash("sha256").update(String(token)).digest("hex");
 
-// ============================================================
-// Minimal native PostgreSQL client (pg kutubxonasiz, socket orqali)
-// Biz native fetch + pg wire protocol o'rniga node-postgres ga murojaat qilamiz
-// Agar pg mavjud bo'lmasa — db.json fallback ishlaydi
-// ============================================================
 let pgPool = null;
 let pgReady = false;
 // PostgreSQL sozlangan (PG_PASS bor) bo'lsa-yu ulanmasa — bu JIDDIY holat: ma'lumotlar
@@ -64,7 +63,8 @@ async function connectOnce() {
     pgPool.on("error", (err) => console.error("[PG Pool Error]", err.message));
     await pgPool.query("SELECT 1");
     await runMigrations();
-    await loadAllUsers();
+    const rows = await loadAllUsers();
+    await sealLegacySecrets(rows);
     pgReady = true;
     pgState.error = "";
     pgState.connectedAt = new Date().toISOString();
@@ -189,6 +189,18 @@ async function runMigrations() {
 
     CREATE INDEX IF NOT EXISTS sessions_user_id_idx ON sessions(user_id);
     CREATE INDEX IF NOT EXISTS orders_user_id_idx   ON orders(user_id);
+
+    -- Kiruvchi webhooklar: Meta'ga 200 qaytarishdan OLDIN yoziladi. Qayta ishlash
+    -- tugamay server to'xtasa (deploy, xato), keyingi ishga tushishda davom ettiriladi.
+    CREATE TABLE IF NOT EXISTS webhook_inbox (
+      id BIGSERIAL PRIMARY KEY,
+      body JSONB NOT NULL,
+      received_at BIGINT NOT NULL,
+      attempts INT NOT NULL DEFAULT 0,
+      processed_at BIGINT,
+      error TEXT
+    );
+    CREATE INDEX IF NOT EXISTS webhook_inbox_pending_idx ON webhook_inbox(id) WHERE processed_at IS NULL;
   `;
   await pgPool.query(sql);
 }
@@ -209,9 +221,9 @@ function normalizeUser(row) {
     salt: row.salt,
     businessName: row.business_name || "",
     businessInfo: row.business_info || "",
-    geminiApiKey: row.gemini_api_key || "",
-    meta: row.meta || {},
-    settings: row.settings || {},
+    geminiApiKey: decrypt(row.gemini_api_key || ""),
+    meta: openColumn("meta", row.meta || {}),
+    settings: openColumn("settings", row.settings || {}),
     subscription: row.subscription || {},
     stats: row.stats || {},
     handoffs: row.handoffs || [],
@@ -226,7 +238,7 @@ function normalizeUser(row) {
     gamification: row.gamification || {},
     forms: row.forms || {},
     contactMeta: row.contact_meta || {},
-    integrations: row.integrations || {},
+    integrations: openColumn("integrations", row.integrations || {}),
     followUps: row.follow_ups || [],
     flows: row.flows || {},
     team: row.team || [],
@@ -236,7 +248,7 @@ function normalizeUser(row) {
     apiTokens: row.api_tokens || [],
     aiUsage: row.ai_usage || {},
     sequences: row.sequences || {},
-    shop: row.shop || {},
+    shop: openColumn("shop", row.shop || {}),
     trackedLinks: row.tracked_links || {},
     pushSubs: row.push_subs || [],
     createdAt: row.created_at,
@@ -282,6 +294,43 @@ async function loadAllUsers() {
   snapshots.clear();
   for (const r of rows) hydrate(r);
   allLoaded = true;
+  return rows;
+}
+
+/** Bazadagi xom qator ichida hali shifrlanmagan maxfiy qiymat bormi? */
+function hasPlainSecrets(row) {
+  if (row.gemini_api_key && !isEncrypted(row.gemini_api_key)) return true;
+  for (const [column, paths] of Object.entries(SECRET_PATHS)) {
+    for (const p of paths) {
+      const v = p.split(".").reduce((node, k) => (node && typeof node === "object" ? node[k] : undefined), row[column]);
+      if (typeof v === "string" && v && !isEncrypted(v)) return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * DATA_ENCRYPTION_KEY yoqilgach eski (ochiq) tokenlarni bir marta shifrlab qayta yozadi.
+ * Keshdagi obyektlar o'zgarmaydi — faqat bazadagi ko'rinish.
+ */
+async function sealLegacySecrets(rows) {
+  if (!encryptionEnabled()) return;
+  let n = 0;
+  for (const row of rows) {
+    if (!hasPlainSecrets(row)) continue;
+    const u = cache.get(row.id);
+    if (!u) continue;
+    await pgPool.query("UPDATE users SET gemini_api_key=$1, meta=$2, settings=$3, shop=$4, integrations=$5 WHERE id=$6", [
+      encrypt(u.geminiApiKey || ""),
+      JSON.stringify(sealColumn("meta", u.meta)),
+      JSON.stringify(sealColumn("settings", u.settings)),
+      JSON.stringify(sealColumn("shop", u.shop)),
+      JSON.stringify(sealColumn("integrations", u.integrations)),
+      u.id,
+    ]);
+    n++;
+  }
+  if (n) console.log(`[Shifrlash] ${n} ta biznesning tokenlari shifrlandi`);
 }
 
 function cachedUsers() {
@@ -401,7 +450,7 @@ const writeChains = new Map();
  */
 export async function updateUser(id, patch) {
   if (!pgReady) return null;
-  let user = cache.get(id) || (await findUserById(id));
+  const user = cache.get(id) || (await findUserById(id));
   if (!user) return null;
   if (patch && patch !== user) {
     const { meta, ...rest } = patch;
@@ -416,7 +465,10 @@ export async function updateUser(id, patch) {
     const vals = [];
     changed.forEach((c, i) => {
       sets.push(`${c.col} = $${i + 1}`);
-      vals.push(TEXT_COLS.has(c.key) ? user[c.key] ?? "" : c.json);
+      if (c.key === "geminiApiKey") vals.push(encrypt(user[c.key] ?? ""));
+      else if (TEXT_COLS.has(c.key)) vals.push(user[c.key] ?? "");
+      else if (SECRET_PATHS[c.col]) vals.push(jsonOf(sealColumn(c.col, user[c.key])));
+      else vals.push(c.json);
     });
     vals.push(id);
     await pgPool.query(`UPDATE users SET ${sets.join(",")} WHERE id=$${vals.length}`, vals);
@@ -434,57 +486,42 @@ export async function updateUser(id, patch) {
   }
 }
 
+/**
+ * Webhook qaysi biznesga tegishli — faqat ANIQ ID mosligi bo'yicha. Mos kelmasa null:
+ * taxminiy fallback bir biznes mijozining xabarini boshqa biznesga yuborardi.
+ */
 export async function findUserByPlatformId(kind, platformId) {
   if (!pgReady) return null;
   const id = String(platformId || "");
   if (!id) return null;
   if (allLoaded) {
-    const users = cachedUsers();
-    const found = users.find((u) => {
+    return cachedUsers().find((u) => {
       const m = u.meta || {};
       if (kind === "ig" || kind === "page") return m.igUserId === id || m.pageId === id;
       if (kind === "whatsapp") return m.whatsappPhoneNumberId === id || m.whatsappPhoneId === id;
       return false;
-    });
-    if (found) return found;
-    if (kind === "ig") {
-      const fb = users.find((u) => u.meta?.igAccessToken);
-      if (fb) console.warn(`[findUserByPlatformId] ig=${id} uchun aniq moslik topilmadi — fallback orqali "${fb.businessName}" tanlandi`);
-      return fb || null;
-    }
-    return null;
+    }) || null;
   }
   let q;
-  if (kind === "ig") q = `SELECT * FROM users WHERE meta->>'igUserId' = $1 OR meta->>'pageId' = $1`;
-  else if (kind === "page") q = `SELECT * FROM users WHERE meta->>'pageId' = $1 OR meta->>'igUserId' = $1`;
+  if (kind === "ig" || kind === "page") q = `SELECT * FROM users WHERE meta->>'igUserId' = $1 OR meta->>'pageId' = $1`;
   else if (kind === "whatsapp") q = `SELECT * FROM users WHERE meta->>'whatsappPhoneNumberId' = $1 OR meta->>'whatsappPhoneId' = $1`;
   else return null;
   const { rows } = await pgPool.query(q, [id]);
-  if (rows[0]) return hydrate(rows[0]);
-
-  // Fallback: Agar platformId mos kelmasa, Instagram tokeni bor foydalanuvchini topish.
-  // DIQQAT: bu >1 ulangan Instagram biznes bo'lganda noto'g'ri biznesga marshrutlash
-  // xavfini tug'diradi (LIMIT 1, ORDER BY yo'q) — shuning uchun ishlatilganda log qilinadi.
-  if (kind === "ig") {
-    const fb = await pgPool.query(`SELECT * FROM users WHERE meta->>'igAccessToken' != '' AND meta->>'igAccessToken' IS NOT NULL LIMIT 1`);
-    if (fb.rows[0]) {
-      console.warn(`[findUserByPlatformId] ig=${id} uchun aniq moslik topilmadi — fallback orqali "${fb.rows[0].business_name}" tanlandi (2+ biznes ulangan bo'lsa xato marshrutlash xavfi bor)`);
-      return hydrate(fb.rows[0]);
-    }
-  }
-  return null;
+  return rows[0] ? hydrate(rows[0]) : null;
 }
 
 // ============================================================
 // SESSIONS
 // ============================================================
 
+// sessions.token ustunida tokenning sha256 xeshi turadi. Eski (xeshlanmagan) yozuvlar
+// birinchi ishlatilganda xeshga o'tkaziladi — foydalanuvchilar tizimdan chiqib ketmaydi.
 export async function createSession(userId) {
   if (!pgReady) return null;
   const token = crypto.randomBytes(32).toString("hex");
   await pgPool.query(
     "INSERT INTO sessions(token, user_id, created_at) VALUES($1,$2,$3)",
-    [token, userId, Date.now()]
+    [hashSessionToken(token), userId, Date.now()]
   );
   return token;
 }
@@ -492,10 +529,15 @@ export async function createSession(userId) {
 export async function getSessionUser(token) {
   if (!pgReady) return null;
   if (!token) return null;
-  const { rows } = await pgPool.query("SELECT * FROM sessions WHERE token=$1", [token]);
+  const hashed = hashSessionToken(token);
+  let { rows } = await pgPool.query("SELECT * FROM sessions WHERE token=$1", [hashed]);
+  if (!rows[0]) {
+    ({ rows } = await pgPool.query("SELECT * FROM sessions WHERE token=$1", [token]));
+    if (rows[0]) await pgPool.query("UPDATE sessions SET token=$1 WHERE token=$2", [hashed, token]).catch(() => {});
+  }
   if (!rows[0]) return null;
   if (Date.now() - rows[0].created_at > 30 * 24 * 60 * 60 * 1000) {
-    await pgPool.query("DELETE FROM sessions WHERE token=$1", [token]);
+    await pgPool.query("DELETE FROM sessions WHERE token=$1 OR token=$2", [hashed, token]);
     return null;
   }
   return findUserById(rows[0].user_id);
@@ -503,15 +545,15 @@ export async function getSessionUser(token) {
 
 export async function deleteSession(token) {
   if (!pgReady || !token) return;
-  await pgPool.query("DELETE FROM sessions WHERE token=$1", [token]);
+  await pgPool.query("DELETE FROM sessions WHERE token=$1 OR token=$2", [hashSessionToken(token), token]);
 }
 
 /** Foydalanuvchining barcha sessiyalarini o'chiradi (exceptToken'dan tashqari) */
 export async function deleteUserSessions(userId, exceptToken = null) {
   if (!pgReady || !userId) return;
   await pgPool.query(
-    "DELETE FROM sessions WHERE user_id=$1 AND token IS DISTINCT FROM $2",
-    [userId, exceptToken]
+    "DELETE FROM sessions WHERE user_id=$1 AND token IS DISTINCT FROM $2 AND token IS DISTINCT FROM $3",
+    [userId, exceptToken ? hashSessionToken(exceptToken) : null, exceptToken]
   );
 }
 
@@ -553,7 +595,7 @@ export async function setPlatformSettings(patch) {
 export async function getPlatformGeminiKey() {
   if (!pgReady) return process.env.GEMINI_API_KEY || "";
   const { rows } = await pgPool.query("SELECT value FROM platform WHERE key='gemini_key'");
-  return rows[0]?.value?.key || process.env.GEMINI_API_KEY || "";
+  return decrypt(rows[0]?.value?.key || "") || process.env.GEMINI_API_KEY || "";
 }
 
 export async function setPlatformGeminiKey(key) {
@@ -561,7 +603,7 @@ export async function setPlatformGeminiKey(key) {
   await pgPool.query(
     `INSERT INTO platform(key, value) VALUES('gemini_key', $1::jsonb)
      ON CONFLICT(key) DO UPDATE SET value=$1::jsonb`,
-    [JSON.stringify({ key })]
+    [JSON.stringify({ key: encrypt(key) })]
   );
 }
 
@@ -791,6 +833,69 @@ export async function restoreRows(table, rows) {
   if (table === "messages") await pgPool.query("SELECT setval(pg_get_serial_sequence('messages','id'), GREATEST(1, (SELECT COALESCE(MAX(id),1) FROM messages)))");
   if (table === "users") await loadAllUsers();
   return n;
+}
+
+// ============================================================
+// WEBHOOK NAVBATI (durable inbox)
+// ============================================================
+
+/** Kiruvchi webhookni yozib qo'yadi. Qaytaradi: navbat ID (yoki JSON rejimida null). */
+export async function enqueueWebhook(body) {
+  if (!pgReady) return null;
+  const { rows } = await pgPool.query(
+    "INSERT INTO webhook_inbox(body, received_at) VALUES($1,$2) RETURNING id",
+    [JSON.stringify(body ?? {}), Date.now()]
+  );
+  return rows[0].id;
+}
+
+export async function finishWebhook(id, error = "") {
+  if (!pgReady || id == null) return;
+  await pgPool.query(
+    error
+      ? "UPDATE webhook_inbox SET attempts = attempts + 1, error = $2 WHERE id = $1"
+      : "UPDATE webhook_inbox SET attempts = attempts + 1, processed_at = $2, error = NULL WHERE id = $1",
+    [id, error ? String(error).slice(0, 500) : Date.now()]
+  );
+}
+
+/**
+ * Qayta ishlanmay qolgan hodisalar — `before` vaqtidan oldin kelganlar (ya'ni oldingi
+ * server jarayoni davrida: deploy yoki yiqilish tufayli tugallanmaganlar).
+ */
+export async function pendingWebhooks({ before, maxAttempts = 5, limit = 500 } = {}) {
+  if (!pgReady) return [];
+  const { rows } = await pgPool.query(
+    `SELECT id, body FROM webhook_inbox
+      WHERE processed_at IS NULL AND attempts < $1 AND received_at < $2
+        AND received_at > $4
+      ORDER BY id LIMIT $3`,
+    // Meta xabarga faqat 24 soat ichida javob berishga ruxsat beradi — eskisini qayta ishlamaymiz
+    [maxAttempts, before ?? Date.now(), limit, Date.now() - 24 * 3600000]
+  );
+  // Juda eski qayta ishlangan yozuvlarni vaqti-vaqti bilan tozalaymiz (7 kun)
+  pgPool.query("DELETE FROM webhook_inbox WHERE processed_at IS NOT NULL AND processed_at < $1", [Date.now() - 7 * 86400000]).catch(() => {});
+  return rows;
+}
+
+// ============================================================
+// FON VAZIFALARI UCHUN QULF — ikkinchi server nusxasi ishga tushib qolsa,
+// ommaviy xabar/follow-up'lar ikki marta yuborilmasin.
+// ============================================================
+let lockClient = null;
+
+/** Rejalashtiruvchi qulfini oladi. PostgreSQL bo'lmasa (bitta jarayon) — doim true. */
+export async function acquireSchedulerLock() {
+  if (!pgReady) return true;
+  if (lockClient) return true;
+  const client = await pgPool.connect();
+  const { rows } = await client.query("SELECT pg_try_advisory_lock(hashtext('obunext:scheduler')) AS ok");
+  if (rows[0]?.ok) {
+    lockClient = client; // ulanish ochiq turguncha qulf saqlanadi
+    return true;
+  }
+  client.release();
+  return false;
 }
 
 // ============================================================

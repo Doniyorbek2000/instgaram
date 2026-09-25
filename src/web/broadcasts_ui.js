@@ -93,11 +93,8 @@ broadcastsRouter.get("/broadcasts", requireAuth, async (req, res) => {
             <input name="excludeTags" list="bcTags" placeholder="xaridor, stop">
             <datalist id="bcTags">${tags.map(([t]) => `<option value="${esc(t)}">`).join("")}</datalist>
 
-            <label style="display:flex; gap:8px; align-items:center; cursor:pointer; margin-top:12px">
-              <input type="checkbox" name="only24h" value="true" checked style="width:auto; margin:0">
-              Faqat oxirgi 24 soatda yozganlar (Instagram / Messenger / WhatsApp talabi)
-            </label>
-            <input type="hidden" name="only24h" value="false">
+            <p class="hint" style="margin-top:12px">ℹ️ Instagram, Messenger va WhatsApp'da xabar faqat oxirgi 24 soatda yozgan mijozlarga yuboriladi (Meta qoidasi). Telegram'da cheklov yo'q.</p>
+            <input type="hidden" name="only24h" value="true">
             <label style="display:flex; gap:8px; align-items:center; cursor:pointer; margin-top:8px">
               <input type="checkbox" name="stopFooter" value="true" checked style="width:auto; margin:0">
               Oxiriga "Chiqish uchun STOP deb yozing" qo'shilsin (tavsiya etiladi — Meta shikoyatlaridan himoya)
@@ -150,7 +147,7 @@ broadcastsRouter.get("/broadcasts", requireAuth, async (req, res) => {
           clearTimeout(timer);
           timer = setTimeout(function () {
             var fd = new FormData(form);
-            var q = new URLSearchParams({ channel: fd.get("channel"), tags: fd.get("tags"), tagMode: fd.get("tagMode"), excludeTags: fd.get("excludeTags"), only24h: form.only24h[0].checked ? "true" : "false" });
+            var q = new URLSearchParams({ channel: fd.get("channel"), tags: fd.get("tags"), tagMode: fd.get("tagMode"), excludeTags: fd.get("excludeTags"), only24h: "true" });
             fetch("/broadcasts/audience?" + q).then(function (r) { return r.json(); }).then(function (d) {
               countEl.textContent = d.count + " / " + d.total;
             }).catch(function () { countEl.textContent = "?"; });

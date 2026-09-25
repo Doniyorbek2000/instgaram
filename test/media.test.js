@@ -1,11 +1,9 @@
+import "./_setup.js";
 import test from "node:test";
 import assert from "node:assert";
-import { rmSync, existsSync } from "node:fs";
-import { fileURLToPath } from "node:url";
+import { existsSync } from "node:fs";
 import path from "node:path";
 
-const dataDir = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "data");
-rmSync(dataDir, { recursive: true, force: true });
 process.env.BASE_URL = "https://bot.example.uz";
 process.env.GEMINI_API_KEY = "";
 process.env.FREE_MODE = "false";

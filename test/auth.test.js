@@ -1,12 +1,7 @@
+import "./_setup.js";
 import test from "node:test";
 import assert from "node:assert";
-import { rmSync } from "node:fs";
-import { fileURLToPath } from "node:url";
-import path from "node:path";
 
-// Test bazasini tozalab boshlaymiz
-const dataDir = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "data");
-rmSync(dataDir, { recursive: true, force: true });
 
 // Admin email'ni ai.js/config o'qishidan oldin belgilaymiz
 process.env.ADMIN_EMAILS = "boss@example.com";
@@ -70,16 +65,16 @@ test("ADMIN_EMAILS'dan tashqari hech qanday qattiq yozilgan admin email yo'q", a
 });
 
 test("parol o'zgarganda boshqa sessiyalar bekor qilinadi, joriysi qoladi", async () => {
-  const { user, token: current } = await register("sessiya@example.com", "eski123", "Sessiya");
-  const { token: other } = await login("sessiya@example.com", "eski123");
+  const { user, token: current } = await register("sessiya@example.com", "eski1234", "Sessiya");
+  const { token: other } = await login("sessiya@example.com", "eski1234");
   assert.ok(await getSessionUser(other));
 
-  const r = await changePassword(user, "eski123", "yangi123", current);
+  const r = await changePassword(user, "eski1234", "yangi123", current);
   assert.ok(r.ok);
   assert.strictEqual(await getSessionUser(other), null);
   assert.strictEqual((await getSessionUser(current))?.id, user.id);
   assert.ok((await login("sessiya@example.com", "yangi123")).token);
-  assert.ok((await login("sessiya@example.com", "eski123")).error);
+  assert.ok((await login("sessiya@example.com", "eski1234")).error);
 });
 
 test("parseSid faqat aynan 'sid' cookie'ni oladi", () => {
@@ -95,7 +90,7 @@ test("admin barcha bizneslar ro'yxatini ko'ra oladi", async () => {
   assert.ok(all.length >= 3);
 });
 
-test("Google orqali yangi email — yangi akkaunt yaratadi va googleId'ni saqlaydi", async () => {
+test("Google orqali yangi email вЂ” yangi akkaunt yaratadi va googleId'ni saqlaydi", async () => {
   const r = await loginOrRegisterWithGoogle({ googleId: "g-111", email: "googler@example.com", name: "Googler Biz" });
   assert.ok(r.token);
   assert.strictEqual(r.user.email, "googler@example.com");
@@ -103,7 +98,7 @@ test("Google orqali yangi email — yangi akkaunt yaratadi va googleId'ni saqlay
   assert.strictEqual(r.user.meta.googleId, "g-111");
 });
 
-test("Google orqali mavjud (parol bilan ro'yxatdan o'tgan) email'ga kirsa — SHU akkauntga bog'lanadi, ikkilanmaydi", async () => {
+test("Google orqali mavjud (parol bilan ro'yxatdan o'tgan) email'ga kirsa вЂ” SHU akkauntga bog'lanadi, ikkilanmaydi", async () => {
   const { user: pwUser } = await register("linkme@example.com", "parol123", "Link Biznes");
   const r = await loginOrRegisterWithGoogle({ googleId: "g-222", email: "linkme@example.com", name: "Boshqa Nom" });
   assert.strictEqual(r.user.id, pwUser.id);

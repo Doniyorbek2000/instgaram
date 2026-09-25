@@ -40,14 +40,30 @@ import { checkAndPublishScheduledPosts } from "./postPublisher.js";
 import { runDueFollowUps } from "./followups.js";
 import { runDueBroadcasts } from "./broadcasts.js";
 import { refreshTelegramWebhooks } from "./telegram.js";
-import { listUsers, dbReady, dbStatus } from "./db.js";
+import { listUsers, dbReady, dbStatus, findUserByPlatformId, persist } from "./db.js";
+import { enqueueWebhook, finishWebhook, pendingWebhooks, acquireSchedulerLock } from "./pgdb.js";
 import { loadSeenEvents, flushSeenEvents } from "./dedup.js";
 import { securityHeaders } from "./securityHeaders.js";
-import { installProcessHandlers, expressErrorHandler, alertAdmin } from "./monitor.js";
+import { installProcessHandlers, installLogger, requestLogger, expressErrorHandler, alertAdmin } from "./monitor.js";
 import { runIgTokenRefresh } from "./igToken.js";
 import { runSubscriptionReminders } from "./lifecycle.js";
 import { runDueBackup } from "./backup.js";
+import { page } from "./web/layout.js";
+import { purgeInternalKeys } from "./outbound.js";
+import { linkRedirectHandler } from "./links.js";
+import { runDueSequences } from "./sequences.js";
+import { runDueShop } from "./shop.js";
+import { handleInstagramEntry } from "./handlers/instagram.js";
+import { handleFacebookEntry } from "./handlers/facebook.js";
+import { handleWhatsAppEntry } from "./handlers/whatsapp.js";
+import { handlePayme, checkPaymeAuth } from "./payme.js";
+import { adminConfigured } from "./admin/auth.js";
+import { csrfGuard } from "./csrf.js";
+import { metaCallbacksRouter } from "./metaCallbacks.js";
+import { encryptionEnabled } from "./secretBox.js";
+import { isProduction } from "./env.js";
 
+installLogger();
 installProcessHandlers();
 
 // Qayta ishlanayotgan webhook hodisalari — server to'xtatilganda (deploy) ular tugashini kutamiz
@@ -57,19 +73,21 @@ function track(promise) {
   promise.finally(() => inflight.delete(promise));
   return promise;
 }
-import { page } from "./web/layout.js";
-import { findUserByPlatformId, persist } from "./db.js";
-import { purgeInternalKeys } from "./outbound.js";
-import { linkRedirectHandler } from "./links.js";
-import { runDueSequences } from "./sequences.js";
-import { runDueShop } from "./shop.js";
-import { handleInstagramEntry } from "./handlers/instagram.js";
-import { handleFacebookEntry } from "./handlers/facebook.js";
-import { handleWhatsAppEntry } from "./handlers/whatsapp.js";
-import { handlePayme, checkPaymeAuth } from "./payme.js";
+
+// Admin panel faqat shu domenda ochiladi (masalan adm.obunext.uz). Bo'sh bo'lsa — cheklov yo'q.
+const ADMIN_HOST = String(process.env.ADMIN_HOST || "").toLowerCase().trim();
+// Asosiy (marketing/kabinet) domeni — /admin so'ralsa admin domeniga yo'naltiriladi
+const MAIN_HOST = (() => {
+  try {
+    return new URL(config.baseUrl).hostname.toLowerCase();
+  } catch {
+    return "";
+  }
+})();
 
 const app = express();
 app.disable("x-powered-by");
+app.use(requestLogger);
 app.use(securityHeaders);
 
 // Server har doim reverse proxy (nginx/docker) orqasida ishlaydi (docker-compose:
@@ -90,27 +108,34 @@ app.use(
 );
 app.use(express.urlencoded({ extended: false, limit: "1mb" }));
 
-// adm.obunext.uz subdomeni orqali kirilganda to'g'ridan-to'g'ri admin panelga yo'naltirish
+// Admin panel alohida domenda (ADMIN_HOST, masalan adm.obunext.uz):
+//  - admin domenining bosh sahifasi → /admin;
+//  - asosiy domendan /admin so'ralsa → admin domeniga yo'naltiriladi;
+//  - boshqa har qanday host (server IP'si, eski domenlar) orqali /admin — 404.
 app.use((req, res, next) => {
-  const host = (req.hostname || req.get("host") || "").toLowerCase().split(":")[0];
-  if (host === "adm.obunext.uz") {
-    if (req.path === "/" || req.path === "") {
-      return res.redirect("/admin");
-    }
-    if (req.path === "/login") {
-      return res.redirect("/admin/login");
-    }
-    if (req.path === "/logout") {
-      return res.redirect("/admin/logout");
-    }
-  } else if ((host === "obunext.uz" || host === "www.obunext.uz") && (req.path === "/admin" || req.path.startsWith("/admin/"))) {
-    return res.redirect(301, `https://adm.obunext.uz${req.originalUrl}`);
+  if (!ADMIN_HOST) return next();
+  // req.hostname EMAS: "trust proxy" yoqilganda u mijoz yuborishi mumkin bo'lgan
+  // X-Forwarded-Host'dan olinadi. Host sarlavhasini nginx o'zi qo'yadi ($host).
+  const host = String(req.headers.host || "").replace(/:\d+$/, "").toLowerCase();
+  const isAdminPath = req.path === "/admin" || req.path.startsWith("/admin/");
+  if (host === ADMIN_HOST) {
+    if (req.path === "/") return res.redirect("/admin");
+    if (req.path === "/login") return res.redirect("/admin/login");
+    if (req.path === "/logout") return res.redirect("/admin/logout");
+    return next();
+  }
+  if (isAdminPath) {
+    if (host === MAIN_HOST || host === `www.${MAIN_HOST}`) return res.redirect(301, `https://${ADMIN_HOST}${req.originalUrl}`);
+    return res.status(404).send("Topilmadi");
   }
   next();
 });
 
 // Admin panel — alohida kirish tizimi (biznes sessiyasi va jamoa rollaridan mustaqil)
 app.use(adminRouter);
+// Meta deauthorize / data deletion callback'lari (imzolangan so'rov, sessiyasiz)
+app.use(metaCallbacksRouter);
+app.use(csrfGuard);
 app.use(attachUser);
 // Jamoa a'zosi egasining ish maydonida bo'lsa — req.user almashtiriladi va roli tekshiriladi
 app.use(teamContext);
@@ -342,10 +367,30 @@ app.post("/webhook", async (req, res) => {
     return res.sendStatus(403);
   }
 
+  // Avval hodisani bazaga yozamiz: 200 qaytgandan keyin server to'xtasa ham yo'qolmaydi
+  // (keyingi ishga tushishda replayPendingWebhooks davom ettiradi).
+  let inboxId = null;
+  try {
+    inboxId = await enqueueWebhook(req.body);
+  } catch (err) {
+    console.error("[Webhook] navbatga yozib bo'lmadi:", err.message);
+  }
+
   // Meta 20 soniya ichida 200 kutadi — avval javob beramiz, keyin ishlaymiz
   res.sendStatus(200);
+  track(runWebhook(inboxId, req.body));
+});
 
-  const { object, entry = [] } = req.body || {};
+/** Webhookni qayta ishlaydi va navbatdagi yozuvni yakunlaydi. */
+async function runWebhook(inboxId, body) {
+  const errors = await processWebhookBody(body);
+  await finishWebhook(inboxId, errors.join("; ")).catch((err) => console.error("[Webhook] navbat holati:", err.message));
+}
+
+/** Bitta webhook tanasini qayta ishlaydi. Qaytaradi: xatolar ro'yxati. */
+async function processWebhookBody(body) {
+  const { object, entry = [] } = body || {};
+  const jobs = [];
   for (const item of entry) {
     // Kiruvchi hodisaning turini qisqacha yozamiz — qaysi maydon kelgani ko'rinib
     // tursin, aks holda tanilmagan hodisa jimgina yo'qoladi va sababini topib
@@ -363,19 +408,35 @@ app.post("/webhook", async (req, res) => {
       continue;
     }
 
-    const p =
-      object === "instagram"
-        ? handleInstagramEntry(tenant, item)
-        : object === "page"
-          ? handleFacebookEntry(tenant, item)
-          : handleWhatsAppEntry(tenant, item);
-
-    track(p.catch((err) => {
-      console.error("Hodisani qayta ishlashda xato:", err);
-      alertAdmin("webhook", `${object}: ${err?.message || err}`);
-    }));
+    const handler =
+      object === "instagram" ? handleInstagramEntry : object === "page" ? handleFacebookEntry : handleWhatsAppEntry;
+    jobs.push(
+      Promise.resolve()
+        .then(() => handler(tenant, item))
+        .then(
+          () => "",
+          (err) => {
+            console.error("Hodisani qayta ishlashda xato:", err);
+            alertAdmin("webhook", `${object}: ${err?.message || err}`);
+            return String(err?.message || err);
+          }
+        )
+    );
   }
-});
+  return (await Promise.all(jobs)).filter(Boolean);
+}
+
+/**
+ * Oldingi server jarayoni davrida kelib, qayta ishlanmay qolgan webhooklar
+ * (deploy/yiqilish). Takroriy javob bo'lmaydi: handlerlar xabar ID'si bo'yicha
+ * dedup qiladi (dedup.js), ya'ni allaqachon javob berilganlari o'tkazib yuboriladi.
+ */
+async function replayPendingWebhooks(before) {
+  const rows = await pendingWebhooks({ before });
+  if (!rows.length) return;
+  console.log(`[Webhook] ${rows.length} ta tugallanmagan hodisa qayta ishlanmoqda`);
+  for (const r of rows) await track(runWebhook(r.id, r.body));
+}
 
 // Topilmagan sahifalar
 app.use((req, res) => {
@@ -400,11 +461,13 @@ app.use((req, res) => {
 app.use(expressErrorHandler);
 
 // Ishga tushishdan oldin muhim sozlamalarni tekshiramiz
-function checkConfig() {
+async function checkConfig() {
   const warn = [];
   if (!config.verifyToken) warn.push("VERIFY_TOKEN o'rnatilmagan — webhook tasdiqlanmaydi");
-  if (!config.appSecret) warn.push("APP_SECRET yo'q — webhook imzosi tekshirilmaydi (xavfsizlik uchun tavsiya etiladi)");
-  if (!config.adminEmails.length) warn.push("ADMIN_EMAILS yo'q — hech kim admin panelga kira olmaydi");
+  if (!config.appSecret) warn.push("APP_SECRET yo'q — barcha webhooklar rad etiladi (imzoni tekshirib bo'lmaydi)");
+  if (!(await adminConfigured())) warn.push("Admin hisobi yo'q — .env'ga ADMIN_LOGIN va ADMIN_PASSWORD kiriting, aks holda /admin'ga kirib bo'lmaydi");
+  if (!encryptionEnabled()) warn.push("DATA_ENCRYPTION_KEY yo'q — Meta/Telegram tokenlari bazada ochiq saqlanadi, zaxira Telegram'ga yuborilmaydi");
+  if (isProduction && !ADMIN_HOST) warn.push("ADMIN_HOST yo'q — admin panel istalgan domen/IP orqali ochiladi");
   if (!process.env.GEMINI_API_KEY && !process.env.ANTHROPIC_API_KEY)
     warn.push("AI kaliti (GEMINI_API_KEY) yo'q — bot kalit so'z rejimida ishlaydi");
   if (!config.fbAppId || !config.baseUrl)
@@ -415,15 +478,48 @@ function checkConfig() {
 // Baza (PostgreSQL yoki JSON) tayyor bo'lmaguncha so'rov qabul qilmaymiz — aks holda
 // ilk webhooklar noto'g'ri bazaga yozilib qolardi.
 await dbReady;
+if (dbStatus().fallback) {
+  // PostgreSQL sozlangan-u ulanmadi. JSON faylga yozishni boshlash "ikki bazali" holatga
+  // olib keladi: Postgres qaytgach shu oraliqdagi ma'lumotlar yo'qoladi. Shuning uchun
+  // to'xtaymiz — Docker (restart: unless-stopped) bir necha soniyadan so'ng qayta urinadi.
+  const msg = `PostgreSQL'ga ulanib bo'lmadi: ${dbStatus().error}`;
+  if (process.env.PG_ALLOW_JSON_FALLBACK !== "true") {
+    console.error(`❌ ${msg} — server to'xtatildi (vaqtincha JSON bilan ishlash uchun PG_ALLOW_JSON_FALLBACK=true)`);
+    await Promise.race([alertAdmin("database", `${msg} — server qayta ishga tushirilmoqda`), new Promise((r) => setTimeout(r, 5000))]);
+    process.exit(1);
+  }
+  alertAdmin("database", `${msg} — PG_ALLOW_JSON_FALLBACK=true, JSON faylga yozilmoqda`);
+}
 await loadSeenEvents();
-if (dbStatus().fallback) alertAdmin("database", `PostgreSQL'ga ulanib bo'lmadi — JSON faylga yozilmoqda: ${dbStatus().error}`);
+const startedAt = Date.now();
 
-const server = app.listen(config.port, () => {
-  checkConfig();
+const server = app.listen(config.port, async () => {
+  await checkConfig().catch((err) => console.error("[Sozlamalar]", err.message));
   console.log(`Server ${config.port}-portda ishga tushdi 🚀`);
-  console.log(`Admin panel:    http://localhost:${config.port}/`);
-  console.log(`Webhook manzil: http://localhost:${config.port}/webhook`);
+  console.log(`Webhook manzil: ${config.baseUrl || `http://localhost:${config.port}`}/webhook`);
 
+  // Oldingi jarayon davrida kelib tugallanmagan webhooklar
+  replayPendingWebhooks(startedAt).catch((err) => console.error("[Webhook] qayta ishlash:", err.message));
+
+  // Fon vazifalari (ommaviy xabar, follow-up, zaxira...) faqat BITTA jarayonda ishlashi
+  // kerak — aks holda mijozlarga xabar ikki marta ketadi. PostgreSQL advisory lock bilan
+  // ta'minlanadi; qulf band bo'lsa (boshqa nusxa ishlayapti) bu jarayon faqat HTTP'ga xizmat qiladi.
+  let schedulerOn = false;
+  const tryStartScheduler = async () => {
+    if (schedulerOn) return;
+    try {
+      if (!(await acquireSchedulerLock())) return console.warn("[Rejalashtiruvchi] boshqa server nusxasi ishlayapti — bu jarayonda fon vazifalari o'chiq");
+    } catch (err) {
+      return console.error("[Rejalashtiruvchi] qulf olinmadi:", err.message);
+    }
+    schedulerOn = true;
+    startScheduler();
+  };
+  tryStartScheduler();
+  setInterval(tryStartScheduler, 5 * 60 * 1000).unref();
+});
+
+function startScheduler() {
   if (reportsBotAvailable) {
     setupReportsBotWebhook().catch((err) => console.error("[ReportsBot] webhook o'rnatishda xato:", err.message));
     setInterval(() => {
@@ -431,8 +527,6 @@ const server = app.listen(config.port, () => {
     }, 20 * 60 * 1000);
   }
 
-  // Rejalashtirilgan Instagram postlarini nashr qilish — vaqtga aniqroq mos kelishi
-  // kerak bo'lgani uchun kunlik hisobotdan tezroq (har 5 daqiqada) tekshiriladi
   loadPlatformSettings().catch((err) => console.error("[Platforma] sozlamalar:", err.message));
 
   // Eski (maxfiy kalitsiz) Telegram webhook'larini xavfsiz holatga o'tkazamiz
@@ -474,10 +568,11 @@ const server = app.listen(config.port, () => {
   setTimeout(hourly, 5 * 60 * 1000);
   setInterval(hourly, 60 * 60 * 1000);
 
+  // Rejalashtirilgan Instagram postlari — vaqtga aniq mos kelishi uchun har 5 daqiqada
   setInterval(() => {
     checkAndPublishScheduledPosts().catch((err) => console.error("[PostPublisher] xato:", err.message));
   }, 5 * 60 * 1000);
-});
+}
 
 // Server to'xtatilganda bazani saqlab, tozalab chiqamiz
 async function shutdown(signal) {

@@ -1,0 +1,4 @@
+# Serverda (Linux) ishlaydigan fayllar doim LF bilan saqlansin
+*.sh text eol=lf
+Dockerfile text eol=lf
+docker-compose.yml text eol=lf

@@ -1,4 +1,5 @@
 import crypto from "node:crypto";
+import { promisify } from "node:util";
 import { config } from "./config.js";
 import {
   createUser,
@@ -13,18 +14,25 @@ import {
 } from "./db.js";
 import { sendPlatformMail, mailReady } from "./mailer.js";
 
-function hashPassword(password, salt) {
-  return crypto.scryptSync(password, salt, 64).toString("hex");
+const scryptAsync = promisify(crypto.scrypt);
+
+/** Parol izi. Asinxron — scryptSync har loginda event loop'ni (webhooklarni) to'xtatib qo'yardi. */
+export async function hashPassword(password, salt) {
+  return (await scryptAsync(String(password ?? ""), salt, 64)).toString("hex");
 }
+
+export const MIN_PASSWORD = 8;
+const PASSWORD_ERROR = `Parol kamida ${MIN_PASSWORD} ta belgidan iborat bo'lsin`;
+const weakPassword = (p) => !p || String(p).length < MIN_PASSWORD;
 
 /**
  * Parolni saqlangan hash bilan doimiy vaqtda solishtiradi.
  * timingSafeEqual uzunliklar farq qilsa xato otadi — hash buzilgan/bo'sh
  * bo'lsa server yiqilmasligi uchun avval uzunlikni tekshiramiz.
  */
-function verifyPassword(password, user) {
+async function verifyPassword(password, user) {
   if (!user?.salt || !user?.passwordHash) return false;
-  const actual = Buffer.from(hashPassword(String(password ?? ""), user.salt));
+  const actual = Buffer.from(await hashPassword(password, user.salt));
   const expected = Buffer.from(user.passwordHash);
   return actual.length === expected.length && crypto.timingSafeEqual(actual, expected);
 }
@@ -33,8 +41,8 @@ export async function register(email, password, businessName) {
   if (!email || !email.includes("@")) {
     return { error: "Email noto'g'ri kiritildi" };
   }
-  if (!password || password.length < 6) {
-    return { error: "Parol kamida 6 ta belgidan iborat bo'lsin" };
+  if (weakPassword(password)) {
+    return { error: PASSWORD_ERROR };
   }
   if (await findUserByEmail(email)) {
     return { error: "Bu email allaqachon ro'yxatdan o'tgan" };
@@ -43,7 +51,7 @@ export async function register(email, password, businessName) {
   const user = await createUser({
     email,
     salt,
-    passwordHash: hashPassword(password, salt),
+    passwordHash: await hashPassword(password, salt),
     businessName,
   });
   const token = await createSession(user.id);
@@ -74,7 +82,7 @@ export async function loginOrRegisterWithGoogle({ googleId, email, name }) {
     user = await createUser({
       email,
       salt,
-      passwordHash: hashPassword(crypto.randomBytes(32).toString("hex"), salt),
+      passwordHash: await hashPassword(crypto.randomBytes(32).toString("hex"), salt),
       businessName: name || email.split("@")[0],
     });
     await updateUser(user.id, { meta: { googleId, emailVerified: true } });
@@ -99,7 +107,7 @@ export async function login(email, password) {
   }
 
   const user = await findUserByEmail(email);
-  const ok = verifyPassword(password, user);
+  const ok = await verifyPassword(password, user);
 
   if (!ok) {
     const count = (rec?.until > Date.now() ? rec.count : (rec?.count || 0)) + 1;
@@ -126,12 +134,12 @@ export async function logout(token) {
  * bekor qilinadi — parol o'g'irlangan bo'lsa, hujumchi tizimdan chiqariladi.
  */
 export async function changePassword(user, oldPassword, newPassword, currentToken = null) {
-  if (!verifyPassword(oldPassword, user)) return { error: "Joriy parol noto'g'ri" };
-  if (!newPassword || newPassword.length < 6) {
-    return { error: "Yangi parol kamida 6 ta belgidan iborat bo'lsin" };
+  if (!(await verifyPassword(oldPassword, user))) return { error: "Joriy parol noto'g'ri" };
+  if (weakPassword(newPassword)) {
+    return { error: `Yangi parol kamida ${MIN_PASSWORD} ta belgidan iborat bo'lsin` };
   }
   const salt = crypto.randomBytes(16).toString("hex");
-  const passwordHash = hashPassword(newPassword, salt);
+  const passwordHash = await hashPassword(newPassword, salt);
   await updateUser(user.id, { salt, passwordHash });
   user.salt = salt;
   user.passwordHash = passwordHash;
@@ -234,12 +242,12 @@ export async function requestPasswordReset(email, baseUrl) {
 }
 
 export async function resetPasswordWithToken(token, newPassword) {
-  if (!newPassword || String(newPassword).length < 6) return { error: "Parol kamida 6 ta belgidan iborat bo'lsin" };
+  if (weakPassword(newPassword)) return { error: PASSWORD_ERROR };
   const user = await consumeToken(token, "pwReset");
   if (!user) return { error: "invalid" };
   const salt = crypto.randomBytes(16).toString("hex");
   user.salt = salt;
-  user.passwordHash = hashPassword(String(newPassword), salt);
+  user.passwordHash = await hashPassword(String(newPassword), salt);
   delete user.meta.pwReset;
   user.meta.emailVerified = true; // havola emailga kelgan — email egasi tasdiqlandi
   await persist(user);

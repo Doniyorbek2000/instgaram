@@ -5,17 +5,18 @@
 import { Router } from "express";
 import { esc } from "./layout.js";
 import { logoMark } from "./brand.js";
-import { icon, brandIcon } from "./icons.js";
+import { brandIcon } from "./icons.js";
 import { getPlans } from "../subscription.js";
 import { I18N, LANGS, LANG_SHORT, pickLang, t } from "./i18n.js";
 import { googleAuthAvailable } from "../googleAuth.js";
 import { HOME_CSS, heroStage, heroTrust, platformsStrip, showcaseSection, bentoSection, channelsSection, casesSection, testimonialAvatar } from "./site_home.js";
 import { home } from "./i18n_home.js";
 import { siteSettings, SITE_DEFAULTS, addContactMessage } from "../siteSettings.js";
-import { listUsers } from "../db.js";
+import { listUsers, getPlatformSettings } from "../db.js";
 import { AI_QUOTA } from "../credits.js";
 import { createRateLimiter } from "../rateLimit.js";
 import { sendTelegram } from "../notify.js";
+import { TRIAL_DAYS } from "../trial.js";
 
 /** Hero ostidagi ishonch qatori: admin matni → haqiqiy bizneslar soni → neutral matn. */
 async function trustLine(h) {
@@ -839,7 +840,7 @@ export function authPage(lang, kind, { error = "", notice = "", values = {}, ref
       ${error ? `<div class="err">${esc(error)}</div>` : ""}
       ${notice ? `<div class="ok-note">${esc(notice)}${isForgot ? `<br><span style="font-size:13px">${esc(a.forgotHelp)} ${support.telegram ? `<a href="https://t.me/${esc(support.telegram)}">@${esc(support.telegram)}</a> · ` : ""}${support.email ? `<a href="mailto:${esc(support.email)}">${esc(support.email)}</a>` : ""}</span>` : ""}</div>` : ""}
       ${(isForgot || isReset) ? `<form method="post" action="${path}">
-        ${isReset ? `<input type="hidden" name="token" value="${esc(token)}"><label>${esc(a.newPassword)}</label><input name="password" type="password" required minlength="6" autocomplete="new-password" placeholder="••••••••"><div class="hint">${esc(a.passwordHint)}</div>` : `<label>${esc(a.email)}</label><input name="email" type="email" required value="${esc(values.email || "")}" placeholder="you@email.com" autocomplete="email">`}
+        ${isReset ? `<input type="hidden" name="token" value="${esc(token)}"><label>${esc(a.newPassword)}</label><input name="password" type="password" required minlength="8" autocomplete="new-password" placeholder="••••••••"><div class="hint">${esc(a.passwordHint)}</div>` : `<label>${esc(a.email)}</label><input name="email" type="email" required value="${esc(values.email || "")}" placeholder="you@email.com" autocomplete="email">`}
         <button class="btn">${esc(btn)}</button>
       </form>
       <p class="switch"><a href="/login?lang=${lang}">← ${esc(a.toLogin)}</a></p>` : `
@@ -856,7 +857,7 @@ export function authPage(lang, kind, { error = "", notice = "", values = {}, ref
         <label>${esc(a.email)}</label>
         <input name="email" type="email" required value="${esc(values.email || "")}" placeholder="you@email.com">
         <label>${esc(a.password)}</label>
-        <input name="password" type="password" required ${isReg ? 'minlength="6"' : ""} placeholder="••••••••">
+        <input name="password" type="password" required ${isReg ? 'minlength="8"' : ""} placeholder="••••••••">
         ${isReg ? `<div class="hint">${esc(a.passwordHint)}</div>` : ""}
         ${isLogin ? `<div style="text-align:right; margin-top:8px; font-size:13.5px"><a href="/forgot-password?lang=${lang}">${esc(a.forgotLink)}</a></div>` : ""}
         <button class="btn">${esc(btn)}</button>
@@ -1073,7 +1074,7 @@ site.get("/offer", async (req, res) => {
       body: `Narxlar O'zbekiston Respublikasi milliy valyutasida — <b>so'mda (UZS)</b>
         belgilanadi va QQS (${LEGAL.vat}) hisobga olingan holda ko'rsatiladi.<br><br>
         ${Object.values(plans).map((pl) => `<b>${esc(pl.name)}</b> — ${esc(pl.price.toLocaleString("ru-RU"))} so'm/oy<br>`).join("")}<br>
-        Yangi Buyurtmachilarga <b>3 kunlik bepul sinov muddati</b> beriladi, karta
+        Yangi Buyurtmachilarga <b>${TRIAL_DAYS} kunlik bepul sinov muddati</b> beriladi, karta
         ma'lumotlari talab qilinmaydi. To'lov oldindan, tanlangan tarif uchun bir oylik
         davrga amalga oshiriladi. To'lov Payme orqali (UzCard, Humo, Visa, MasterCard
         kartalari bilan) qabul qilinadi; to'lov uchun fiskal chek beriladi. Amaldagi narxlar
@@ -1134,8 +1135,26 @@ site.get("/offer", async (req, res) => {
   res.send(siteLayout(req.lang, "/offer", "Ommaviy oferta", body, { user: req.user }));
 });
 
-site.get("/data-deletion", (req, res) => {
+site.get("/data-deletion", async (req, res) => {
+  // Meta "data deletion callback" javobidagi holat havolasi: /data-deletion?code=...
+  const code = String(req.query.code || "");
+  let status = null;
+  if (/^[a-f0-9]{16}$/.test(code)) {
+    const list = ((await getPlatformSettings()) || {}).metaDeletionRequests || [];
+    status = list.find((r) => r.code === code) || null;
+  }
+  const statusSection = code
+    ? [{
+        h: `So'rov holati / Request status: ${esc(code)}`,
+        body: status
+          ? `Qabul qilingan / Received: ${esc(status.at.slice(0, 10))}. Instagram ulanishi uzildi va tokenlar o'chirildi;
+             Instagram suhbatlari o'chirildi. / The Instagram connection and access tokens were removed and
+             Instagram conversation history was deleted. Status: <b>${status.status === "done" ? "completed" : "no linked account found"}</b>.`
+          : "So'rov topilmadi / Request not found.",
+      }]
+    : [];
   const body = legalBody("Ma'lumotlarni o'chirish / Data Deletion", [
+    ...statusSection,
     {
       h: "Ma'lumotlaringizni qanday o'chirasiz",
       body: `<b>1-usul — o'zingiz:</b> dashboardga kiring va akkauntni o'chirish tugmasidan

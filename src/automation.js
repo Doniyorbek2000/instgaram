@@ -4,7 +4,6 @@
  * → geymifikatsiya buyruqlari. Hech biri mos kelmasa null qaytadi va xabar
  * odatdagidek kalit so'z qoidalari / AI'ga o'tadi.
  */
-import { persist } from "./db.js";
 import * as game from "./gamification.js";
 import { ensureForms, findFormByTrigger, startForm, handleFormInput, activeSession } from "./forms.js";
 import { ensureRules } from "./rules.js";

@@ -7,8 +7,13 @@ import { aiSettings } from "./aiControl.js";
 
 // Global (zaxira) kalitlar — foydalanuvchi o'z kalitini kiritmagan bo'lsa ishlatiladi
 const globalGeminiKey = process.env.GEMINI_API_KEY || "";
-const globalAnthropicKey = process.env.ANTHROPIC_API_KEY || "";const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-2.0-flash";
-const CLAUDE_MODEL = process.env.AI_MODEL || "claude-3-5-sonnet-20241022";
+const globalAnthropicKey = process.env.ANTHROPIC_API_KEY || "";
+// Asosiy Gemini modeli (.env → GEMINI_MODEL); ishlamasa zaxira model sinab ko'riladi
+const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-3.5-flash-lite";
+const GEMINI_FALLBACK_MODEL = "gemini-3.6-flash";
+// Zaxira AI (Gemini ishlamasa). Eski "claude-3-5-sonnet-20241022" iste'moldan chiqarilgan edi —
+// AI_MODEL berilmasa zaxira umuman ishlamasdi.
+const CLAUDE_MODEL = process.env.AI_MODEL || "claude-opus-5";
 
 const anthropicClient = globalAnthropicKey ? new Anthropic() : null;
 
@@ -112,10 +117,7 @@ export async function askGemini(apiKey, systemPrompt, history, text, media, opts
   // ishlaydi, va oddiy mijozlar-bilan-suhbat vazifasi uchun sifati real testlarda
   // (halollik qoidasi, narx savollari, kontekst) to'liq yetarli ekani tasdiqlandi.
   // gemini-3.6-flash faqat flash-lite ishlamay qolgan holatlar uchun zaxirada qoladi.
-  const modelsToTry = [
-    "gemini-3.5-flash-lite",
-    "gemini-3.6-flash",
-  ];
+  const modelsToTry = [...new Set([GEMINI_MODEL, GEMINI_FALLBACK_MODEL])];
   let lastError = null;
 
   // Har bir urinish uchun qat'iy vaqt chegarasi — avval BU YO'Q edi, shuning
@@ -206,7 +208,11 @@ async function askClaude(systemPrompt, history, text, media, meter = null) {
 
   const response = await anthropicClient.messages.create({
     model: CLAUDE_MODEL,
-    max_tokens: 1024,
+    // Opus 5'da o'ylash (thinking) standart yoqilgan va max_tokens ichiga kiradi —
+    // qisqa chat javobi kesilib qolmasligi uchun zaxira bor
+    max_tokens: 4096,
+    // Mijozga qisqa javob — chuqur mulohaza kerak emas: past effort tezroq va arzonroq
+    output_config: { effort: "low" },
     system: [
       { type: "text", text: systemPrompt },
     ],

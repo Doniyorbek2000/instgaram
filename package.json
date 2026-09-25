@@ -1,32 +1,40 @@
 {
-  "name": "meta-avtomatlashtirish",
-  "version": "1.0.0",
-  "description": "Instagram, Facebook Messenger va WhatsApp uchun avtomatik javob beruvchi bot (Meta Graph API)",
+  "name": "obunext",
+  "version": "1.1.0",
+  "private": true,
+  "description": "Obunext — Instagram, Facebook Messenger, WhatsApp va Telegram uchun AI avtomatlashtirish platformasi (Meta Graph API)",
   "main": "src/index.js",
   "type": "module",
   "scripts": {
     "start": "node src/index.js",
     "dev": "node --watch src/index.js",
-    "test": "node --test --test-concurrency=1 test/*.test.js"
+    "test": "node --test test/*.test.js",
+    "lint": "eslint .",
+    "check": "npm run lint && npm test",
+    "deploy": "node scripts/deploy.js",
+    "server": "node scripts/ssh.js"
   },
   "engines": {
-    "node": ">=18"
+    "node": ">=20.16"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.39.0",
+    "@anthropic-ai/sdk": "^0.128.0",
     "dotenv": "^16.4.5",
-    "express": "^4.19.2",
+    "express": "^4.22.3",
     "mammoth": "^1.12.1",
-    "multer": "^2.2.0",
-    "nodemailer": "^7.0.13",
-    "pdf-parse": "^1.1.1",
-    "pg": ">=8.0.0",
+    "multer": "^2.4.0",
+    "nodemailer": "^10.0.10",
+    "pdf-parse": "^2.4.5",
+    "pg": "^8.23.0",
     "qrcode": "^1.5.4",
-    "ssh2": "^1.17.0",
     "web-push": "^3.6.7"
   },
   "devDependencies": {
-    "sharp": "^0.35.3"
+    "@eslint/js": "^9.39.5",
+    "eslint": "^9.39.5",
+    "globals": "^17.12.0",
+    "sharp": "^0.35.3",
+    "ssh2": "^1.17.0"
   },
   "license": "MIT"
 }

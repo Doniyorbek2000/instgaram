@@ -101,7 +101,7 @@ settingsRouter.get("/settings", requireAuth, (req, res) => {
             <input type="password" name="oldPassword" required placeholder="••••••••">
 
             <label>Yangi parol</label>
-            <input type="password" name="newPassword" required minlength="6" placeholder="••••••••">
+            <input type="password" name="newPassword" required minlength="8" placeholder="••••••••">
 
             <button type="submit" class="btn secondary" style="margin-top:16px; width:100%">🔒 Parolni Yangilash</button>
           </form>

@@ -25,59 +25,73 @@ va **test ko'rsatmalari**. Quyida hammasi tayyor.
 
 ## 1. Tushuntirish matnlari (ingliz tilida, nusxa oling)
 
+> Matnlar kodga solishtirib yozilgan (2026-09-25). Yangi funksiya qo'shilsa, shu yerni ham
+> yangilang — Meta'ga noto'g'ri tavsif rad etish yoki ilovani bloklashga olib keladi.
+
 ### instagram_business_basic
 
 ```
-Our platform ("AI Biznes Yordamchi") lets small businesses in Uzbekistan connect their
-own Instagram professional account and have an AI assistant reply to customer messages
-on their behalf.
+Obunext (https://obunext.uz) is a platform for small businesses in Uzbekistan. A business
+owner connects their own Instagram professional account, and our AI assistant answers
+their customers' Direct messages and comments on their behalf.
 
-We use instagram_business_basic to identify the Instagram professional account that the
-business owner connects through Instagram Business Login. Specifically, we call
-GET /me?fields=id,user_id,username,account_type once, immediately after the OAuth flow.
+We use instagram_business_basic to:
+1. Identify the connected professional account right after Instagram Business Login
+   (GET /me?fields=user_id,username). The user_id is what Instagram sends as "entry.id" in
+   webhook events; we store it to route each incoming event to the correct business on our
+   multi-tenant platform, and we show the username in the owner's dashboard.
+2. List the business's own posts and Reels (GET /{ig-user-id}/media) so the owner can pick
+   which post a comment automation applies to, and — only when the owner clicks
+   "Learn from Instagram" — read the captions of their own posts to pre-fill the AI's
+   product/price knowledge base, which the owner reviews and edits before saving.
 
-We need this because:
-1. The "user_id" value is what Instagram sends as "entry.id" in webhook events. We store
-   it so that when a message arrives, we can route it to the correct business account on
-   our multi-tenant platform.
-2. We display the connected "username" in the business owner's dashboard so they can
-   confirm the correct account is connected.
-
-We do not read media, insights, followers or any other profile data.
+We only access the account the business owner connected themselves. We do not access
+other accounts' content, followers lists or any data for advertising.
 ```
 
 ### instagram_business_manage_messages
 
 ```
-This is the core of our product. Business owners receive customer questions in Instagram
-Direct (prices, delivery, working hours, product availability). Our AI assistant replies
-automatically in the customer's language (Uzbek, Russian or English), using only the
-business information that the owner has entered in our dashboard.
+This is the core of our product. Customers ask businesses in Instagram Direct about
+prices, delivery, working hours and product availability. Our AI assistant replies in the
+customer's language (Uzbek, Russian or English) using only the information the business
+owner entered in our dashboard.
 
 How we use the permission:
-1. We subscribe the connected account to the "messages" webhook field.
-2. When a customer sends a Direct message, we receive the webhook, look up which business
-   the account belongs to, and generate a reply based on that business's own information.
-3. We send the reply via POST /me/messages using the business's access token.
-4. If the customer asks for a human ("operator"), the bot goes silent for 2 hours and the
-   request is shown to the business owner in the dashboard.
-
-We only reply to users who message the business first, and only within Meta's 24-hour
-messaging window. We never send unsolicited or promotional messages.
+1. We subscribe the connected account to the "messages" and "messaging_postbacks" webhooks.
+2. When a customer writes, we generate a reply from the business's own information and
+   send it via POST /me/messages with the business's token. Replies can include quick-reply
+   buttons, and the owner can build simple automated conversations (e.g. a lead form that
+   asks for the customer's name and phone number).
+3. We read the sender's name, username and profile picture (GET /{igsid}) to show them in
+   the business's inbox, and "is_user_follow_business" when the owner enables a
+   "follow to receive the gift" rule.
+4. The business owner and their staff can read the conversation and reply manually from
+   our inbox. If a customer asks for a human, the bot stops replying in that chat and the
+   owner is notified.
+5. We set the account's Ice Breakers and persistent menu (messenger_profile) when the owner
+   configures them.
+6. The owner can send a message to customers who have written to the business within the
+   last 24 hours (e.g. "your order is ready"). Our system enforces Meta's 24-hour messaging
+   window for all Instagram messages — messages to customers outside the window are never
+   sent. Such messages include a "reply STOP to unsubscribe" note by default, and a
+   customer who replies STOP is automatically excluded from all future bulk messages.
 ```
 
 ### instagram_business_manage_comments
 
 ```
-Business owners also receive questions as comments under their posts. With this
-permission we:
-1. Subscribe to the "comments" webhook field.
-2. Post a short public reply to the comment (e.g. "We answered you in Direct").
-3. Send a private reply to the commenter with the actual answer, using the business's
-   own information.
+Customers also ask questions in comments under the business's posts. With this permission:
+1. We subscribe to the "comments" and "live_comments" webhook fields for the connected
+   account.
+2. We read comments on the business's own posts (GET /{media-id}/comments) so the owner can
+   see them and choose a keyword for automation.
+3. When a comment matches the owner's keyword rule, we post a short public reply
+   (e.g. "We sent you the details in Direct") and send one private reply to the commenter
+   with the answer, using the business's own information.
 
-This mirrors what the business owner would do manually, and only in response to comments
-left on their own posts. We never comment on other accounts' content.
+This mirrors what the owner would do manually, only on comments left on the business's own
+posts. We never comment on other accounts' content.
 ```
 
 ---
@@ -90,7 +104,7 @@ alohida yozuv).
 
 Ketma-ketlik (2-4 daqiqa):
 
-1. `https://bot.abdujabborov-doniyorbek.uz` ochiladi — bosh sahifa ko'rinsin
+1. `https://obunext.uz` ochiladi — bosh sahifa ko'rinsin
 2. **Ro'yxatdan o'tish** — yangi email bilan (jonli ko'rsating)
 3. Dashboardda **biznes ma'lumotini** to'ldirish (mahsulot, narx, ish vaqti) va saqlash
 4. **"📷 Instagram bilan ulash"** tugmasini bosish
@@ -113,9 +127,9 @@ Bu matnni "Provide testing instructions" maydoniga qo'ying:
 
 ```
 Test account for our platform (no Facebook login required):
-  URL: https://bot.abdujabborov-doniyorbek.uz
-  Email: reviewer@admai.uz
-  Password: MetaReview2026
+  URL: https://obunext.uz/login
+  Email: <reviewer hisobi emaili>
+  Password: <parol>
 
 Steps:
 1. Open the URL above and log in with the credentials.
@@ -136,10 +150,10 @@ Note: the assistant replies in the language of the incoming message (Uzbek, Russ
 English). Our interface is in Uzbek because our customers are businesses in Uzbekistan.
 ```
 
-**Bu hisob allaqachon yaratilgan va tekshirilgan** (2026-07-16): login ishlaydi, biznes
-ma'lumoti (mahsulot, narx, manzil, ish vaqti) to'ldirilgan, "Instagram bilan ulash"
-tugmasi ko'rinadi. Arizadan oldin o'zingiz ham bir marta kirib ko'ring — parol
-o'zgartirilgan bo'lsa, hujjatdagi matnni ham yangilang.
+**Test hisobining login va parolini bu faylga YOZMANG** — fayl git'da va serverda turadi.
+Ularni faqat Meta formasidagi "testing instructions" maydoniga kiriting. Hisobda biznes
+ma'lumoti (mahsulot, narx, manzil, ish vaqti) to'ldirilgan bo'lsin va "Instagram bilan ulash"
+tugmasi ko'rinsin. Arizadan oldin o'zingiz bir marta kirib tekshiring.
 
 ---
 
@@ -157,8 +171,8 @@ maqsadda ishlatamiz" degan mazmunda belgi qo'yiladi. Bizda hammasi rost:
 
 | Ruxsat | Ruxsat etilgan maqsad | Bizda shundaymi |
 |---|---|---|
-| `instagram_business_basic` | Ulangan akkauntni aniqlash | ✅ faqat `/me` bir marta |
-| `instagram_business_manage_messages` | Mijoz yozgan xabarga javob berish | ✅ faqat javob, spam yo'q |
+| `instagram_business_basic` | Ulangan akkauntni aniqlash, o'z postlari ro'yxati | ✅ faqat ulangan akkaunt |
+| `instagram_business_manage_messages` | Mijoz xabarlariga javob, inbox | ✅ 24 soatlik oyna majburiy, STOP ishlaydi |
 | `instagram_business_manage_comments` | O'z postidagi kommentga javob | ✅ faqat o'z posti |
 
 Agar "Do you use this permission for advertising / resale of data?" kabi savol chiqsa —
@@ -170,48 +184,64 @@ Savollar taxminan quyidagicha bo'ladi:
 
 **"What Platform Data do you access?"**
 ```
-Instagram Direct message content (text, and optionally voice/image/video attachments
-sent by the customer), the Instagram-scoped sender ID, the message ID and timestamp,
-and the connected business account's ID and username.
+For each Instagram professional account a business owner connects: the account's ID and
+username; the business's own posts/Reels list and captions; comments on the business's own
+posts; Instagram Direct messages sent to the business (text and, if the customer sends them,
+voice/image/video attachments); the Instagram-scoped ID, name, username and profile picture
+of customers who message or comment; and whether the customer follows the business (only
+when the owner enables a follow-based rule).
 ```
 
 **"How do you use it?"**
 ```
-Solely to generate and send an automated reply on behalf of the business that owns the
-account, using business information that the business owner entered in our dashboard.
-We also keep a short conversation context (last ~10 messages) so replies stay coherent,
-and aggregate counters (number of messages, unique customers) shown to the business owner.
+Solely to provide the service to the business that connected the account: generating and
+sending replies to its customers' messages and comments, showing conversations in the
+business's inbox so the owner and their staff can read and answer them, running the
+automations the owner configured (keyword replies, lead forms, reminders within the 24-hour
+window), and showing the owner aggregate statistics (message counts, number of customers).
+We do not use Platform Data for advertising, profiling across businesses, or model training.
 ```
 
 **"Do you transfer Platform Data to any third party?"**
 ```
-Yes — to Google (Gemini API) as our AI service provider, solely to generate the reply
-text. Message content is sent to the model at request time; Google acts as a processor
-on our behalf. No other third parties receive Platform Data. We do not sell, rent or
-share Platform Data for advertising.
+1. AI processing: message text and attachments are sent at request time to Google (Gemini
+   API) — and, only if Gemini is unavailable, to Anthropic (Claude API) — solely to generate
+   the reply. They act as processors on our behalf.
+2. At the business owner's direction only: if the owner connects their own CRM (amoCRM,
+   Bitrix24), Google Sheets or webhook, the lead details their customers submitted (e.g. name
+   and phone number) are sent to that system, which the business owner controls.
+3. Encrypted off-site backups (encrypted with our own key before upload; the storage
+   provider cannot read them).
+We do not sell, rent or share Platform Data with anyone else.
 ```
 
 **"Where is data stored?"**
 ```
-On our own dedicated server located in Germany (EU).
+On our server in the European Union (France), hosted by Contabo GmbH.
 ```
 
 **"How is data protected?"**
 ```
-All traffic is over HTTPS/TLS. Webhook requests from Meta are verified with the
-X-Hub-Signature-256 cryptographic signature. Passwords are hashed with scrypt.
-Access tokens are stored server-side only and are never exposed to the browser.
-Server access is restricted to SSH key authentication.
+All traffic uses HTTPS/TLS. Webhook requests from Meta are verified with the
+X-Hub-Signature-256 signature. Instagram access tokens and other credentials are encrypted
+at rest (AES-256-GCM) and never sent to the browser. User passwords are hashed with scrypt,
+session tokens are stored only as hashes, and the admin panel is on a separate domain with
+brute-force protection and an audit log. Each business can only access its own data.
 ```
 
 **"Data retention / deletion"**
 ```
-Conversation context is limited to the most recent messages per chat; older messages are
-discarded automatically. Business owners can disconnect their Instagram account at any
-time from their dashboard, or delete their account entirely. Deletion requests sent to
-our data deletion endpoint are completed within 30 days, including backups. See
-https://bot.abdujabborov-doniyorbek.uz/data-deletion
+Conversation history is kept so the business can see past conversations in its inbox,
+until the business deletes the conversation, disconnects Instagram, or deletes its account.
+When a user removes our app on Instagram, our deauthorize callback disconnects the account
+and deletes its access token; our data deletion callback additionally deletes the Instagram
+conversation history and returns a confirmation code with a status page. Account deletion
+requests by email are completed within 30 days, including backups.
+Instructions: https://obunext.uz/data-deletion
 ```
+
+> **Diqqat:** "encrypted at rest" gapi serverdagi `.env` ga `DATA_ENCRYPTION_KEY` qo'shilib
+> deploy qilingandan keyin haqiqatga aylanadi — arizani undan keyin yuboring.
 
 ### Verification — faqat siz qila olasiz
 

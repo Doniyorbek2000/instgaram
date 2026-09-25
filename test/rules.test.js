@@ -1,11 +1,7 @@
+import "./_setup.js";
 import test from "node:test";
 import assert from "node:assert";
-import { rmSync } from "node:fs";
-import { fileURLToPath } from "node:url";
-import path from "node:path";
 
-const dataDir = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "data");
-rmSync(dataDir, { recursive: true, force: true });
 
 // AI kalitlarisiz — AI trigger deterministik ravishda o'chiq bo'lsin
 process.env.GEMINI_API_KEY = "";
@@ -111,8 +107,15 @@ test("ruleReplyOptions havola tugmalari va forma tugmasini birlashtiradi", () =>
 
 // ==== Follow-up navbati ====
 
+// Mijoz yozgan (Meta'ning 24 soatlik oynasi ochiq)
+const inbound = (t, key) => {
+  t.chats ||= {};
+  t.chats[key] = [{ role: "user", text: "salom", at: new Date().toISOString() }];
+};
+
 test("vazifa rejalashtiriladi, muddati kelganda yuboriladi va navbatdan o'chadi", async () => {
   const t = await newTenant("fu@x.uz");
+  inbound(t, "ig:1");
   scheduleFollowUp(t, { key: "ig:1", kind: "followup", ruleId: "r1", text: "Salom!", delayMin: 5 });
   const sent = [];
   const fakeSend = async (_t, chan, id, text) => { sent.push({ chan, id, text }); return true; };
@@ -123,6 +126,19 @@ test("vazifa rejalashtiriladi, muddati kelganda yuboriladi va navbatdan o'chadi"
   assert.strictEqual(await runTenantFollowUps(t, Date.now() + 6 * 60 * 1000, fakeSend), 1);
   assert.deepStrictEqual(sent, [{ chan: "ig", id: "1", text: "Salom!" }]);
   assert.strictEqual(t.followUps.length, 0);
+});
+
+test("Meta 24 soatlik oynasi yopiq bo'lsa follow-up yuborilmaydi (Telegram'da cheklov yo'q)", async () => {
+  const t = await newTenant("window@x.uz");
+  t.chats = {
+    "ig:50": [{ role: "user", text: "salom", at: new Date(Date.now() - 2 * 86400000).toISOString() }],
+    "tg:51": [{ role: "user", text: "salom", at: new Date(Date.now() - 2 * 86400000).toISOString() }],
+  };
+  scheduleFollowUp(t, { key: "ig:50", kind: "followup", text: "Eslatma", delayMin: 1 });
+  scheduleFollowUp(t, { key: "tg:51", kind: "followup", text: "Eslatma", delayMin: 1 });
+  const sent = [];
+  await runTenantFollowUps(t, Date.now() + 2 * 60 * 1000, async (_t, chan, id) => { sent.push(`${chan}:${id}`); return true; });
+  assert.deepStrictEqual(sent, ["tg:51"]);
 });
 
 test("bir mijoz+qoida uchun eslatma takrorlanmaydi va bekor qilinadi", async () => {
@@ -147,6 +163,7 @@ test("juda eskirgan vazifa yuborilmaydi, obunasi tugagan biznesga ham yuborilmay
   const { savePlatformSettings } = await import("../src/credits.js");
   await savePlatformSettings({ freePlan: false });
   const t2 = await newTenant("inactive@x.uz");
+  inbound(t2, "ig:4");
   t2.subscription.trialEndsAt = new Date(Date.now() - 86400000).toISOString();
   scheduleFollowUp(t2, { key: "ig:4", kind: "followup", text: "X", delayMin: 1 });
   await runTenantFollowUps(t2, Date.now() + 2 * 60 * 1000, fakeSend);

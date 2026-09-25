@@ -1,6 +1,17 @@
 node_modules
 data
+backups
+.release
 .env
+.env.*
+!.env.example
 *.log
 .git
 .gitignore
+.github
+.claude
+.vscode
+test
+coverage
+*.md
+app-icon-1024.png
