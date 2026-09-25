@@ -11,6 +11,7 @@ import { handleFlowInbound, findFlowTrigger, aiFlowCandidates, startFlow, logToI
 import { renderTemplate } from "./templating.js";
 import { aiAllowed, offReply } from "./aiControl.js";
 import { getContactMeta } from "./contacts.js";
+import { isBotLoop } from "./botLoop.js";
 
 const OFF_REPLY_EVERY_MS = 6 * 60 * 60 * 1000;
 import { fireEvent } from "./integrations.js";
@@ -98,6 +99,17 @@ export async function processMessage(tenant, channel, chatKey, { text = "", medi
   // 3. Chat qo'lda rejimda bo'lsa (operator boshqarmoqda) — bot jim
   if (isManual(tenant, fullKey)) {
     console.log(`[${channel}] ${tenant.businessName}: ${fullKey} operator rejimida`);
+    return { reply: null };
+  }
+
+  // 3b. Bot-bot tsikli: "mijoz" botimizning javobiga odam yozolmaydigan tezlikda qayta-qayta
+  // javob beryapti (boshqa akkauntning avto-javob boti). Bot jim bo'ladi, suhbat
+  // operatorga o'tadi (2 soat) va egasiga xabar boradi — AI krediti behuda yonmaydi.
+  if (!payload && isBotLoop(tenant.chats?.[fullKey])) {
+    pushChat(tenant, fullKey, shownText && { role: "user", text: shownText });
+    startHandoff(tenant, channel, fullKey);
+    notifyHandoff(tenant, channel, fullKey).catch(() => {});
+    console.warn(`[${channel}] ${tenant.businessName}: ${fullKey} — bot-bot tsikli aniqlandi, bot jim (operatorga o'tkazildi)`);
     return { reply: null };
   }
 
