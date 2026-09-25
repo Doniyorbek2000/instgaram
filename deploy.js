@@ -100,7 +100,7 @@ async function main() {
 
     try {
       console.log('📦 Loyiha fayllari bitta arxivga yig\'ilmoqda...');
-      execSync(`tar -czf "${bundleName}" package.json package-lock.json rules.json APP_REVIEW.md DEPLOY.md README.md SETUP.md business.md assets .env docker-compose.yml src`, {
+      execSync(`tar -czf "${bundleName}" package.json package-lock.json rules.json APP_REVIEW.md DEPLOY.md README.md SETUP.md business.md assets .env docker-compose.yml src scripts`, {
         cwd: localBaseDir,
         stdio: 'inherit'
       });

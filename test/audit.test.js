@@ -103,9 +103,14 @@ test("Payme: do'kon buyurtmasi avtomatik to'landi bo'ladi", async () => {
   const account = { order_id: String(order.num) };
   const bad = await handleShopPayme(user, { id: 1, method: "CheckPerformTransaction", params: { amount: 100, account } });
   assert.strictEqual(bad.error.code, -31001);
+  const noCode = await handleShopPayme(user, { id: 2, method: "CheckPerformTransaction", params: { amount: 30000000, account } });
+  assert.strictEqual(noCode.result.allow, true);
+  assert.strictEqual(noCode.result.detail, undefined, "MXIK yo'q — chek tafsiloti yuborilmaydi");
+  ensureShop(user).settings.fiscal = { ikpu: "10305008002000000", packageCode: "1545643", vatPercent: 12 };
   const chk = await handleShopPayme(user, { id: 2, method: "CheckPerformTransaction", params: { amount: 30000000, account } });
-  assert.strictEqual(chk.result.allow, true);
   assert.strictEqual(chk.result.detail.items[0].count, 2);
+  assert.strictEqual(chk.result.detail.items[0].price, 15000000);
+  assert.strictEqual(chk.result.detail.items[0].code, "10305008002000000");
   const cr = await handleShopPayme(user, { id: 3, method: "CreateTransaction", params: { id: "tx1", time: Date.now(), amount: 30000000, account } });
   assert.strictEqual(cr.result.state, 1);
   const again = await handleShopPayme(user, { id: 4, method: "CreateTransaction", params: { id: "tx2", time: Date.now(), amount: 30000000, account } });

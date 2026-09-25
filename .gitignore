@@ -5,3 +5,4 @@ data/
 .claude/
 scratch/
 __pycache__/
+backups/

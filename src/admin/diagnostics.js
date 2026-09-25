@@ -34,6 +34,10 @@ export async function diagnoseBusiness(u) {
       const id = String(me.user_id || me.id);
       const match = !m.igUserId || m.igUserId === id || m.pageId === id;
       add("Instagram", match ? "ok" : "warn", `@${me.username || "?"} ulangan`, match ? `ID ${id}` : `Token ID (${id}) saqlangan igUserId (${m.igUserId}) bilan mos emas — webhook boshqa biznesga tushishi mumkin`);
+      const exp = Date.parse(m.igTokenExpiresAt || 0) || 0;
+      if (m.igTokenError) add("Instagram", "warn", "Tokenni yangilab bo'lmadi", m.igTokenError);
+      else if (exp) add("Instagram", exp - Date.now() < 7 * 86400000 ? "warn" : "ok", "Token muddati", `${new Date(exp).toISOString().slice(0, 10)} gacha · avtomatik yangilanadi`);
+      else add("Instagram", "warn", "Token muddati noma'lum", "Eski ulanish — server keyingi tekshiruvda yangilaydi");
     }
   } else add("Instagram", "off", "Ulanmagan");
 

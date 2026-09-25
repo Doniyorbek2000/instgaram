@@ -16,6 +16,7 @@ export const SITE_DEFAULTS = {
   minBusinessCount: 20, // shundan kam bo'lsa son ko'rsatilmaydi
   rating: "", // masalan "4.8" — faqat haqiqiy baholash manbai bo'lsa
   testimonials: [], // [{ quote, name, role }] — faqat ruxsat olingan haqiqiy fikrlar
+  dataLocation: "Yevropa Ittifoqi", // maxfiylik siyosatida ko'rsatiladi — haqiqiy joylashuvni kiriting
 };
 
 const MAX_MESSAGES = 500;
@@ -51,6 +52,7 @@ export async function saveSiteSettings(input = {}) {
       rating,
       testimonials,
       trustText: clean(input.trustText, 120),
+      dataLocation: clean(input.dataLocation, 120) || SITE_DEFAULTS.dataLocation,
       showBusinessCount: input.showBusinessCount === "on" || input.showBusinessCount === true,
       minBusinessCount: Math.max(1, Math.min(100000, Math.round(Number(input.minBusinessCount) || SITE_DEFAULTS.minBusinessCount))),
     },

@@ -140,6 +140,18 @@ Kerak bo'lsa, alohida biznesga o'z Gemini kalitini ham berish mumkin (bo'sh qold
 - DM'da bot mijoz yozganidan keyin **24 soat ichida** erkin javob bera oladi.
 - Kommentga shaxsiy javob (Private Reply) komment yozilganidan keyin **7 kun ichida** mumkin.
 
+## Zaxira nusxa va tiklash
+
+- Server har kuni avtomatik zaxira oladi: `backups/obunext-<vaqt>-db.ndjson.gz` (PostgreSQL jadvallari yoki `db.json`) va `backups/obunext-<vaqt>-files.tar.gz` (`data/`: media, suhbat arxivi). Oxirgi `BACKUP_KEEP` (14) ta saqlanadi.
+- `.env`da `TELEGRAM_BOT_TOKEN` va `ADMIN_TELEGRAM_CHAT_ID` bo'lsa, baza nusxasi har kuni Telegram'ga ham yuboriladi (serverdan tashqari nusxa).
+- Admin panel → **Tizim holati**: oxirgi zaxira, "Hozir zaxira olish", fayllarni yuklab olish, oxirgi xatolar.
+- Tiklash (server to'xtatilgan holda): `node scripts/restore.mjs backups/obunext-...-db.ndjson.gz`, fayllar uchun `tar -xzf backups/obunext-...-files.tar.gz -C .`
+
+## Email va ogohlantirishlar
+
+- `SMTP_HOST`, `SMTP_USER`, `SMTP_PASS` (`SMTP_PORT`, `SMTP_FROM`) — parolni tiklash, email tasdiqlash va obuna eslatmalari. SMTP bo'lmasa tiklash havolasi faqat Telegram (ulangan bo'lsa) orqali keladi.
+- `ADMIN_TELEGRAM_CHAT_ID` — kutilmagan server xatolari, baza muammosi va saytdan kelgan murojaatlar shu chatga yuboriladi.
+
 ## Test
 
 ```bash

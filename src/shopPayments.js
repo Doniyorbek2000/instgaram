@@ -14,6 +14,7 @@ import crypto from "node:crypto";
 import { Router } from "express";
 import { findUserById, persist } from "./db.js";
 import { ensureShop, setOrderStatus } from "./shop.js";
+import { receiptDetail } from "./fiscal.js";
 
 export const shopPaymentsRouter = Router();
 
@@ -89,10 +90,15 @@ export async function handleShopPayme(tenant, body, now = Date.now()) {
     const e = paymeCheck(tenant, id, params);
     if (e) return e;
     const order = paymeOrder(tenant, params.account);
-    return rpcOk(id, {
-      allow: true,
-      detail: { receipt_type: 0, items: order.items.map((it) => ({ title: it.name.slice(0, 120), price: it.price * 100, count: it.qty, code: "", package_code: "", vat_percent: 0 })) },
-    });
+    const shop = ensureShop(tenant);
+    const detail = receiptDetail(
+      order.items.map((it) => {
+        const p = shop.products.find((x) => x.id === it.productId) || {};
+        return { title: it.name, price: it.price, count: it.qty, ikpu: p.ikpu, packageCode: p.packageCode };
+      }),
+      shop.settings.fiscal || {}
+    );
+    return rpcOk(id, detail ? { allow: true, detail } : { allow: true });
   }
 
   if (method === "CreateTransaction") {

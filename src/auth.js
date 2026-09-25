@@ -8,7 +8,10 @@ import {
   deleteSession,
   deleteUserSessions,
   updateUser,
+  findUserById,
+  persist,
 } from "./db.js";
+import { sendPlatformMail, mailReady } from "./mailer.js";
 
 function hashPassword(password, salt) {
   return crypto.scryptSync(password, salt, 64).toString("hex");
@@ -44,6 +47,9 @@ export async function register(email, password, businessName) {
     businessName,
   });
   const token = await createSession(user.id);
+  user.meta ||= {};
+  user.meta.emailVerified = false;
+  await persist(user);
   return { user, token };
 }
 
@@ -60,8 +66,8 @@ export async function loginOrRegisterWithGoogle({ googleId, email, name }) {
   let user = await findUserByEmail(email);
   if (user) {
     if (user.meta?.googleId !== googleId) {
-      await updateUser(user.id, { meta: { googleId } });
-      user.meta = { ...user.meta, googleId };
+      await updateUser(user.id, { meta: { googleId, emailVerified: true } });
+      user.meta = { ...user.meta, googleId, emailVerified: true };
     }
   } else {
     const salt = crypto.randomBytes(16).toString("hex");
@@ -71,8 +77,8 @@ export async function loginOrRegisterWithGoogle({ googleId, email, name }) {
       passwordHash: hashPassword(crypto.randomBytes(32).toString("hex"), salt),
       businessName: name || email.split("@")[0],
     });
-    await updateUser(user.id, { meta: { googleId } });
-    user.meta = { ...user.meta, googleId };
+    await updateUser(user.id, { meta: { googleId, emailVerified: true } });
+    user.meta = { ...user.meta, googleId, emailVerified: true };
   }
 
   const token = await createSession(user.id);
@@ -173,3 +179,92 @@ export function requireAdmin(req, res, next) {
   next();
 }
 
+
+// ==================== Parolni tiklash va email tasdiqlash ====================
+
+const RESET_TTL_MS = 60 * 60 * 1000;
+const sha = (v) => crypto.createHash("sha256").update(String(v)).digest("hex");
+
+/** Token "<userId>.<tasodifiy>" — bazada faqat xeshi saqlanadi. */
+function issueToken(user, field, ttlMs) {
+  const secret = crypto.randomBytes(24).toString("hex");
+  user.meta ||= {};
+  user.meta[field] = { hash: sha(secret), exp: Date.now() + ttlMs };
+  return `${user.id}.${secret}`;
+}
+
+async function consumeToken(token, field) {
+  const [id, secret] = String(token || "").split(".");
+  if (!id || !secret) return null;
+  const user = await findUserById(id);
+  const rec = user?.meta?.[field];
+  if (!rec?.hash || rec.exp < Date.now()) return null;
+  const a = Buffer.from(sha(secret));
+  const b = Buffer.from(rec.hash);
+  if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) return null;
+  return user;
+}
+
+/**
+ * Parolni tiklash havolasini email va (ulangan bo'lsa) Telegram orqali yuboradi.
+ * Email mavjudligini oshkor qilmaslik uchun natija doim bir xil ko'rsatiladi.
+ * Qaytaradi: { channels: [...] } — faqat log/test uchun.
+ */
+export async function requestPasswordReset(email, baseUrl) {
+  const user = await findUserByEmail(email);
+  if (!user) return { channels: [] };
+  const last = Number(user.meta?.pwResetSentAt) || 0;
+  if (Date.now() - last < 60 * 1000) return { channels: [], throttled: true };
+  const token = issueToken(user, "pwReset", RESET_TTL_MS);
+  user.meta.pwResetSentAt = Date.now();
+  await persist(user);
+  const url = `${baseUrl}/reset-password?token=${encodeURIComponent(token)}`;
+  const channels = [];
+  if (await sendPlatformMail(user.email, {
+    subject: "Obunext — parolni tiklash",
+    lines: ["Parolni tiklash so'raldi. Yangi parol o'rnatish uchun tugmani bosing (havola 1 soat amal qiladi).", "Agar bu siz bo'lmasangiz, xatni e'tiborsiz qoldiring — parolingiz o'zgarmaydi."],
+    button: { label: "Yangi parol o'rnatish", url },
+  })) channels.push("email");
+  if (user.settings?.telegramChatId) {
+    const { sendTelegram } = await import("./notify.js");
+    const ok = await sendTelegram(user.settings.telegramChatId, `🔑 Obunext parolini tiklash (1 soat amal qiladi):\n${url}\n\nSiz so'ramagan bo'lsangiz — e'tibor bermang.`).catch(() => false);
+    if (ok !== false) channels.push("telegram");
+  }
+  return { channels };
+}
+
+export async function resetPasswordWithToken(token, newPassword) {
+  if (!newPassword || String(newPassword).length < 6) return { error: "Parol kamida 6 ta belgidan iborat bo'lsin" };
+  const user = await consumeToken(token, "pwReset");
+  if (!user) return { error: "invalid" };
+  const salt = crypto.randomBytes(16).toString("hex");
+  user.salt = salt;
+  user.passwordHash = hashPassword(String(newPassword), salt);
+  delete user.meta.pwReset;
+  user.meta.emailVerified = true; // havola emailga kelgan — email egasi tasdiqlandi
+  await persist(user);
+  await deleteUserSessions(user.id);
+  const sessionToken = await createSession(user.id);
+  return { ok: true, user, token: sessionToken };
+}
+
+/** Email tasdiqlash xatini yuboradi (SMTP sozlangan bo'lsa). */
+export async function sendEmailVerification(user, baseUrl) {
+  if (!mailReady() || !user?.email) return false;
+  const token = issueToken(user, "emailVerify", 7 * 86400000);
+  await persist(user);
+  return sendPlatformMail(user.email, {
+    subject: "Obunext — emailingizni tasdiqlang",
+    lines: [`Assalomu alaykum! "${user.businessName || "Obunext"}" hisobingiz yaratildi.`, "Emailingizni tasdiqlang — parolni unutsangiz, tiklash havolasi shu manzilga keladi."],
+    button: { label: "Emailni tasdiqlash", url: `${baseUrl}/verify-email?token=${encodeURIComponent(token)}` },
+  });
+}
+
+export async function verifyEmailToken(token) {
+  const user = await consumeToken(token, "emailVerify");
+  if (!user) return null;
+  delete user.meta.emailVerify;
+  user.meta.emailVerified = true;
+  await persist(user);
+  return user;
+}

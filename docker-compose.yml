@@ -2,6 +2,8 @@ services:
   bot:
     build: .
     restart: unless-stopped
+    # Deploy paytida jarayondagi xabarlar tugatilishi uchun (src/index.js shutdown)
+    stop_grace_period: 25s
     ports:
       - "127.0.0.1:3015:3015"
     env_file:
@@ -10,6 +12,7 @@ services:
       PG_HOST: postgres
     volumes:
       - ./data:/app/data
+      - ./backups:/app/backups
       - ./src:/app/src
     depends_on:
       postgres:

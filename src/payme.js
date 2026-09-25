@@ -18,6 +18,7 @@ import {
   findUserById,
 } from "./db.js";
 import { activate, deactivate } from "./subscription.js";
+import { receiptDetail, platformFiscal } from "./fiscal.js";
 
 // Tranzaksiya 12 soat ichida yakunlanishi kerak
 const TIMEOUT_MS = 12 * 60 * 60 * 1000;
@@ -96,7 +97,13 @@ async function checkPerform(id, params) {
   if (Number(params.amount) !== Math.round(order.amount * 100)) {
     return err(id, ERR.AMOUNT, msg("Неверная сумма", "Summa noto'g'ri", "Invalid amount"));
   }
-  return ok(id, { allow: true });
+  // Fiskal chek uchun: MXIK kodi admin panelda kiritilgan bo'lsa — mahsulot tafsiloti
+  const isCredits = String(order.plan || "").startsWith(CREDIT_ORDER_PREFIX);
+  const title = isCredits
+    ? `Obunext AI kreditlar (${CREDIT_PACKS[order.plan.slice(CREDIT_ORDER_PREFIX.length)]?.credits || ""})`
+    : `Obunext obunasi — ${order.plan || ""}, ${order.days || 30} kun`;
+  const detail = receiptDetail([{ title, price: order.amount, count: 1 }], platformFiscal());
+  return ok(id, detail ? { allow: true, detail } : { allow: true });
 }
 
 async function createTransaction(id, params) {

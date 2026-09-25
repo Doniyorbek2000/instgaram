@@ -87,6 +87,10 @@ shopRouter.get(["/shop", "/shop/orders"], requireAuth, (req, res) => {
             <label>Rasm havolasi (https://… yoki Media kutubxonadagi /u/…)</label><input name="image" value="${esc(p.image || "")}" placeholder="https://...">
             <label>Batafsil havola (ixtiyoriy)</label><input name="url" value="${esc(p.url || "")}" placeholder="https://...">
             <label>Kategoriya</label><input name="category" value="${esc(p.category || "")}" maxlength="40">
+            <div style="display:flex; gap:10px">
+              <div style="flex:1"><label>MXIK kodi (ixtiyoriy)</label><input name="ikpu" inputmode="numeric" value="${esc(p.ikpu || "")}" placeholder="sozlamadagi umumiy kod"></div>
+              <div style="flex:1"><label>O'lchov birligi kodi</label><input name="packageCode" inputmode="numeric" value="${esc(p.packageCode || "")}"></div>
+            </div>
             <label style="display:flex; gap:8px; align-items:center; margin-top:10px; text-transform:none; letter-spacing:0; font-size:14px"><input type="checkbox" name="active" ${p.active === false ? "" : "checked"} style="width:auto; margin:0"> Katalogda ko'rinsin</label>
             <button class="btn" style="width:100%; margin-top:12px">💾 Saqlash</button>
             ${edit ? `<a href="/shop?tab=products" class="hint" style="display:block; text-align:center; margin-top:8px">Bekor qilish</a>` : ""}
@@ -128,6 +132,15 @@ shopRouter.get(["/shop", "/shop/orders"], requireAuth, (req, res) => {
           <label>Eslatma matni</label>
           <textarea name="cartReminderText" rows="3" maxlength="1000">${esc(st.cartReminderText)}</textarea>
           <p class="hint" style="font-size:12px">Bir marta, 24 soatlik oyna ochiq bo'lsa yuboriladi. {num} — buyurtma raqami.</p>
+        </div>
+        <div class="card">
+          <h3 style="margin-top:0">🧾 Fiskal chek (Payme)</h3>
+          <p class="hint" style="font-size:12px; margin-top:0">Payme orqali to'lovda chek shu kodlar bilan chiqadi. Kodlarni <a href="https://tasnif.soliq.uz" target="_blank" rel="noopener">tasnif.soliq.uz</a> dan oling; mahsulotda alohida kod bo'lsa, o'shanisi ishlatiladi.</p>
+          <div style="display:flex; gap:10px">
+            <div style="flex:2"><label>MXIK (IKPU) kodi</label><input name="fiscalIkpu" inputmode="numeric" value="${esc(st.fiscal?.ikpu || "")}"></div>
+            <div style="flex:1"><label>O'lchov kodi</label><input name="fiscalPackage" inputmode="numeric" value="${esc(st.fiscal?.packageCode || "")}"></div>
+            <div style="flex:1"><label>QQS, %</label><input name="fiscalVat" type="number" min="0" max="20" value="${esc(st.fiscal?.vatPercent ?? 0)}"></div>
+          </div>
         </div>
         <div class="card">
           <h3 style="margin-top:0">⚙️ Umumiy</h3>
@@ -190,6 +203,7 @@ shopRouter.post("/shop/settings", requireAuth, (req, res) => {
   st.cartReminderText = String(b.cartReminderText || st.cartReminderText).slice(0, 1000);
   st.currency = String(b.currency || "so'm").trim().slice(0, 10) || "so'm";
   st.notifyOwner = b.notifyOwner === "on";
+  st.fiscal = { ikpu: String(b.fiscalIkpu || "").replace(/\D/g, "").slice(0, 20), packageCode: String(b.fiscalPackage || "").replace(/\D/g, "").slice(0, 20), vatPercent: Math.min(20, Math.max(0, Number(b.fiscalVat) || 0)) };
   persist(req.user);
   res.redirect(errors.length ? `/shop?tab=settings&error=${encodeURIComponent(errors.join(". "))}` : "/shop?tab=settings&saved=1");
 });

@@ -23,6 +23,12 @@ import { isPgReady } from "../pgdb.js";
 import { deleteHistory } from "../chatStore.js";
 import { diagnoseBusiness } from "./diagnostics.js";
 import { registerAiCostRoutes } from "./aiCostPage.js";
+import { platformFiscal, cleanCode } from "../fiscal.js";
+import { createBackup, listBackups, backupDir, BACKUP_NAME_RE } from "../backup.js";
+import { recentErrors } from "../monitor.js";
+import { mailReady } from "../mailer.js";
+import { loadPlatformSettings } from "../credits.js";
+import path from "node:path";
 import { monthCost, toSom, aiPricing } from "../aiCost.js";
 import { siteSettings, saveSiteSettings, contactMessages, updateContactMessages } from "../siteSettings.js";
 
@@ -526,6 +532,7 @@ adminRouter.get("/admin/plans", async (req, res) => {
   const plans = await getPlans();
   const packs = await getCreditPacks();
   const ps = platformSettings();
+  const fiscal = platformFiscal();
   const body = `
     <form method="post" action="/admin/plans" class="card">
       <h2>💵 Oylik tarif narxlari</h2>
@@ -540,6 +547,13 @@ adminRouter.get("/admin/plans", async (req, res) => {
       <label style="display:flex; gap:8px; align-items:center; font-size:13.5px"><input type="checkbox" name="freePlan" ${ps.freePlan ? "checked" : ""} style="width:auto; margin:0"> Sinov/obuna tugagach bot bepul tarifda ishlashda davom etsin (${AI_QUOTA.free} AI javob/oy)</label>
       <div style="max-width:260px"><label>Bepul tarifda faol flow'lar soni</label><input type="number" min="0" max="50" name="freeFlowLimit" value="${ps.freeFlowLimit || 3}"></div>
       <div class="hint" style="margin-bottom:10px">Oylik AI kvotalari: ${Object.entries(AI_QUOTA).map(([k, v]) => `${k} — ${v}`).join(" · ")}</div>
+      <h2 style="margin-top:10px">🧾 Fiskal chek (Payme)</h2>
+      <p class="hint" style="margin-top:0">Payme to'lovida chek shu kodlar bilan shakllanadi. Kodlarni <a href="https://tasnif.soliq.uz" target="_blank" rel="noopener">tasnif.soliq.uz</a> dan oling (dasturiy ta'minot / SaaS xizmati). Bo'sh bo'lsa chek tafsiloti yuborilmaydi. ${fiscal.ikpu ? `<span class="pill ok">Sozlangan</span>` : `<span class="pill warn">Kiritilmagan</span>`}</p>
+      <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(220px,1fr))">
+        <div><label>MXIK (IKPU) kodi</label><input name="fiscalIkpu" inputmode="numeric" value="${esc(fiscal.ikpu)}" placeholder="17 xonali kod"></div>
+        <div><label>O'lchov birligi (package_code)</label><input name="fiscalPackage" inputmode="numeric" value="${esc(fiscal.packageCode)}"></div>
+        <div><label>QQS, %</label><input name="fiscalVat" type="number" min="0" max="20" value="${esc(fiscal.vatPercent)}"></div>
+      </div>
       <button class="btn">💾 Saqlash</button>
     </form>`;
   const [flash, kind] = flashOf(req);
@@ -557,7 +571,11 @@ adminRouter.post("/admin/plans", async (req, res) => {
     if (Number.isFinite(v) && v > 0) prices[`credits_${id}`] = Math.round(v);
   }
   await setPlanPrices(prices);
-  await savePlatformSettings({ freePlan: req.body?.freePlan === "on", freeFlowLimit: Math.min(50, Math.max(0, Number.parseInt(req.body?.freeFlowLimit, 10) || 0)) });
+  await savePlatformSettings({
+    freePlan: req.body?.freePlan === "on",
+    freeFlowLimit: Math.min(50, Math.max(0, Number.parseInt(req.body?.freeFlowLimit, 10) || 0)),
+    fiscal: { ikpu: cleanCode(req.body?.fiscalIkpu), packageCode: cleanCode(req.body?.fiscalPackage), vatPercent: Math.min(20, Math.max(0, Number(req.body?.fiscalVat) || 0)) },
+  });
   await audit(req, "plans_update", "", JSON.stringify(prices).slice(0, 280));
   go(res, "/admin/plans", "ok", "Narxlar va sozlamalar saqlandi");
 });
@@ -659,6 +677,8 @@ adminRouter.get("/admin/site", async (req, res) => {
           <div class="grow"><label>Telegram (username)</label><input name="telegram" value="${esc(c.telegram)}" placeholder="obunext"></div>
           <div class="grow"><label>Telefon</label><input name="phone" value="${esc(c.phone)}" placeholder="+998 ..."></div>
         </div>
+        <label>Server joylashuvi (maxfiylik siyosatida)</label><input name="dataLocation" value="${esc(c.dataLocation)}" maxlength="120" placeholder="masalan: O'zbekiston, Toshkent (Uztelecom)">
+        <p class="hint">Shaxsiy ma'lumotlar qonuniga ko'ra O'zbekiston fuqarolari ma'lumotlarini mamlakat hududidagi serverda saqlash talab qilinishi mumkin — yurist bilan tekshiring.</p>
         <h3 style="margin:18px 0 6px">⭐ Ishonch qatori (bosh sahifa)</h3>
         <label style="display:flex; gap:8px; align-items:center; font-size:13.5px"><input type="checkbox" name="showBusinessCount" ${c.showBusinessCount ? "checked" : ""} style="width:auto; margin:0"> Haqiqiy bizneslar sonini ko'rsatish</label>
         <div class="row">
@@ -725,6 +745,9 @@ adminRouter.get("/admin/audit", async (req, res) => {
 
 adminRouter.get("/admin/system", async (req, res) => {
   const users = await listUsers();
+  const lastBackup = platformSettings().lastBackup || null;
+  const backups = listBackups();
+  const errors = recentErrors();
   const mem = process.memoryUsage();
   const up = process.uptime();
   const check = (ok, label, hint = "") => `<div>${label}</div><div>${ok ? `<span class="pill ok">✓ Tayyor</span>` : `<span class="pill warn">Sozlanmagan</span>`} ${hint ? `<span class="hint">${hint}</span>` : ""}</div>`;
@@ -746,13 +769,46 @@ adminRouter.get("/admin/system", async (req, res) => {
         ${check(process.env.TELEGRAM_BOT_TOKEN, "Telegram bildirishnoma bot")}
         ${check((await getPlatformGeminiKey()) || process.env.GEMINI_API_KEY, "Gemini AI")}
         ${check(config.googleClientId, "Google orqali kirish")}
+        ${check(mailReady(), "Email (SMTP)", mailReady() ? "" : "parol tiklash va eslatmalar uchun SMTP_HOST/USER/PASS")}
+        ${check(process.env.ADMIN_TELEGRAM_CHAT_ID && process.env.TELEGRAM_BOT_TOKEN, "Admin Telegram ogohlantirishlari")}
+        ${check(platformFiscal().ikpu, "Payme fiskal chek (MXIK)", "Tariflar sahifasida")}
         ${check(process.env.FREE_MODE !== "true", "Pullik rejim", process.env.FREE_MODE === "true" ? "FREE_MODE=true — hamma bepul" : "")}
       </div></div>
+    </div>
+    <div class="grid half">
+      <div class="card"><h2>💾 Zaxira nusxalar</h2>
+        ${lastBackup ? `<div class="kv">
+          <div>Oxirgi</div><div>${esc(fmtDate(lastBackup.at))} ${lastBackup.error ? `<span class="pill bad">Xato: ${esc(lastBackup.error)}</span>` : `<span class="pill ok">✓</span>`}</div>
+          <div>Serverdan tashqari</div><div>${lastBackup.offsite === "telegram" ? `<span class="pill ok">Telegram'ga yuborildi</span>` : `<span class="pill warn">${esc(lastBackup.offsite || "—")}</span>`}</div>
+        </div>` : `<p class="hint">Hali zaxira olinmagan. Server har kuni avtomatik oladi.</p>`}
+        <form method="post" action="/admin/backups/run" style="margin:12px 0"><button class="btn sm">💾 Hozir zaxira olish</button></form>
+        ${backups.length ? `<div class="tw"><table><tbody>${backups.slice(0, 10).map((b) => `<tr><td><a href="/admin/backups/${encodeURIComponent(b.name)}">${esc(b.name)}</a></td><td class="hint">${b.size >= 1048576 ? `${(b.size / 1048576).toFixed(1)} MB` : `${Math.max(1, Math.round(b.size / 1024))} KB`}</td></tr>`).join("")}</tbody></table></div>` : ""}
+        <p class="hint">Serverdan tashqariga nusxa: .env'da <code>TELEGRAM_BOT_TOKEN</code> va <code>ADMIN_TELEGRAM_CHAT_ID</code>. Tiklash: <code>node scripts/restore.mjs backups/&lt;fayl&gt;-db.ndjson.gz</code></p>
+      </div>
+      <div class="card"><h2>🚨 Oxirgi xatolar</h2>
+        ${errors.length ? `<div class="tw"><table><tbody>${errors.slice(0, 15).map((e) => `<tr><td class="hint" style="white-space:nowrap">${esc(fmtDate(e.at))}</td><td><code>${esc(e.kind)}</code></td><td style="white-space:pre-wrap; font-size:12px">${esc(e.text)}</td></tr>`).join("")}</tbody></table></div>` : `<p class="hint">Server ishga tushganidan beri xato yo'q.</p>`}
+        <p class="hint">Jiddiy xatolar ${process.env.ADMIN_TELEGRAM_CHAT_ID && process.env.TELEGRAM_BOT_TOKEN ? "Telegram'ga ham yuboriladi ✓" : "Telegram'ga ham yuborilishi uchun .env'da ADMIN_TELEGRAM_CHAT_ID kiriting"}.</p>
+      </div>
     </div>
     <div class="card"><h2>🔗 Meta webhook</h2>
       <div class="kv"><div>Callback URL</div><div><code>${esc((config.baseUrl || "https://obunext.uz") + "/webhook")}</code></div><div>Verify token</div><div><code>${config.verifyToken ? "••••" + esc(String(config.verifyToken).slice(-4)) : "—"}</code></div></div>
     </div>`;
   res.send(adminPage("Tizim holati", body, { active: "system" }));
+});
+
+adminRouter.post("/admin/backups/run", async (req, res) => {
+  await loadPlatformSettings();
+  const r = await createBackup();
+  await loadPlatformSettings();
+  await audit(req, "backup", r.error ? "error" : "ok", (r.files || []).map((f) => f.name).join(", "));
+  go(res, "/admin/system", r.error ? "err" : "ok", r.error ? `Zaxira olinmadi: ${r.error}` : `Zaxira olindi (${(r.files || []).length} fayl · ${r.offsite})`);
+});
+
+adminRouter.get("/admin/backups/:name", async (req, res) => {
+  const name = String(req.params.name);
+  if (!BACKUP_NAME_RE.test(name)) return res.status(404).send("Topilmadi");
+  await audit(req, "backup_download", name);
+  res.download(path.join(backupDir, name), name, (err) => err && !res.headersSent && res.status(404).send("Topilmadi"));
 });
 
 // ================= Xavfsizlik =================
