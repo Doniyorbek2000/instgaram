@@ -89,6 +89,26 @@ app.use(
   })
 );
 app.use(express.urlencoded({ extended: false, limit: "1mb" }));
+
+// adm.obunext.uz subdomeni orqali kirilganda to'g'ridan-to'g'ri admin panelga yo'naltirish
+app.use((req, res, next) => {
+  const host = (req.hostname || req.get("host") || "").toLowerCase().split(":")[0];
+  if (host === "adm.obunext.uz") {
+    if (req.path === "/" || req.path === "") {
+      return res.redirect("/admin");
+    }
+    if (req.path === "/login") {
+      return res.redirect("/admin/login");
+    }
+    if (req.path === "/logout") {
+      return res.redirect("/admin/logout");
+    }
+  } else if ((host === "obunext.uz" || host === "www.obunext.uz") && (req.path === "/admin" || req.path.startsWith("/admin/"))) {
+    return res.redirect(301, `https://adm.obunext.uz${req.originalUrl}`);
+  }
+  next();
+});
+
 // Admin panel — alohida kirish tizimi (biznes sessiyasi va jamoa rollaridan mustaqil)
 app.use(adminRouter);
 app.use(attachUser);

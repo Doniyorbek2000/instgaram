@@ -149,11 +149,10 @@ async function main() {
         const health = await execCommand(conn, 'curl -s http://localhost:3015/health');
         console.log("Health Check (localhost:3015):\n", health.stdout || health.stderr);
 
-        // Setup Nginx for obunext.uz (preserve SSL if already configured)
-        console.log("\n🌐 obunext.uz uchun Nginx sozlanmoqda...");
+        // Setup Nginx for obunext.uz & adm.obunext.uz (preserve SSL if already configured)
+        console.log("\n🌐 obunext.uz va adm.obunext.uz uchun Nginx sozlanmoqda...");
         const nginxSetupCmd = `if grep -q "ssl_certificate" /etc/nginx/sites-available/obunext.uz 2>/dev/null; then
-    echo "✅ SSL allaqachon sozlangan, Nginx qayta yuklanmoqda..."
-    nginx -t && systemctl reload nginx
+    echo "✅ obunext.uz SSL allaqachon sozlangan."
 else
     cat << 'EOF' > /etc/nginx/sites-available/obunext.uz
 server {
@@ -184,6 +183,41 @@ EOF
     nginx -t && systemctl reload nginx
     certbot --nginx -d obunext.uz -d www.obunext.uz --non-interactive --agree-tos -m doniyorbekabdujabborov45@gmail.com --redirect
 fi
+
+if grep -q "ssl_certificate" /etc/nginx/sites-available/adm.obunext.uz 2>/dev/null; then
+    echo "✅ adm.obunext.uz SSL allaqachon sozlangan."
+else
+    cat << 'EOF' > /etc/nginx/sites-available/adm.obunext.uz
+server {
+    listen 80;
+    listen [::]:80;
+    server_name adm.obunext.uz;
+
+    client_max_body_size 25m;
+
+    location /.well-known/acme-challenge/ {
+        root /var/www/html;
+    }
+
+    location / {
+        proxy_pass http://127.0.0.1:3015;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_read_timeout 120s;
+    }
+}
+EOF
+    ln -sf /etc/nginx/sites-available/adm.obunext.uz /etc/nginx/sites-enabled/
+    nginx -t && systemctl reload nginx
+    certbot --nginx -d adm.obunext.uz --non-interactive --agree-tos -m doniyorbekabdujabborov45@gmail.com --redirect
+fi
+
+nginx -t && systemctl reload nginx
 `;
         const nginxSetupRes = await execCommand(conn, nginxSetupCmd);
         console.log("Nginx Setup:\n", nginxSetupRes.stdout || nginxSetupRes.stderr);
