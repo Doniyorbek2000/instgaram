@@ -15,12 +15,12 @@ export const HOME = {
       speed: "0.8 s",
       speedSub: "o'rtacha javob vaqti",
       lead: "Yangi lid",
-      leadSub: "Aziza · +998 90 ••• 45 67",
+      leadSub: "Instagram Direct · Yangi lid",
     },
     sim: {
       ig: { handle: "guli_do'koni", sub: "Instagram · Direct", c1: "Salom! Ko'ylak narxi qancha? 😊", b1: "Assalomu alaykum! Ko'ylaklarimiz 150 000 – 300 000 so'm. Qaysi rang qiziqtiradi?", q: ["Qizil", "Qora", "Katalog"], c2: "Qizil, yetkazib berasizmi?", b2: "Ha ✅ Toshkent bo'ylab 1 kunda, 20 000 so'm. Buyurtma beraylikmi?" },
       tg: { handle: "obunext_bot", sub: "Telegram · Bot", c1: "/start", b1: "Assalomu alaykum! 🤖 Kursimizga xush kelibsiz. Bepul darsni olish uchun kanalga obuna bo'ling:", q: ["Obuna bo'ldim ✅", "Narxlar"], c2: "Obuna bo'ldim", b2: "Rahmat! 🎁 Bepul dars: obunext.uz/dars. Ismingizni yozing — sertifikat tayyorlaymiz." },
-      wa: { handle: "+998 90 123 45 67", sub: "WhatsApp · Cloud API", c1: "Assalomu alaykum, buyurtma bermoqchi edim.", b1: "Vaalaykum assalom! 💚 Qaysi mahsulot ma'qul bo'ldi?", q: ["Katalog", "Operator"], c2: "2 ta qora futbolka, L o'lcham.", b2: "Qabul qilindi! Jami 240 000 so'm. Payme yoki Click orqali to'lashingiz mumkin." },
+      wa: { handle: "WhatsApp Business API", sub: "WhatsApp · Cloud API", c1: "Assalomu alaykum, buyurtma bermoqchi edim.", b1: "Vaalaykum assalom! 💚 Qaysi mahsulot ma'qul bo'ldi?", q: ["Katalog", "Operator"], c2: "2 ta qora futbolka, L o'lcham.", b2: "Qabul qilindi! Jami 240 000 so'm. Payme yoki Click orqali to'lashingiz mumkin." },
       fb: { handle: "Fashion Store", sub: "Facebook · Messenger", c1: "Manzilingiz qayerda?", b1: "Toshkent, Amir Temur ko'chasi 45. Mo'ljal: Yunusobod metrosi 📍", q: ["Xarita", "Ish vaqti"], c2: "Dostavka narxi qancha?", b2: "Toshkent bo'ylab 20 000 so'm, viloyatlarga BTS orqali 30 000 so'm." },
     },
     platforms: {
@@ -63,13 +63,14 @@ export const HOME = {
       },
       inbox: {
         title: "Live Inbox", all: "Barchasi", ai: "AI", operator: "Operator",
+        channel: "Kanal", channelActive: "Instagram Direct · Faol",
         chats: [
-          { n: "Aziza K.", m: "Qizil rangi bormi?", ch: "instagram", tag: "lid", t: "2 daq" },
-          { n: "Sardor", m: "Buyurtma beraman", ch: "telegram", tag: "vip", t: "5 daq" },
-          { n: "Malika", m: "Dostavka qachon?", ch: "whatsapp", tag: "mijoz", t: "12 daq" },
-          { n: "Jasur T.", m: "Rahmat, oldim 👍", ch: "facebook", tag: "sotuv", t: "1 soat" },
+          { n: "Instagram Direct", m: "Assalomu alaykum, katalog bormi?", ch: "instagram", tag: "lid", t: "2 daq" },
+          { n: "Telegram Bot", m: "Buyurtmani rasmiylashtirish", ch: "telegram", tag: "vip", t: "5 daq" },
+          { n: "WhatsApp API", m: "Yetkazib berish holati", ch: "whatsapp", tag: "mijoz", t: "12 daq" },
+          { n: "Facebook Messenger", m: "Rahmat, buyurtma yetib keldi", ch: "facebook", tag: "sotuv", t: "1 soat" },
         ],
-        card: "Mijoz kartochkasi", phone: "Telefon", window: "24 soatlik oyna", windowLeft: "21 soat qoldi", aiOn: "AI javob: yoqilgan", tags: "Teglar",
+        card: "Mijoz kartochkasi", window: "24 soatlik oyna", windowLeft: "21 soat qoldi", aiOn: "AI javob: yoqilgan", tags: "Teglar",
       },
       stats: {
         kpi: [{ l: "Xabarlar", v: "12 480" }, { l: "Lidlar", v: "1 284" }, { l: "Konversiya", v: "18.4%" }],
@@ -131,12 +132,12 @@ export const HOME = {
       speed: "0.8 с",
       speedSub: "среднее время ответа",
       lead: "Новый лид",
-      leadSub: "Азиза · +998 90 ••• 45 67",
+      leadSub: "Instagram Direct · Новый лид",
     },
     sim: {
       ig: { handle: "guli_store", sub: "Instagram · Direct", c1: "Здравствуйте! Сколько стоит платье? 😊", b1: "Здравствуйте! Платья от 150 000 до 300 000 сум. Какой цвет интересует?", q: ["Красный", "Чёрный", "Каталог"], c2: "Красный, доставляете?", b2: "Да ✅ По Ташкенту за 1 день, 20 000 сум. Оформим заказ?" },
       tg: { handle: "obunext_bot", sub: "Telegram · Бот", c1: "/start", b1: "Здравствуйте! 🤖 Добро пожаловать на курс. Чтобы получить бесплатный урок, подпишитесь на канал:", q: ["Подписался ✅", "Цены"], c2: "Подписался", b2: "Спасибо! 🎁 Бесплатный урок: obunext.uz/dars. Напишите имя — подготовим сертификат." },
-      wa: { handle: "+998 90 123 45 67", sub: "WhatsApp · Cloud API", c1: "Здравствуйте, хочу сделать заказ.", b1: "Здравствуйте! 💚 Какой товар вам понравился?", q: ["Каталог", "Оператор"], c2: "2 чёрные футболки, размер L.", b2: "Принято! Итого 240 000 сум. Оплатить можно через Payme или Click." },
+      wa: { handle: "WhatsApp Business API", sub: "WhatsApp · Cloud API", c1: "Здравствуйте, хочу сделать заказ.", b1: "Здравствуйте! 💚 Какой товар вам понравился?", q: ["Каталог", "Оператор"], c2: "2 чёрные футболки, размер L.", b2: "Принято! Итого 240 000 сум. Оплатить можно через Payme или Click." },
       fb: { handle: "Fashion Store", sub: "Facebook · Messenger", c1: "Где вы находитесь?", b1: "Ташкент, ул. Амира Темура 45. Ориентир: метро Юнусабад 📍", q: ["Карта", "Часы работы"], c2: "Сколько стоит доставка?", b2: "По Ташкенту 20 000 сум, в регионы через BTS — 30 000 сум." },
     },
     platforms: {
@@ -179,13 +180,14 @@ export const HOME = {
       },
       inbox: {
         title: "Live Inbox", all: "Все", ai: "AI", operator: "Оператор",
+        channel: "Канал", channelActive: "Instagram Direct · Активен",
         chats: [
-          { n: "Азиза К.", m: "Есть красный цвет?", ch: "instagram", tag: "лид", t: "2 мин" },
-          { n: "Сардор", m: "Хочу заказать", ch: "telegram", tag: "vip", t: "5 мин" },
-          { n: "Малика", m: "Когда доставка?", ch: "whatsapp", tag: "клиент", t: "12 мин" },
-          { n: "Жасур Т.", m: "Спасибо, получил 👍", ch: "facebook", tag: "продажа", t: "1 ч" },
+          { n: "Instagram Direct", m: "Здравствуйте, можно каталог?", ch: "instagram", tag: "лид", t: "2 мин" },
+          { n: "Telegram Bot", m: "Оформление заказа", ch: "telegram", tag: "vip", t: "5 мин" },
+          { n: "WhatsApp API", m: "Статус доставки", ch: "whatsapp", tag: "клиент", t: "12 мин" },
+          { n: "Facebook Messenger", m: "Спасибо, заказ доставлен", ch: "facebook", tag: "продажа", t: "1 ч" },
         ],
-        card: "Карточка клиента", phone: "Телефон", window: "24-часовое окно", windowLeft: "осталось 21 ч", aiOn: "AI-ответ: включён", tags: "Теги",
+        card: "Карточка клиента", window: "24-часовое окно", windowLeft: "осталось 21 ч", aiOn: "AI-ответ: включён", tags: "Теги",
       },
       stats: {
         kpi: [{ l: "Сообщения", v: "12 480" }, { l: "Лиды", v: "1 284" }, { l: "Конверсия", v: "18.4%" }],
@@ -247,12 +249,12 @@ export const HOME = {
       speed: "0.8 s",
       speedSub: "average reply time",
       lead: "New lead",
-      leadSub: "Aziza · +998 90 ••• 45 67",
+      leadSub: "Instagram Direct · New lead",
     },
     sim: {
       ig: { handle: "guli_store", sub: "Instagram · Direct", c1: "Hi! How much is the dress? 😊", b1: "Hello! Our dresses are 150,000 – 300,000 UZS. Which colour do you like?", q: ["Red", "Black", "Catalog"], c2: "Red — do you deliver?", b2: "Yes ✅ Across Tashkent in 1 day for 20,000 UZS. Shall we place the order?" },
       tg: { handle: "obunext_bot", sub: "Telegram · Bot", c1: "/start", b1: "Hello! 🤖 Welcome to the course. Subscribe to the channel to get a free lesson:", q: ["Subscribed ✅", "Prices"], c2: "Subscribed", b2: "Thanks! 🎁 Free lesson: obunext.uz/dars. Send your name and we'll prepare a certificate." },
-      wa: { handle: "+998 90 123 45 67", sub: "WhatsApp · Cloud API", c1: "Hello, I'd like to place an order.", b1: "Hello! 💚 Which product did you like?", q: ["Catalog", "Agent"], c2: "2 black T-shirts, size L.", b2: "Done! Total 240,000 UZS. You can pay with Payme or Click." },
+      wa: { handle: "WhatsApp Business API", sub: "WhatsApp · Cloud API", c1: "Hello, I'd like to place an order.", b1: "Hello! 💚 Which product did you like?", q: ["Catalog", "Agent"], c2: "2 black T-shirts, size L.", b2: "Done! Total 240,000 UZS. You can pay with Payme or Click." },
       fb: { handle: "Fashion Store", sub: "Facebook · Messenger", c1: "Where are you located?", b1: "Tashkent, 45 Amir Temur street. Landmark: Yunusabad metro 📍", q: ["Map", "Opening hours"], c2: "How much is delivery?", b2: "20,000 UZS within Tashkent, 30,000 UZS to other regions via BTS." },
     },
     platforms: {
@@ -295,13 +297,14 @@ export const HOME = {
       },
       inbox: {
         title: "Live Inbox", all: "All", ai: "AI", operator: "Agent",
+        channel: "Channel", channelActive: "Instagram Direct · Active",
         chats: [
-          { n: "Aziza K.", m: "Do you have it in red?", ch: "instagram", tag: "lead", t: "2 min" },
-          { n: "Sardor", m: "I want to order", ch: "telegram", tag: "vip", t: "5 min" },
-          { n: "Malika", m: "When is delivery?", ch: "whatsapp", tag: "client", t: "12 min" },
-          { n: "Jasur T.", m: "Thanks, got it 👍", ch: "facebook", tag: "sale", t: "1 h" },
+          { n: "Instagram Direct", m: "Hello, can I see the catalog?", ch: "instagram", tag: "lead", t: "2 min" },
+          { n: "Telegram Bot", m: "Order confirmation", ch: "telegram", tag: "vip", t: "5 min" },
+          { n: "WhatsApp API", m: "Delivery status", ch: "whatsapp", tag: "customer", t: "12 min" },
+          { n: "Facebook Messenger", m: "Thank you, order received", ch: "facebook", tag: "sale", t: "1 h" },
         ],
-        card: "Customer card", phone: "Phone", window: "24-hour window", windowLeft: "21 h left", aiOn: "AI reply: on", tags: "Tags",
+        card: "Customer card", window: "24-hour window", windowLeft: "21 h left", aiOn: "AI reply: on", tags: "Tags",
       },
       stats: {
         kpi: [{ l: "Messages", v: "12,480" }, { l: "Leads", v: "1,284" }, { l: "Conversion", v: "18.4%" }],

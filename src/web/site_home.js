@@ -342,7 +342,7 @@ function inboxMock(m) {
     </div>
     <div class="mk-card">
       <div class="hd"><div class="mk-av" style="background:${AVATAR_BG[0]}">${esc(initials(first.n))}</div><div><b>${esc(first.n)}</b><div style="font-size:11.5px;color:var(--muted)">${esc(i.card)}</div></div></div>
-      <div class="kv"><small>${esc(i.phone)}</small><div>+998 90 ••• 45 67</div></div>
+      <div class="kv"><small>${esc(i.channel || "Kanal")}</small><div class="ok">● ${esc(i.channelActive || "Ulangan")}</div></div>
       <div class="kv"><small>${esc(i.window)}</small><div class="ok">● ${esc(i.windowLeft)}</div></div>
       <div class="kv"><small>${esc(i.tags)}</small><div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:3px"><span class="mk-tag">${esc(first.tag)}</span><span class="mk-tag">instagram</span></div></div>
       <div class="kv mk-toggle"><div>${esc(i.aiOn)}</div><i></i></div>
