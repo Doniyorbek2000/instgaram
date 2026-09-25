@@ -17,7 +17,7 @@ import {
   TRIGGER_TYPES, MATCH_TYPES, NODE_TYPES, CONDITION_KINDS, ACTION_KINDS, INPUT_VALIDATIONS, HTTP_METHODS,
 } from "../flows.js";
 import { FLOW_TEMPLATES, buildTemplate, autoLayout, AI_FLOW_PROMPT } from "../flowTemplates.js";
-import { generateText, aiAvailable } from "../ai.js";
+import { generateText, aiAvailable, aiBlockReason } from "../ai.js";
 import { allTags } from "../contacts.js";
 import { ensureSequences } from "../sequences.js";
 import { activeProducts } from "../shop.js";
@@ -59,7 +59,8 @@ function flowSummary(flow) {
 flowsRouter.get("/flows", requireAuth, async (req, res) => {
   const u = req.user;
   const { list } = ensureFlows(u);
-  const hasAi = await aiAvailable(u);
+  const aiBlock = await aiBlockReason(u);
+  const hasAi = !aiBlock;
   const error = String(req.query.error || "");
 
   const cards = list.length
@@ -126,8 +127,8 @@ flowsRouter.get("/flows", requireAuth, async (req, res) => {
             <h3 style="margin-top:0">✨ AI bilan yaratish</h3>
             <form method="post" action="/flows/ai-generate">
               <textarea name="description" rows="4" maxlength="1500" required placeholder="Masalan: Reels ostida 'KURS' deb yozganlarga obunani tekshirib, bepul darsni yuborsin, keyin ism va telefonini so'rasin va menejerga xabar bersin"></textarea>
-              <button class="btn" style="width:100%; margin-top:10px" ${hasAi ? "" : "disabled title='AI kaliti sozlanmagan'"}>✨ Flow yaratish</button>
-              ${hasAi ? "" : `<p class="hint" style="font-size:12px">AI kaliti sozlanmagan — admin panelda Gemini kalitini kiriting.</p>`}
+              <button class="btn" style="width:100%; margin-top:10px" ${hasAi ? "" : `disabled title="${esc(aiBlock)}"`}>✨ Flow yaratish</button>
+              ${hasAi ? "" : `<p class="hint" style="font-size:12px">${esc(aiBlock)}</p>`}
             </form>
           </div>
           <div class="card">

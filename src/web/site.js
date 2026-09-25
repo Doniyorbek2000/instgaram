@@ -588,7 +588,7 @@ async function pricingCards(tr) {
         <h3>${esc(pl.name)}</h3>
         <p class="tl">${esc(pl.tagline)}</p>
         <div class="price">${esc(priceStr)} <small>${esc(p.currency)}${esc(p.perMonth)}</small></div>
-        <ul>${AI_QUOTA[pl.id] && p.aiPerMonth ? `<li><b>${esc(p.aiPerMonth.replace("{n}", AI_QUOTA[pl.id].toLocaleString("ru-RU")))}</b></li>` : ""}${pl.features.map((x) => `<li>${esc(x)}</li>`).join("")}</ul>
+        <ul>${AI_QUOTA[pl.id] && p.aiPerMonth ? `<li><b>${esc(p.aiPerMonth.replace("{n}", AI_QUOTA[pl.id].toLocaleString("ru-RU")))}</b></li>` : p.noAi ? `<li>${esc(p.noAi)}</li>` : ""}${pl.features.map((x) => `<li>${esc(x)}</li>`).join("")}</ul>
         <a href="/register" class="btn ${pop ? "primary" : "ghost"}">${esc(p.cta)}</a>
       </div>`;
       })

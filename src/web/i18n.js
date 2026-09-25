@@ -84,8 +84,9 @@ export const I18N = {
     },
     pricing: {
       title: "Oddiy va shaffof narxlar",
-      sub: "3 kun bepul sinang. Barcha tariflarda hamma imkoniyatlar ochiq — farqi oylik AI javoblar soni.",
+      sub: "3 kun bepul sinang. Mini va Lite — kalit so'z qoidalari va flow'lar bilan; AI javoblar Start, Pro va Business tariflarida.",
       aiPerMonth: "{n} AI javob / oy",
+      noAi: "AI javoblarsiz — qoidalar va flow'lar",
       perMonth: "/oy",
       currency: "so'm",
       popular: "Ommabop",
@@ -288,8 +289,9 @@ export const I18N = {
     },
     pricing: {
       title: "Простые и прозрачные цены",
-      sub: "3 дня бесплатно. Во всех тарифах доступны все функции — отличается только число ИИ-ответов в месяц.",
+      sub: "3 дня бесплатно. Mini и Lite — правила по ключевым словам и сценарии; ИИ-ответы — в тарифах Start, Pro и Business.",
       aiPerMonth: "{n} ИИ-ответов / мес",
+      noAi: "Без ИИ-ответов — правила и сценарии",
       perMonth: "/мес",
       currency: "сум",
       popular: "Популярный",
@@ -492,8 +494,9 @@ export const I18N = {
     },
     pricing: {
       title: "Simple, transparent pricing",
-      sub: "Try 3 days free. Every plan includes every feature — only the monthly AI reply allowance differs.",
+      sub: "Try 3 days free. Mini and Lite run on keyword rules and flows; AI replies come with Start, Pro and Business.",
       aiPerMonth: "{n} AI replies / mo",
+      noAi: "No AI replies — rules and flows",
       perMonth: "/mo",
       currency: "UZS",
       popular: "Popular",

@@ -23,11 +23,12 @@ test("tarif aniqlanadi: sinov, pullik, muddati o'tgan → bepul, admin → busin
   assert.strictEqual(cr.currentPlan(await user("boss@x.uz", expired)), "business");
 });
 
+const paid = (plan) => ({ plan, status: "active", expiresAt: new Date(Date.now() + 86400000).toISOString() });
+
 test("kvota: avval oylik limit, keyin sotib olingan kreditlar; hammasi tugasa AI yopiladi", async () => {
-  await cr.savePlatformSettings({ freePlan: true, freeFlowLimit: 2 });
-  const u = await user("c4@x.uz", expired);
-  assert.strictEqual(cr.aiQuota(u).quota, cr.AI_QUOTA.free);
-  u.aiUsage = { month: new Date().toISOString().slice(0, 7), used: cr.AI_QUOTA.free - 1, bonus: 0 };
+  const u = await user("c4@x.uz", paid("start"));
+  assert.strictEqual(cr.aiQuota(u).quota, cr.AI_QUOTA.start);
+  u.aiUsage = { month: new Date().toISOString().slice(0, 7), used: cr.AI_QUOTA.start - 1, bonus: 0 };
   assert.ok(cr.canUseAi(u));
   cr.consumeAi(u);
   assert.strictEqual(cr.canUseAi(u), false);
@@ -71,4 +72,32 @@ test("kredit paketlari narxi admin sozlamasidan olinadi", async () => {
   const packs = await cr.getCreditPacks();
   assert.strictEqual(packs.find((p) => p.id === "c500").price, 35000);
   assert.strictEqual(packs.find((p) => p.id === "c2000").price, cr.CREDIT_PACKS.c2000.defaultPrice);
+});
+
+test("Mini, Lite va Bepul tariflarda AI yo'q — sotib olingan kredit ham ochmaydi; Start/Pro/Business'da bor", async () => {
+  for (const plan of ["mini", "lite"]) {
+    const u = await user(`np-${plan}@x.uz`, paid(plan));
+    assert.strictEqual(cr.currentPlan(u), plan);
+    assert.strictEqual(cr.aiQuota(u).hasAi, false);
+    cr.addCredits(u, 100);
+    assert.strictEqual(cr.canUseAi(u), false, `${plan}: kredit bilan ham AI yopiq`);
+  }
+  assert.strictEqual(cr.canUseAi(await user("np-free@x.uz", expired)), false);
+  for (const plan of ["start", "pro", "business"]) {
+    const u = await user(`yp-${plan}@x.uz`, paid(plan));
+    assert.strictEqual(cr.aiQuota(u).hasAi, true);
+    assert.strictEqual(cr.canUseAi(u), true);
+  }
+  assert.strictEqual(cr.canUseAi(await user("np-trial@x.uz")), true, "sinov davrida AI sinab ko'riladi");
+});
+
+test("AI'siz tarifda bot AI javob bermaydi, lekin /start'ga salomlashadi", async () => {
+  const { aiAllowed } = await import("../src/aiControl.js");
+  const { processMessage } = await import("../src/respond.js");
+  const u = await user("np-bot@x.uz", paid("mini"));
+  assert.deepStrictEqual(aiAllowed(u, "tg", "tg:1"), { allowed: false, reason: "plan" });
+  const r1 = await processMessage(u, "telegram", "501", { text: "narxi qancha?" });
+  assert.strictEqual(r1.reply, null);
+  const r2 = await processMessage(u, "telegram", "502", { text: "/start" });
+  assert.ok(r2.reply && /xush kelibsiz/i.test(r2.reply));
 });

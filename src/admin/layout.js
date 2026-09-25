@@ -10,6 +10,7 @@ const NAV = [
   ["/admin/businesses", "businesses", "users", "Bizneslar"],
   ["/admin/payments", "payments", "card", "To'lovlar"],
   ["/admin/plans", "plans", "chart", "Tariflar va kreditlar"],
+  ["/admin/gifts", "gifts", "gift", "Tarif sovg'a qilish"],
   ["/admin/ai", "ai", "spark", "AI va kalitlar"],
   ["/admin/ai-cost", "aicost", "trending", "AI xarajati va foyda"],
   ["/admin/announce", "announce", "megaphone", "E'lonlar"],

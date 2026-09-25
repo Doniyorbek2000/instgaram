@@ -2,7 +2,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import { persist, getPlatformGeminiKey } from "./db.js";
 import { pushChat, recentHistory, AI_CONTEXT } from "./chatStore.js";
 import { creditsFor, recordAiCost } from "./aiCost.js";
-import { canUseAi, consumeAi, warnCreditsOut } from "./credits.js";
+import { canUseAi, consumeAi, warnCreditsOut, aiQuota } from "./credits.js";
 import { aiSettings } from "./aiControl.js";
 
 // Global (zaxira) kalitlar — foydalanuvchi o'z kalitini kiritmagan bo'lsa ishlatiladi
@@ -413,9 +413,21 @@ export async function resolveGeminiKey(tenant) {
   return tenant?.geminiApiKey || (await getPlatformGeminiKey()) || globalGeminiKey || "";
 }
 
-/** AI (Gemini) sozlanganmi — UI'da AI tugmalarini ko'rsatish/yashirish uchun. */
+const NO_AI_PLAN_MSG = "AI funksiyalari Start, Pro va Business tariflarida mavjud — Obuna & Tariflar sahifasida tarifni oshiring.";
+
+/**
+ * AI funksiyalari (kontent studiya, flow yaratish, "Instagram'dan o'rganish") nega
+ * ishlamasligi — UI'da tushunarli xabar uchun. "" — AI tayyor.
+ */
+export async function aiBlockReason(tenant) {
+  if (!aiQuota(tenant).hasAi) return NO_AI_PLAN_MSG;
+  if (!(await resolveGeminiKey(tenant))) return "AI kaliti sozlanmagan — admin panelda Gemini kalitini kiriting.";
+  return "";
+}
+
+/** AI ishlata oladimi (kalit sozlangan va tarifda AI bor) — UI'da AI tugmalarini ko'rsatish/yashirish uchun. */
 export async function aiAvailable(tenant) {
-  return Boolean(await resolveGeminiKey(tenant));
+  return !(await aiBlockReason(tenant));
 }
 
 /**
@@ -426,7 +438,9 @@ export async function aiAvailable(tenant) {
 export async function generateText(tenant, systemPrompt, prompt, { maxOutputTokens = 2048, json = false, temperature } = {}) {
   const key = await resolveGeminiKey(tenant);
   if (!key) throw new Error("AI kaliti sozlanmagan. Admin paneldan Gemini kalitini kiriting.");
-  if (!canUseAi(tenant)) throw new Error("AI kreditlari tugadi — Obuna & Tariflar sahifasida kredit paketi oling.");
+  if (!canUseAi(tenant)) {
+    throw new Error(aiQuota(tenant).hasAi ? "AI kreditlari tugadi — Obuna & Tariflar sahifasida kredit paketi oling." : NO_AI_PLAN_MSG);
+  }
   const meter = {};
   const out = await askGemini(key, systemPrompt, [], prompt, [], { maxOutputTokens, json, temperature, timeoutMs: 30000, meter });
   // Faqat muvaffaqiyatli javob uchun; uzun natija (masalan 6 000 tokenli tahlil) ko'proq kredit

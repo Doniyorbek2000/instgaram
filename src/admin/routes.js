@@ -32,6 +32,7 @@ import { loadPlatformSettings } from "../credits.js";
 import path from "node:path";
 import { monthCost, toSom, aiPricing } from "../aiCost.js";
 import { siteSettings, saveSiteSettings, contactMessages, updateContactMessages } from "../siteSettings.js";
+import { giftPlan, giftMany, notifyGift, giftHistory, GIFT_DAYS, GIFT_SEGMENTS, segmentUsers } from "../gifts.js";
 
 export const adminRouter = Router();
 
@@ -284,6 +285,10 @@ adminRouter.get("/admin/businesses/:id", async (req, res) => {
             <button class="btn danger sm" name="action" value="off" formnovalidate style="align-self:end" onclick="return confirm('Obuna bekor qilinsinmi?')">Bekor qilish</button>
           </form>
         </div>
+        <div class="card"><h2>🎁 Tarif sovg'a qilish</h2>
+          ${giftForm(`${url}/gift`, plans)}
+          ${(u.subscription?.gifts || []).length ? `<div style="margin-top:12px">${miniTable(u.subscription.gifts.slice(0, 5), (g) => `<td class="hint">${esc(fmtDate(g.at))}</td><td><b>${esc(PLAN_DEFS[g.plan]?.name || g.plan)}</b> · ${g.days} kun${g.kept ? ` <span class="pill mute" title="Faol qimmatroq tarif saqlandi">tarif saqlandi</span>` : ""}</td><td class="hint">${esc(g.note || "")}</td>`)}</div>` : ""}
+        </div>
         <div class="card"><h2>🩺 Ulanishlar holati</h2>
           ${diagHtml(m.lastDiagnostics)}
           <form method="post" action="${url}/diagnose" style="margin:10px 0 0"><button class="btn sm">🩺 Ulanishlarni tekshirish</button></form>
@@ -381,6 +386,88 @@ adminRouter.post("/admin/businesses/:id/subscription", withBusiness(async (req, 
   await audit(req, "subscription_extend", u.email, `${plan} +${days} kun`);
   go(res, url, "ok", `Obuna ${days} kunga uzaytirildi`);
 }));
+
+/** Sovg'a formasi: tarif, muddat, izoh, xabar berish (bitta biznes va ommaviy sahifa uchun umumiy). */
+function giftForm(action, plans, extra = "") {
+  return `<form method="post" action="${action}" style="margin:0" onsubmit="return confirm('Tarif sovg\\'a qilinsinmi?')">
+    ${extra}
+    <div class="row" style="margin:0">
+      <select name="plan" style="margin:0; width:auto">${Object.values(plans).map((p) => `<option value="${p.id}" ${p.id === "pro" ? "selected" : ""}>${esc(p.name)}${AI_QUOTA[p.id] ? "" : " (AI'siz)"}</option>`).join("")}</select>
+      <select name="days" style="margin:0; width:auto">${GIFT_DAYS.map((d) => `<option value="${d}" ${d === 30 ? "selected" : ""}>${d} kun</option>`).join("")}</select>
+      <input type="number" name="customDays" min="1" max="3650" placeholder="yoki kun soni" style="margin:0; width:130px">
+    </div>
+    <label>Izoh (egasiga yuboriladi, ixtiyoriy)</label>
+    <input name="note" maxlength="500" placeholder="Masalan: Hamkorligingiz uchun rahmat!" style="margin:0">
+    <label style="display:flex; gap:8px; align-items:center; font-size:13px; margin-top:10px"><input type="checkbox" name="notify" checked style="width:auto; margin:0"> Egasiga Telegram va email orqali xabar berish</label>
+    <button class="btn sm" style="margin-top:10px">🎁 Sovg'a qilish</button>
+    <p class="hint" style="margin:8px 0 0">Kunlar joriy obuna yoki sinov tugashidan keyin qo'shiladi. Faol qimmatroq tarif pasaytirilmaydi — kunlar shu tarifga qo'shiladi.</p>
+  </form>`;
+}
+
+const giftInput = (b) => ({
+  plan: String(b?.plan || ""),
+  days: Number.parseInt(b?.customDays, 10) || Number.parseInt(b?.days, 10) || 0,
+  note: String(b?.note || ""),
+  notify: b?.notify === "on" || b?.notify === true,
+});
+
+adminRouter.post("/admin/businesses/:id/gift", withBusiness(async (req, res, u, url) => {
+  const g = giftInput(req.body);
+  let gift;
+  try {
+    gift = giftPlan(u, g);
+  } catch (err) {
+    return go(res, url, "err", err.message);
+  }
+  if (g.notify) notifyGift(u, gift).catch(() => {});
+  await audit(req, "gift_plan", u.email, `${gift.plan} +${gift.days} kun${gift.kept ? " (tarif saqlandi)" : ""}${gift.note ? ` · ${gift.note}` : ""}`);
+  go(res, url, "ok", `🎁 ${PLAN_DEFS[gift.plan].name} tarifi ${gift.days} kunga sovg'a qilindi`);
+}));
+
+adminRouter.get("/admin/gifts", async (req, res) => {
+  const [plans, users, history] = await Promise.all([getPlans(), listUsers(), giftHistory(200)]);
+  const counts = Object.fromEntries(Object.keys(GIFT_SEGMENTS).map((k) => [k, segmentUsers(users, k).length]));
+  const segSelect = `<label>Kimlarga</label>
+    <select name="segment" style="margin:0">${Object.entries(GIFT_SEGMENTS).map(([k, l]) => `<option value="${k}">${esc(l)} — ${counts[k]} ta</option>`).join("")}<option value="emails">Aniq bizneslar (email ro'yxati)</option></select>
+    <label>Email yoki ID'lar (vergul yoki yangi qator bilan) — faqat "Aniq bizneslar" tanlanganda</label>
+    <textarea name="emails" rows="3" placeholder="biznes@mail.uz, boshqa@mail.uz" style="margin:0 0 10px"></textarea>`;
+  const body = `
+    <div class="grid two">
+      <div class="card"><h2>🎁 Ommaviy sovg'a</h2>${giftForm("/admin/gifts", plans, segSelect)}</div>
+      <div class="card"><h2>ℹ️ Qanday ishlaydi</h2>
+        <p class="hint" style="margin-top:0">Bitta biznesga sovg'a qilish uchun <a href="/admin/businesses">Bizneslar</a> → biznes sahifasidagi "🎁 Tarif sovg'a qilish" kartasidan foydalaning.</p>
+        <p class="hint">Sovg'a qilingan tarif darhol faollashadi, biznes kabinetida 🎁 banner chiqadi, egasiga Telegram (ulangan bo'lsa) va email orqali xabar boradi. Bloklangan bizneslarga sovg'a berilmaydi.</p>
+        <p class="hint">Mini va Lite tariflarida AI javoblar yo'q — AI'ni sinab ko'rish uchun Start, Pro yoki Business sovg'a qiling.</p>
+      </div>
+    </div>
+    <div class="card"><h2>📜 Sovg'alar tarixi <span class="pill mute">${history.length}</span></h2>
+      ${history.length ? `<div class="tw"><table><thead><tr><th>Sana</th><th>Biznes</th><th>Tarif</th><th>Muddat</th><th>Gacha</th><th>Izoh</th></tr></thead><tbody>${history.map((g) => `<tr>
+        <td class="hint">${esc(fmtDate(g.at))}</td>
+        <td><a href="/admin/businesses/${esc(g.userId)}"><b>${esc(g.business)}</b></a><div class="hint">${esc(g.email || "")}</div></td>
+        <td>${esc(PLAN_DEFS[g.plan]?.name || g.plan)}${g.kept ? ` <span class="pill mute">saqlandi</span>` : ""}</td>
+        <td>${g.days} kun</td><td class="hint">${esc(fmtDate(g.until).slice(0, 10))}</td><td class="hint">${esc(g.note || "")}</td></tr>`).join("")}</tbody></table></div>` : `<p class="hint">Hali sovg'a berilmagan</p>`}
+    </div>`;
+  const [flash, kind] = flashOf(req);
+  res.send(adminPage("Tarif sovg'a qilish", body, { active: "gifts", flash, flashKind: kind }));
+});
+
+adminRouter.post("/admin/gifts", async (req, res) => {
+  const g = giftInput(req.body);
+  const segment = String(req.body?.segment || "");
+  let ids = [];
+  if (segment === "emails") {
+    const wanted = String(req.body?.emails || "").split(/[\s,;]+/).map((x) => x.trim().toLowerCase()).filter(Boolean);
+    if (!wanted.length) return go(res, "/admin/gifts", "err", "Email yoki ID kiriting");
+    ids = (await listUsers()).filter((u) => wanted.includes(String(u.email || "").toLowerCase()) || wanted.includes(u.id)).map((u) => u.id);
+    if (!ids.length) return go(res, "/admin/gifts", "err", "Bunday biznes topilmadi");
+  } else if (!GIFT_SEGMENTS[segment]) {
+    return go(res, "/admin/gifts", "err", "Segmentni tanlang");
+  }
+  if (!PLAN_DEFS[g.plan] || !(g.days >= 1 && g.days <= 3650)) return go(res, "/admin/gifts", "err", "Tarif va muddatni to'g'ri tanlang");
+  const r = await giftMany({ segment, ids, ...g });
+  await audit(req, "gift_plan_bulk", segment === "emails" ? `${ids.length} ta tanlangan` : segment, `${g.plan} +${g.days} kun · ${r.count} ta${g.note ? ` · ${g.note}` : ""}`);
+  go(res, "/admin/gifts", r.count ? "ok" : "err", r.count ? `🎁 ${r.count} ta biznesga ${PLAN_DEFS[g.plan].name} tarifi ${g.days} kunga sovg'a qilindi` : "Mos biznes topilmadi");
+});
 
 adminRouter.post("/admin/businesses/:id/diagnose", withBusiness(async (req, res, u, url) => {
   const results = await diagnoseBusiness(u);
@@ -537,9 +624,9 @@ adminRouter.get("/admin/plans", async (req, res) => {
         ${packs.map((p) => `<div><label>+${p.credits} kredit</label><input type="number" min="0" step="1000" name="credits_${p.id}" value="${p.price}"></div>`).join("")}
       </div>
       <h2 style="margin-top:10px">🆓 Bepul tarif</h2>
-      <label style="display:flex; gap:8px; align-items:center; font-size:13.5px"><input type="checkbox" name="freePlan" ${ps.freePlan ? "checked" : ""} style="width:auto; margin:0"> Sinov/obuna tugagach bot bepul tarifda ishlashda davom etsin (${AI_QUOTA.free} AI javob/oy)</label>
+      <label style="display:flex; gap:8px; align-items:center; font-size:13.5px"><input type="checkbox" name="freePlan" ${ps.freePlan ? "checked" : ""} style="width:auto; margin:0"> Sinov/obuna tugagach bot bepul tarifda ishlashda davom etsin (flow'lar va qoidalar, AI'siz)</label>
       <div style="max-width:260px"><label>Bepul tarifda faol flow'lar soni</label><input type="number" min="0" max="50" name="freeFlowLimit" value="${ps.freeFlowLimit || 3}"></div>
-      <div class="hint" style="margin-bottom:10px">Oylik AI kvotalari: ${Object.entries(AI_QUOTA).map(([k, v]) => `${k} — ${v}`).join(" · ")}</div>
+      <div class="hint" style="margin-bottom:10px">Oylik AI kvotalari: ${Object.entries(AI_QUOTA).map(([k, v]) => `${k} — ${v || "AI yo'q"}`).join(" · ")}</div>
       <h2 style="margin-top:10px">🧾 Fiskal chek (Payme)</h2>
       <p class="hint" style="margin-top:0">Payme to'lovida chek shu kodlar bilan shakllanadi. Kodlarni <a href="https://tasnif.soliq.uz" target="_blank" rel="noopener">tasnif.soliq.uz</a> dan oling (dasturiy ta'minot / SaaS xizmati). Bo'sh bo'lsa chek tafsiloti yuborilmaydi. ${fiscal.ikpu ? `<span class="pill ok">Sozlangan</span>` : `<span class="pill warn">Kiritilmagan</span>`}</p>
       <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(220px,1fr))">

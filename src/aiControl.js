@@ -15,6 +15,7 @@
 import { zonedParts } from "./templating.js";
 import { persist } from "./db.js";
 import { getContactMeta } from "./contacts.js";
+import { currentPlan, planHasAi } from "./credits.js";
 
 export const AI_MODES = {
   always: "Doim",
@@ -65,9 +66,11 @@ export function isWorkTime(tenant, now = new Date()) {
 
 /**
  * Shu xabarga AI javob bera oladimi.
- * Qaytaradi: { allowed, reason } — reason: "global" | "channel" | "schedule" | "chat" | ""
+ * Qaytaradi: { allowed, reason } — reason: "plan" | "global" | "channel" | "schedule" | "chat" | ""
+ * "plan" — tarifda AI yo'q (Mini, Lite, Bepul): bot faqat flow va qoidalar bilan ishlaydi.
  */
 export function aiAllowed(tenant, chan, key = "", now = new Date()) {
+  if (!planHasAi(currentPlan(tenant))) return { allowed: false, reason: "plan" };
   const s = aiSettings(tenant);
   if (!s.enabled) return { allowed: false, reason: "global" };
   if (chan && s.channels[chan] === false) return { allowed: false, reason: "channel" };
@@ -124,6 +127,7 @@ export function setChatAi(tenant, key, on) {
 
 /** Panelda ko'rsatish uchun qisqa holat matni. */
 export function aiStatusLabel(tenant, now = new Date()) {
+  if (!planHasAi(currentPlan(tenant))) return { on: false, noPlan: true, label: "Tarifingizda AI javoblar yo'q (Start, Pro, Business tariflarida)" };
   const s = aiSettings(tenant);
   if (!s.enabled) return { on: false, label: "AI javob o'chiq" };
   const off = Object.entries(s.channels).filter(([, v]) => !v).map(([c]) => CHANNELS[c]);

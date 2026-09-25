@@ -12,6 +12,7 @@ import { pushChat } from "./chatStore.js";
 import { processMessage } from "./respond.js";
 import { fetchAsBase64 } from "./media.js";
 import { sendReply, telegramBusinessExtra } from "./outbound.js";
+import { isDuplicate } from "./dedup.js";
 
 export const telegramRouter = Router();
 
@@ -188,7 +189,7 @@ export async function handleBusinessMessage(user, message, token) {
   if (!tb.enabled || message.business_connection_id !== tb.connectionId) return;
   const chatId = String(message.chat.id);
   const key = `tg:${chatId}`;
-  const text = message.text || message.caption || "";
+  const text = telegramMessageText(message);
 
   if (String(message.from?.id) === tb.ownerId) {
     user.manualChats ||= {};
@@ -216,14 +217,40 @@ export async function handleBusinessMessage(user, message, token) {
     }
   }
   if (!text && !media.length) return;
+  if (message.from?.is_bot) return;
 
   console.log(`[Telegram Business] ${user.businessName}: ${chatId} -> "${text}"`);
+  if (token) sendTyping(user, token, chatId);
   const { reply, quickReplies } = await processMessage(user, "telegram", chatId, {
     text,
     media,
     profile: { username: message.from?.username || "", name: [message.from?.first_name, message.from?.last_name].filter(Boolean).join(" ") },
   });
   if (reply) await sendReply(user, "telegram", chatId, reply, quickReplies);
+}
+
+/**
+ * Telegram xabaridagi matnni oladi. Kontakt va lokatsiya ham matnga aylanadi —
+ * shunda telefon raqami lid sifatida ushlanadi, Inbox'da esa operator ko'radi.
+ */
+export function telegramMessageText(message) {
+  const text = message?.text || message?.caption || "";
+  if (text) return text;
+  if (message?.contact) {
+    const c = message.contact;
+    return `👤 Kontakt: ${[[c.first_name, c.last_name].filter(Boolean).join(" "), c.phone_number].filter(Boolean).join(" ")}`;
+  }
+  const loc = message?.venue?.location || message?.location;
+  if (loc?.latitude !== undefined) {
+    const place = message.venue ? [message.venue.title, message.venue.address].filter(Boolean).join(", ") : "";
+    return `📍 Lokatsiya${place ? `: ${place}` : ""}\nhttps://maps.google.com/?q=${loc.latitude},${loc.longitude}`;
+  }
+  return "";
+}
+
+/** "Yozmoqda..." belgisi — kosmetik, javobni kutib turmaydi. */
+function sendTyping(user, token, chatId) {
+  callTelegramApi(token, "sendChatAction", { chat_id: chatId, action: "typing", ...telegramBusinessExtra(user, chatId) }).catch(() => {});
 }
 
 /** Callback (inline tugma) bosilganda — tugma "soat" belgisini o'chiradi. */
@@ -248,6 +275,8 @@ telegramRouter.post("/telegram/webhook/:userId", async (req, res) => {
   }
 
   const update = req.body || {};
+  // Telegram javob kechiksa update'ni qayta yuboradi — ikki marta javob bermaymiz
+  if (update.update_id !== undefined && isDuplicate(`tg:${user.id}:${update.update_id}`)) return;
   const token = user.settings?.telegramBotToken || process.env.TELEGRAM_BOT_TOKEN;
 
   // Telegram Business: ega botni shaxsiy akkauntiga ulaganda / uzganda
@@ -282,8 +311,9 @@ telegramRouter.post("/telegram/webhook/:userId", async (req, res) => {
 
   const message = update.message;
   if (!message || !message.chat?.id) return;
-  // Guruh/kanal xabarlariga bot javob bermaydi — faqat shaxsiy chat
+  // Guruh/kanal xabarlariga bot javob bermaydi — faqat shaxsiy chat; boshqa botlarga ham
   if (message.chat.type && message.chat.type !== "private") return;
+  if (message.from?.is_bot) return;
   // Mijoz botga to'g'ridan-to'g'ri yozdi — javoblar endi bot nomidan ketadi
   if (user.tgBusiness?.chats?.[String(message.chat.id)]) {
     delete user.tgBusiness.chats[String(message.chat.id)];
@@ -291,7 +321,7 @@ telegramRouter.post("/telegram/webhook/:userId", async (req, res) => {
   }
 
   const chatId = String(message.chat.id);
-  let text = message.text || message.caption || "";
+  let text = telegramMessageText(message);
 
   // /start g_ABC123 — referal havola orqali kelgan yangi foydalanuvchi
   let ref = "";
@@ -329,6 +359,7 @@ telegramRouter.post("/telegram/webhook/:userId", async (req, res) => {
   if (!text && !ref && media.length === 0) return;
 
   console.log(`[Telegram] ${user.businessName}: ${chatId} -> "${text}"${ref ? ` (ref: ${ref})` : ""} (${media.length} media)`);
+  if (token) sendTyping(user, token, chatId);
 
   const { reply, quickReplies } = await processMessage(user, "telegram", chatId, {
     text,
@@ -338,6 +369,7 @@ telegramRouter.post("/telegram/webhook/:userId", async (req, res) => {
     profile: { username: message.from?.username || "", name: [message.from?.first_name, message.from?.last_name].filter(Boolean).join(" ") },
   });
   if (reply) {
-    await sendReply(user, "telegram", chatId, reply, quickReplies);
+    const ok = await sendReply(user, "telegram", chatId, reply, quickReplies);
+    if (!ok) console.error(`[Telegram] ${user.businessName} -> ${chatId}: javob yuborilmadi`);
   }
 });

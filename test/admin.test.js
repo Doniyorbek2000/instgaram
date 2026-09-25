@@ -57,6 +57,25 @@ test("noto'g'ri parol rad etiladi, to'g'risi bilan kiriladi (telefon har xil for
   assert.strictEqual((await get("/admin")).status, 200);
 });
 
+test("admin tarif sovg'a qiladi: biznes sahifasi, ommaviy sahifa va tarix", async () => {
+  const page = await (await get(`/admin/businesses/${biz.id}`)).text();
+  assert.match(page, /Tarif sovg'a qilish/);
+  const r = await post(`/admin/businesses/${biz.id}/gift`, { plan: "business", days: "30", note: "Rahmat!" });
+  assert.strictEqual(r.status, 302);
+  assert.match(decodeURIComponent(r.headers.get("location")), /Business tarifi 30 kunga sovg'a qilindi/);
+  const u = await findUserById(biz.id);
+  assert.strictEqual(u.subscription.plan, "business");
+  assert.strictEqual(u.meta.giftNotice.note, "Rahmat!");
+  const bad = await post(`/admin/businesses/${biz.id}/gift`, { plan: "gold", days: "30" });
+  assert.match(bad.headers.get("location"), /err=/);
+
+  const bulk = await post("/admin/gifts", { segment: "emails", emails: "boshqa@test.uz", plan: "start", days: "7" });
+  assert.match(decodeURIComponent(bulk.headers.get("location")), /1 ta biznesga Start/);
+  const list = await (await get("/admin/gifts")).text();
+  assert.match(list, /Sovg'alar tarixi/);
+  assert.match(list, /boshqa@test\.uz/);
+});
+
 test("parolni o'zgartirish: eski sessiya va eski parol ishlamaydi", async () => {
   const weak = await post("/admin/security", { login: "+998949392250", current: "949392250Adm", next: "short1", next2: "short1" });
   assert.match(decodeURIComponent(weak.headers.get("location")), /kamida 10/);

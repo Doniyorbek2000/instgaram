@@ -1,4 +1,4 @@
-import { generateReply } from "./ai.js";
+import { generateReply, smartFallbackReply } from "./ai.js";
 import { botEnabled } from "./credits.js";
 import { notifyHandoff, notifyHotLead } from "./notify.js";
 import { findKeywordRule, aiRules } from "./rules.js";
@@ -284,10 +284,13 @@ export async function processMessage(tenant, channel, chatKey, { text = "", medi
   const ai = aiAllowed(tenant, chanShort(channel), fullKey);
   if (!ai.allowed) {
     const meta = getContactMeta(tenant, fullKey);
-    const off = offReply(tenant);
-    const due = off && Date.now() - (meta.lastOffReplyAt || 0) > OFF_REPLY_EVERY_MS;
+    // Telegram'da "Start" bosilganda hech bir flow/qoida javob bermasa ham bot jim
+    // qolmasin — mijoz botni "ishlamayapti" deb o'ylaydi. Salomlashuv yuboriladi.
+    const greet = text.trim() === "/start" ? smartFallbackReply(tenant, "") : "";
+    const off = greet || offReply(tenant);
+    const due = off && (greet || Date.now() - (meta.lastOffReplyAt || 0) > OFF_REPLY_EVERY_MS);
     const reply = [prefix, due ? off : ""].filter(Boolean).join("\n\n") || null;
-    if (due) meta.lastOffReplyAt = Date.now();
+    if (due && !greet) meta.lastOffReplyAt = Date.now();
     logExchange(tenant, fullKey, shownText, reply || "");
     console.log(`[${channel}] ${tenant.businessName}: AI javob o'chiq (${ai.reason}) — ${reply ? "zaxira xabar" : "jim"}`);
     return { reply };

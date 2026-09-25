@@ -28,6 +28,7 @@ aiSettingsRouter.get("/ai-settings", requireAuth, (req, res) => {
       "AI javob sozlamalari",
       `
       ${req.query.saved ? `<div class="ok">Saqlandi ✅</div>` : ""}
+      ${st.noPlan ? `<div class="info">🔒 Tarifingizda (${esc(q.plan === "free" ? "Bepul" : q.plan[0].toUpperCase() + q.plan.slice(1))}) AI javoblar yo'q — bot flow'lar, kalit so'z qoidalari va formalar bilan ishlaydi. Quyidagi sozlamalar Start, Pro yoki Business tarifiga o'tganingizda kuchga kiradi. <a href="/billing">Tarifni oshirish</a></div>` : ""}
       <style>
         .ai-switch { display:flex; align-items:center; gap:14px; cursor:pointer; margin:0; text-transform:none; letter-spacing:0 }
         .ai-switch input { display:none }

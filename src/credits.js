@@ -15,7 +15,15 @@ import { getPlatformSettings, setPlatformSettings, updateUser, persist, getPlanP
 import { isActive } from "./subscription.js";
 import { config } from "./config.js";
 
-export const AI_QUOTA = { free: 50, trial: 100, mini: 200, lite: 500, start: 1000, pro: 3000, business: 6000 };
+// Oylik AI javoblar. AI faqat Start, Pro, Business tariflarida (va sinov davrida — Start
+// imkoniyatlarini sinash uchun). Mini, Lite va Bepul tariflarda AI yo'q: bot kalit so'z
+// qoidalari va flow'lar bilan ishlaydi, AI kredit paketlari ham sotilmaydi.
+export const AI_QUOTA = { free: 0, trial: 100, mini: 0, lite: 0, start: 1000, pro: 3000, business: 6000 };
+
+/** Tarifda AI javoblar bormi? */
+export const planHasAi = (plan) => (AI_QUOTA[plan] || 0) > 0;
+/** AI mavjud bo'lgan eng arzon tarif (UI matnlari uchun). */
+export const AI_MIN_PLAN = "start";
 
 export const CREDIT_PACKS = {
   c500: { id: "c500", credits: 500, defaultPrice: 29000 },
@@ -55,13 +63,14 @@ export async function savePlatformSettings(patch) {
 
 const isAdminUser = (u) => Boolean(u?.email && config.adminEmails?.includes(u.email));
 
-/** Joriy tarif: free | trial | start | pro | business. */
+/** Joriy tarif: free | trial | mini | lite | start | pro | business. */
 export function currentPlan(user) {
   if (!isActive(user)) return "free";
   if (isAdminUser(user)) return "business";
   const s = user.subscription || {};
   if (s.status === "trial") return "trial";
-  return AI_QUOTA[s.plan] ? s.plan : "start";
+  // "in" — kvotasi 0 bo'lgan tariflar (mini, lite) ham o'z nomi bilan qaytsin
+  return s.plan && s.plan in AI_QUOTA && s.plan !== "free" && s.plan !== "trial" ? s.plan : "start";
 }
 
 /** Bot ishlashi mumkinmi: pullik/sinov yoki bepul tarif yoqilgan bo'lsa. */
@@ -84,13 +93,14 @@ function usage(user, now = new Date()) {
   return u;
 }
 
-/** AI kvotasi holati (panel uchun). */
+/** AI kvotasi holati (panel uchun). hasAi=false — tarifda AI umuman yo'q (kreditlar ham ishlamaydi). */
 export function aiQuota(user, now = new Date()) {
   const plan = currentPlan(user);
-  const quota = plan === "free" && !platformSettings().freePlan ? 0 : AI_QUOTA[plan] ?? 0;
+  const hasAi = planHasAi(plan);
+  const quota = hasAi ? AI_QUOTA[plan] : 0;
   const u = usage(user, now);
-  const left = Math.max(0, quota - u.used) + u.bonus;
-  return { plan, quota, used: u.used, bonus: u.bonus, left, month: u.month };
+  const left = hasAi ? Math.max(0, quota - u.used) + u.bonus : 0;
+  return { plan, quota, used: u.used, bonus: u.bonus, left, month: u.month, hasAi };
 }
 
 export function canUseAi(user) {
@@ -130,6 +140,8 @@ export function addCredits(user, n) {
 
 /** Kreditlar tugaganini egasiga oyiga bir marta Telegram orqali bildiradi. */
 export async function warnCreditsOut(user) {
+  // AI'siz tarifda (Mini, Lite, Bepul) "kredit tugadi" ogohlantirishi ma'nosiz
+  if (!aiQuota(user).hasAi) return false;
   const u = usage(user);
   if (u.warnedMonth === u.month || !user.settings?.telegramChatId) return false;
   u.warnedMonth = u.month;

@@ -21,7 +21,7 @@ export const PLAN_DEFS = {
     name: "Lite",
     defaultPrice: 49000,
     tagline: "Kichik sahifa va do'konlar uchun",
-    features: ["Barcha imkoniyatlar ochiq", "Do'kon: katalog, Payme / Click", "Ommaviy xabarlar va ketma-ketliklar"],
+    features: ["Kalit so'z qoidalari va flow'lar", "Do'kon: katalog, Payme / Click", "Ommaviy xabarlar va ketma-ketliklar"],
   },
   start: {
     id: "start",

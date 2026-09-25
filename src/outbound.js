@@ -11,7 +11,7 @@ import { graphPost, igGraphPost } from "./graph.js";
 import { sanitizeMedia, absoluteMediaUrl } from "./mediaStore.js";
 import { sendDirectMessage, sendDirectQuickReplies, sendDirectButtons } from "./services/instagram.js";
 import { sendMessengerMessage } from "./services/messenger.js";
-import { sendWhatsAppMessage } from "./services/whatsapp.js";
+import { sendWhatsAppMessage, sendWhatsAppInteractive } from "./services/whatsapp.js";
 import { callTelegramApi } from "./telegram.js";
 
 /** Kanal nomini qisqa ko'rinishga keltiradi (ig/fb/wa/tg). */
@@ -63,6 +63,82 @@ export function purgeInternalKeys(tenant) {
     removed += before - tenant.leads.length;
   }
   return removed;
+}
+
+/**
+ * Kanal bitta xabarda qabul qiladigan eng uzun matn (belgi). Oshib ketsa Meta/Telegram
+ * xabarni butunlay rad etadi va mijoz hech narsa olmaydi — shuning uchun bo'lib yuboramiz.
+ */
+export const TEXT_LIMITS = { ig: 1000, fb: 2000, wa: 4096, tg: 4096 };
+
+/**
+ * Uzun matnni limitdan oshmaydigan bo'laklarga ajratadi: avval xat boshi, keyin qator,
+ * gap, so'z chegarasida (so'z o'rtasidan kesilmaydi). Bo'sh matn — [].
+ */
+export function splitText(text, limit) {
+  let rest = String(text || "").trim();
+  const out = [];
+  while (rest.length > limit) {
+    const window = rest.slice(0, limit);
+    let cut = -1;
+    for (const sep of ["\n\n", "\n", ". ", "! ", "? ", " "]) {
+      const i = window.lastIndexOf(sep);
+      if (i >= limit * 0.4) {
+        cut = i + sep.length;
+        break;
+      }
+    }
+    if (cut <= 0) cut = limit;
+    out.push(rest.slice(0, cut).trim());
+    rest = rest.slice(cut).trim();
+  }
+  if (rest) out.push(rest);
+  return out;
+}
+
+/** Matnni bitta xabarga sig'diradi (Private Reply kabi faqat BITTA xabar mumkin bo'lgan joylar uchun). */
+export function clipText(text, limit) {
+  const s = String(text || "");
+  if (s.length <= limit) return s;
+  const head = splitText(s, limit - 1)[0] || s.slice(0, limit - 1);
+  return `${head.slice(0, limit - 1)}…`;
+}
+
+/** UTF-8 baytlari bo'yicha qisqartiradi (Telegram callback_data — 64 BAYT, belgi emas). */
+export function clipBytes(value, maxBytes) {
+  let s = String(value || "");
+  while (Buffer.byteLength(s, "utf8") > maxBytes) s = s.slice(0, -1);
+  return s;
+}
+
+/**
+ * WhatsApp interaktiv xabar tanasi: 1–3 variant — tugmalar, 4–10 — ro'yxat (menu).
+ * Mos kelmasa (havola tugmasi, 10 dan ko'p variant, uzun/takroriy id) — null,
+ * unda raqamlangan matn yuboriladi.
+ */
+export function buildWhatsAppInteractive(text, options = []) {
+  const opts = (options || []).filter((o) => o && o.title);
+  if (!opts.length || opts.length > 10 || opts.some((o) => o.url)) return null;
+  const ids = opts.map((o) => String(o.payload || o.title));
+  if (new Set(ids).size !== ids.length || ids.some((id) => id.length > 200)) return null;
+  const body = String(text || "👇");
+  if (opts.length <= 3) {
+    const titles = opts.map((o) => String(o.title).slice(0, 20));
+    if (new Set(titles).size !== titles.length || body.length > 1024) return null;
+    return {
+      type: "button",
+      body: { text: body },
+      action: { buttons: opts.map((o, i) => ({ type: "reply", reply: { id: ids[i], title: titles[i] } })) },
+    };
+  }
+  return {
+    type: "list",
+    body: { text: body },
+    action: {
+      button: "Tanlash",
+      sections: [{ title: "Variantlar", rows: opts.map((o, i) => ({ id: ids[i], title: String(o.title).slice(0, 24), ...(String(o.title).length > 24 ? { description: String(o.title).slice(0, 72) } : {}) })) }],
+    },
+  };
 }
 
 /** WhatsApp/matnli kanallar uchun variantlarni raqamlangan ro'yxatga aylantiradi. */
@@ -188,6 +264,19 @@ export async function sendReply(tenant, channel, recipientId, text, options = []
   const opts = (options || []).filter((o) => o && o.title);
   if (!text && !opts.length) return false;
 
+  // Limitdan uzun matn: oldingi bo'laklar oddiy xabar, tugmalar oxirgi bo'lak bilan ketadi
+  // (variantlar matn oxiriga qo'shilishi mumkin — ularga joy qoldiramiz)
+  const reserve = opts.length ? optionsAsText("", opts).length + 10 : 0;
+  const onlyLinks = chan === "ig" && opts.length && opts.every((o) => o.url);
+  const limit = chan === "wa" && opts.length && opts.length <= 3 ? 1024 : onlyLinks ? 640 : (TEXT_LIMITS[chan] || TEXT_LIMITS.ig) - reserve;
+  const parts = splitText(text, Math.max(300, limit));
+  if (parts.length > 1) {
+    for (const part of parts.slice(0, -1)) {
+      if (!(await sendReply(tenant, chan, recipientId, part))) return false;
+    }
+    return sendReply(tenant, chan, recipientId, parts[parts.length - 1], opts);
+  }
+
   try {
     if (chan === "tg") {
       const token = telegramToken(tenant);
@@ -198,7 +287,7 @@ export async function sendReply(tenant, channel, recipientId, text, options = []
           inline_keyboard: opts.map((o) => [
             o.url
               ? { text: String(o.title).slice(0, 64), url: o.url }
-              : { text: String(o.title).slice(0, 64), callback_data: String(o.payload || o.title).slice(0, 64) },
+              : { text: String(o.title).slice(0, 64), callback_data: clipBytes(o.payload || o.title, 64) },
           ]),
         };
       }
@@ -207,6 +296,12 @@ export async function sendReply(tenant, channel, recipientId, text, options = []
     }
 
     if (chan === "wa") {
+      // Variantlar — haqiqiy WhatsApp tugmalari/ro'yxati; rad etilsa raqamli matn
+      const interactive = buildWhatsAppInteractive(text, opts);
+      if (interactive) {
+        const ri = await sendWhatsAppInteractive(tenant, recipientId, interactive);
+        if (ri && !ri.error) return true;
+      }
       const r = await sendWhatsAppMessage(tenant, recipientId, optionsAsText(text, opts));
       return Boolean(r && !r.error);
     }
@@ -274,7 +369,7 @@ export async function sendCarousel(tenant, channel, recipientId, items = []) {
       if (!token) return false;
       let ok = false;
       for (const it of list) {
-        const keyboard = { inline_keyboard: (it.buttons || []).slice(0, 3).map((b) => [b.url ? { text: String(b.title).slice(0, 64), url: b.url } : { text: String(b.title).slice(0, 64), callback_data: String(b.payload).slice(0, 64) }]) };
+        const keyboard = { inline_keyboard: (it.buttons || []).slice(0, 3).map((b) => [b.url ? { text: String(b.title).slice(0, 64), url: b.url } : { text: String(b.title).slice(0, 64), callback_data: clipBytes(b.payload, 64) }]) };
         const caption = `<b>${String(it.title).replace(/[<>&]/g, "")}</b>${it.subtitle ? `\n${String(it.subtitle).replace(/[<>&]/g, "")}` : ""}`;
         const extra = telegramBusinessExtra(tenant, recipientId);
         const r = it.image

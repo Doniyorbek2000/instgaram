@@ -11,7 +11,7 @@ import crypto from "node:crypto";
 import { requireAuth } from "../auth.js";
 import { page, esc } from "./layout.js";
 import { persist } from "../db.js";
-import { generateText, aiAvailable } from "../ai.js";
+import { generateText, aiBlockReason } from "../ai.js";
 import { ensureFlows } from "../flows.js";
 import { buildTemplate } from "../flowTemplates.js";
 
@@ -68,7 +68,8 @@ contentRouter.get("/content", requireAuth, async (req, res) => {
   const u = req.user;
   u.content ||= {};
   const items = u.content.items || [];
-  const hasAi = await aiAvailable(u);
+  const aiBlock = await aiBlockReason(u);
+  const hasAi = !aiBlock;
   const opt = (obj, sel) => Object.entries(obj).map(([k, v]) => `<option value="${k}" ${k === sel ? "selected" : ""}>${esc(v)}</option>`).join("");
 
   res.send(
@@ -89,7 +90,7 @@ contentRouter.get("/content", requireAuth, async (req, res) => {
         .cs-spin { display:inline-block; width:16px; height:16px; border:2px solid rgba(255,255,255,.25); border-top-color:#a78bfa; border-radius:50%; animation:csspin .8s linear infinite; vertical-align:middle }
         @keyframes csspin { to { transform:rotate(360deg) } }
       </style>
-      ${hasAi ? "" : `<div class="error">AI kaliti sozlanmagan — admin panelda Gemini kalitini kiriting.</div>`}
+      ${hasAi ? "" : `<div class="error">${esc(aiBlock)} <a href="/billing">Tariflar</a></div>`}
       <div class="grid split-form">
         <div>
           <div class="card">

@@ -84,6 +84,8 @@ export function likeComment(tenant, commentId) {
  */
 export async function privateReplyToComment(tenant, commentId, text, quickReplies = []) {
   const token = igToken(tenant);
+  // Private reply — kommentga faqat BITTA xabar; Instagram 1000 belgidan uzunini rad etadi
+  const fit = (t) => (String(t).length > 1000 ? `${String(t).slice(0, 999)}…` : String(t));
   const qr = (quickReplies || [])
     .filter((o) => o && o.title && o.payload)
     .slice(0, 13)
@@ -93,7 +95,7 @@ export async function privateReplyToComment(tenant, commentId, text, quickReplie
     // ochiladi va flow davom etadi. API rad etsa, oddiy matnga qaytamiz.
     const withButtons = await igGraphPost(
       "me/messages",
-      { recipient: { comment_id: commentId }, message: { text: String(text), quick_replies: qr } },
+      { recipient: { comment_id: commentId }, message: { text: fit(text), quick_replies: qr } },
       token
     );
     if (withButtons && !withButtons.error) return withButtons;
@@ -104,7 +106,7 @@ export async function privateReplyToComment(tenant, commentId, text, quickReplie
     : String(text);
   return igGraphPost(
     "me/messages",
-    { recipient: { comment_id: commentId }, message: { text: body } },
+    { recipient: { comment_id: commentId }, message: { text: fit(body) } },
     token
   );
 }

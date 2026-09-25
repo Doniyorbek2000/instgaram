@@ -25,7 +25,7 @@ import {
 import { googleAuthAvailable, googleAuthUrl, fetchGoogleProfile } from "../googleAuth.js";
 import { updateUser, listUsers, persist, createOrder, getPlatformGeminiKey } from "../db.js";
 import { config, paymeReady } from "../config.js";
-import { getPlans, statusInfo, creditReferral } from "../subscription.js";
+import { getPlans, statusInfo, creditReferral, PLAN_DEFS } from "../subscription.js";
 import { aiStatusLabel, aiSettings } from "../aiControl.js";
 import { aiQuota, getCreditPacks, CREDIT_ORDER_PREFIX, platformSettings, AI_QUOTA, consumeAi, canUseAi } from "../credits.js";
 import { creditsFor, recordAiCost } from "../aiCost.js";
@@ -227,13 +227,20 @@ web.get("/dashboard", requireAuth, (req, res) => {
   const aiLeft = aiQuota(u);
   const subBanner = !sub.active
     ? platformSettings().freePlan
-      ? `<div class="info">🆓 ${esc(sub.label)} — bot <b>Bepul</b> tarifda ishlayapti (AI: ${aiLeft.left} javob qoldi). <a href="/billing">Tarifni oshirish</a></div>`
+      ? `<div class="info">🆓 ${esc(sub.label)} — bot <b>Bepul</b> tarifda ishlayapti: flow'lar va kalit so'z qoidalari (AI javoblar — Start tarifidan). <a href="/billing">Tarifni oshirish</a></div>`
       : `<div class="error">${esc(sub.label)}. Bot faoliyati vaqtincha to'xtatilgan — davom ettirish uchun <a href="/billing">obunani rasmiylashtiring</a>.</div>`
-    : aiLeft.left <= Math.max(10, aiLeft.quota * 0.1)
+    : aiLeft.hasAi && aiLeft.left <= Math.max(10, aiLeft.quota * 0.1)
       ? `<div class="info">⚠️ AI javoblar deyarli tugadi: ${aiLeft.left} ta qoldi. <a href="/billing#credits">Kredit olish</a></div>`
       : "";
   const daysLeft = sub.active && sub.until ? Math.ceil((new Date(sub.until).getTime() - Date.now()) / 86400000) : null;
+  const gift = u.meta?.giftNotice;
   const notices = [
+    gift
+      ? `<div class="ok" style="display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap">
+          <span>🎁 <b>Sizga sovg'a!</b> Obunext jamoasi <b>${esc(PLAN_DEFS[gift.plan]?.name || gift.plan)}</b> tarifini <b>${Number(gift.days) || 0} kun</b>ga sovg'a qildi — obuna ${esc(new Date(gift.until).toLocaleDateString("ru-RU"))} gacha faol.${gift.note ? `<br><span style="opacity:.85">💬 ${esc(gift.note)}</span>` : ""}</span>
+          <form method="post" action="/gift/dismiss" style="margin:0"><button class="secondary" style="margin:0; padding:4px 12px; font-size:12px">Rahmat ✓</button></form>
+        </div>`
+      : "",
     daysLeft !== null && daysLeft <= 3
       ? `<div class="info">⏳ ${sub.kind === "trial" ? "Sinov muddati" : "Obunangiz"} ${daysLeft <= 0 ? "bugun" : `${daysLeft} kundan so'ng`} tugaydi. Bot to'xtab qolmasligi uchun <a href="/billing">hozir uzaytiring</a>.</div>`
       : "",
@@ -291,6 +298,15 @@ web.get("/dashboard", requireAuth, (req, res) => {
       ${subBanner}${notices}
       ${(() => {
         const st = aiStatusLabel(u);
+        if (st.noPlan) {
+          return `<div class="card" style="display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap; border:1px solid rgba(100,116,139,0.6)">
+          <div style="display:flex; gap:12px; align-items:center">
+            <span style="width:12px; height:12px; border-radius:50%; background:#64748b; box-shadow:0 0 0 4px rgba(100,116,139,0.15)"></span>
+            <div><b style="font-size:16px">🧠 AI avtomatik javob</b><div class="hint" style="font-size:13px">${esc(st.label)}. Hozir bot flow'lar va kalit so'z qoidalari bilan javob beradi.</div></div>
+          </div>
+          <a class="btn" href="/billing" style="margin:0">⬆️ Start tarifiga o'tish</a>
+        </div>`;
+        }
         return `<div class="card" style="display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap; border:1px solid ${st.on ? "rgba(16,185,129,0.45)" : "rgba(100,116,139,0.6)"}">
           <div style="display:flex; gap:12px; align-items:center">
             <span style="width:12px; height:12px; border-radius:50%; background:${st.on ? (st.active ? "#10b981" : "#fbbf24") : "#64748b"}; box-shadow:0 0 0 4px ${st.on ? "rgba(16,185,129,0.15)" : "rgba(100,116,139,0.15)"}"></span>
@@ -492,6 +508,15 @@ web.post("/settings/voice", requireAuth, async (req, res) => {
   res.redirect("/dashboard?saved=1");
 });
 
+// Sovg'a banneri yopildi
+web.post("/gift/dismiss", requireAuth, async (req, res) => {
+  if (req.user.meta?.giftNotice) {
+    delete req.user.meta.giftNotice;
+    await persist(req.user);
+  }
+  res.redirect("/dashboard");
+});
+
 web.post("/handoff/resolve", requireAuth, (req, res) => {
   resolveHandoff(req.user, String(req.body.id || ""));
   res.redirect("/dashboard");
@@ -532,7 +557,8 @@ web.get("/billing", requireAuth, async (req, res) => {
         <p class="hint" style="margin:0 0 10px">${esc(p.tagline || "")}</p>
         <div style="font-size:32px; font-weight:800; margin:10px 0; color:#fff">${p.price.toLocaleString("uz")} <span style="font-size:14px; color:#94a3b8; font-weight:500">so'm/oy</span></div>
         <div style="border-top:1px solid var(--border); padding-top:14px; margin-bottom:18px">
-          ${[`${(AI_QUOTA[p.id] || 0).toLocaleString("ru-RU")} ta AI javob / oy`, "Cheksiz flow'lar va ommaviy xabarlar", ...p.features].map((f) => `<div style="display:flex; gap:10px; align-items:center; padding:6px 0; font-size:13.5px; color:#cbd5e1"><span style="color:#a78bfa; font-weight:800">✓</span> ${esc(f)}</div>`).join("")}
+          ${(AI_QUOTA[p.id] ? [`${AI_QUOTA[p.id].toLocaleString("ru-RU")} ta AI javob / oy`] : []).concat("Cheksiz flow'lar va ommaviy xabarlar", p.features).map((f) => `<div style="display:flex; gap:10px; align-items:center; padding:6px 0; font-size:13.5px; color:#cbd5e1"><span style="color:#a78bfa; font-weight:800">✓</span> ${esc(f)}</div>`).join("")}
+          ${AI_QUOTA[p.id] ? "" : `<div style="display:flex; gap:10px; align-items:center; padding:6px 0; font-size:13.5px; color:#64748b"><span style="font-weight:800">✕</span> AI javoblar yo'q (Start tarifidan)</div>`}
         </div>
         ${
           paymeReady
@@ -550,13 +576,20 @@ web.get("/billing", requireAuth, async (req, res) => {
   const statusCard = sub.active
     ? `<div class="ok">${esc(sub.label)}${sub.until ? ` — ${sub.until.toLocaleDateString("uz")}gacha` : ""}. Botingiz uzluksiz ishlayapti.</div>`
     : ps.freePlan
-      ? `<div class="info">🆓 ${esc(sub.label)} — siz <b>Bepul</b> tarifdasiz: flow'lar (${ps.freeFlowLimit || 3} tagacha), qoidalar va oyiga ${AI_QUOTA.free} ta AI javob ishlaydi. Ommaviy xabarlar va to'liq AI uchun tarif tanlang.</div>`
+      ? `<div class="info">🆓 ${esc(sub.label)} — siz <b>Bepul</b> tarifdasiz: flow'lar (${ps.freeFlowLimit || 3} tagacha) va kalit so'z qoidalari ishlaydi. Ommaviy xabarlar uchun tarif tanlang; AI javoblar — Start, Pro va Business tariflarida.</div>`
       : `<div class="error">${esc(sub.label)}. Bot to'xtatilgan — to'lovdan so'ng avtomatik faollashadi.</div>`;
   const q = aiQuota(u);
   const packs = await getCreditPacks();
   const pct = q.quota ? Math.min(100, Math.round((q.used / q.quota) * 100)) : 100;
   const planLabel = { free: "🆓 Bepul", trial: "🧪 Sinov", mini: "Mini", lite: "Lite", start: "Start", pro: "Pro", business: "Business" }[q.plan] || q.plan;
-  const creditsCard = `
+  const creditsCard = !q.hasAi
+    ? `
+    <div class="card" id="credits" style="margin-top:20px">
+      <h2 style="margin:0">🧠 AI javoblar</h2>
+      <p class="hint" style="margin:8px 0 0">Tarif: <b>${esc(planLabel)}</b> — bu tarifda AI javoblar yo'q. Bot kalit so'z qoidalari, flow'lar va formalar bilan ishlaydi.
+      AI javoblar, AI kontent studiya va "Instagram'dan o'rganish" <b>Start, Pro va Business</b> tariflarida mavjud — yuqoridan tarifni tanlang.</p>
+    </div>`
+    : `
     <div class="card" id="credits" style="margin-top:20px">
       <div style="display:flex; justify-content:space-between; gap:12px; flex-wrap:wrap; align-items:center">
         <div>
@@ -606,6 +639,8 @@ web.get("/billing", requireAuth, async (req, res) => {
 // AI kredit paketini sotib olish (Payme)
 web.post("/billing/credits", requireAuth, async (req, res) => {
   if (!paymeReady) return res.redirect("/billing#credits");
+  // AI kredit paketlari faqat AI bor tariflarga (Start, Pro, Business) sotiladi
+  if (!aiQuota(req.user).hasAi) return res.redirect("/billing#credits");
   const pack = (await getCreditPacks()).find((p) => p.id === String(req.body?.pack || ""));
   if (!pack) return res.redirect("/billing#credits");
   const order = await createOrder({ userId: req.user.id, plan: `${CREDIT_ORDER_PREFIX}${pack.id}`, days: 0, amount: pack.price });

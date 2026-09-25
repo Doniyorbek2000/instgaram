@@ -155,6 +155,12 @@ Ularni faqat Meta formasidagi "testing instructions" maydoniga kiriting. Hisobda
 ma'lumoti (mahsulot, narx, manzil, ish vaqti) to'ldirilgan bo'lsin va "Instagram bilan ulash"
 tugmasi ko'rinsin. Arizadan oldin o'zingiz bir marta kirib tekshiring.
 
+**Muhim: reviewer hisobi Start, Pro yoki Business tarifida bo'lsin.** Mini, Lite va Bepul
+tariflarda AI javoblar yo'q — tekshiruvchi Direct'ga yozganda bot javob bermaydi va ariza
+rad etiladi. Admin panel → "Tarif sovg'a qilish" orqali hisobga Business tarifini
+(masalan 90 kun) sovg'a qiling. URL doim `https://obunext.uz/login` bo'lsin — eski
+domenlar (chat.voxo.uz va h.k.) ishlatilmasin.
+
 ---
 
 ## 3.5. "Submit for App Review" sahifasidagi 5 ta bo'lim

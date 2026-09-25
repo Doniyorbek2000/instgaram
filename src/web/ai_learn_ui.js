@@ -11,7 +11,7 @@ import { Router } from "express";
 import { requireAuth } from "../auth.js";
 import { page, esc } from "./layout.js";
 import { persist } from "../db.js";
-import { generateText, aiAvailable } from "../ai.js";
+import { generateText, aiBlockReason } from "../ai.js";
 import { getProfileStats, getRecentMedia } from "../services/instagram.js";
 
 export const aiLearnRouter = Router();
@@ -54,7 +54,8 @@ export function draftToKnowledge(d = {}) {
 
 aiLearnRouter.get("/ai-learn", requireAuth, async (req, res) => {
   const u = req.user;
-  const hasAi = await aiAvailable(u);
+  const aiBlock = await aiBlockReason(u);
+  const hasAi = !aiBlock;
   const igConnected = Boolean(u.meta?.igUserId && (u.meta?.igAccessToken || u.meta?.pageAccessToken));
   const draft = u.aiDraft || null;
   res.send(
@@ -62,7 +63,7 @@ aiLearnRouter.get("/ai-learn", requireAuth, async (req, res) => {
       "AI'ni o'rgatish",
       `
       ${req.query.saved ? `<div class="ok">Bilim bazasi va uslub yangilandi ✅ AI endi shu ma'lumotlar bilan javob beradi.</div>` : ""}
-      ${hasAi ? "" : `<div class="error">AI kaliti sozlanmagan — admin panelda Gemini kalitini kiriting.</div>`}
+      ${hasAi ? "" : `<div class="error">${esc(aiBlock)} <a href="/billing">Tariflar</a></div>`}
       <div class="grid split-form">
         <div>
           <div class="card" style="border:1px solid #7c3aed">

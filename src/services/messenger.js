@@ -40,7 +40,7 @@ export function replyToFacebookComment(tenant, commentId, message) {
 export function privateReplyToFacebookComment(tenant, commentId, text) {
   return graphPost(
     `${commentId}/private_replies`,
-    { message: text },
+    { message: String(text).length > 2000 ? `${String(text).slice(0, 1999)}…` : String(text) },
     tenant.meta.pageAccessToken
   );
 }
