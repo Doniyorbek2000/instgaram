@@ -11,22 +11,32 @@
  *   node scripts/ssh.js ssl-renew     — certbot sertifikatlarini sinov tariqasida yangilash
  *   node scripts/ssh.js "<buyruq>"    — ixtiyoriy buyruq
  */
-import "dotenv/config";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
+import path from "node:path";
 import { fileURLToPath } from "node:url";
+import dotenv from "dotenv";
 import { Client } from "ssh2";
 
-export const REMOTE_DIR = process.env.DEPLOY_DIR || "/opt/instagram";
-export const APP_CONTAINER = process.env.DEPLOY_CONTAINER || "instagram-bot-1";
+// .env process.env'ga YUKLANMAYDI — faqat shu yerda o'qiladi. Aks holda deploy ichida
+// ishga tushadigan `npm test` lokal .env qiymatlarini meros qilib olardi.
+const envFile = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", ".env");
+export const localEnv = { ...(existsSync(envFile) ? dotenv.parse(readFileSync(envFile)) : {}), ...pick(process.env, /^(SSH_|DEPLOY_)/) };
+
+function pick(obj, re) {
+  return Object.fromEntries(Object.entries(obj).filter(([k]) => re.test(k)));
+}
+
+export const REMOTE_DIR = localEnv.DEPLOY_DIR || "/opt/instagram";
+export const APP_CONTAINER = localEnv.DEPLOY_CONTAINER || "instagram-bot-1";
 
 export function connect() {
-  const { SSH_HOST, SSH_KEY_PATH, SSH_PASSWORD } = process.env;
+  const { SSH_HOST, SSH_KEY_PATH, SSH_PASSWORD, SSH_KEY_PASSPHRASE, SSH_PORT, SSH_USER } = localEnv;
   if (!SSH_HOST || (!SSH_KEY_PATH && !SSH_PASSWORD)) {
     console.error("❌ .env da SSH_HOST va SSH_KEY_PATH (yoki SSH_PASSWORD) to'ldirilmagan (.env.example ga qarang).");
     process.exit(1);
   }
   const auth = SSH_KEY_PATH
-    ? { privateKey: readFileSync(SSH_KEY_PATH), passphrase: process.env.SSH_KEY_PASSPHRASE || undefined }
+    ? { privateKey: readFileSync(SSH_KEY_PATH), passphrase: SSH_KEY_PASSPHRASE || undefined }
     : { password: SSH_PASSWORD };
   const conn = new Client();
   return new Promise((resolve, reject) =>
@@ -35,8 +45,8 @@ export function connect() {
       .on("error", reject)
       .connect({
         host: SSH_HOST,
-        port: Number(process.env.SSH_PORT || 22),
-        username: process.env.SSH_USER || "root",
+        port: Number(SSH_PORT || 22),
+        username: SSH_USER || "root",
         readyTimeout: 60000,
         ...auth,
       })
@@ -59,7 +69,7 @@ export function exec(conn, cmd, { stream = false } = {}) {
 }
 
 const PRESETS = {
-  status: () => `docker ps --format '{{.Names}}\t{{.Status}}'; echo; curl -s http://127.0.0.1:${process.env.PORT || 3015}/health; echo; docker logs --tail 30 ${APP_CONTAINER} 2>&1`,
+  status: () => `docker ps --format '{{.Names}}\t{{.Status}}'; echo; curl -s http://127.0.0.1:${localEnv.PORT || 3015}/health; echo; docker logs --tail 30 ${APP_CONTAINER} 2>&1`,
   logs: (n = 200) => `docker logs --tail ${Number(n) || 200} ${APP_CONTAINER} 2>&1`,
   live: () => "curl -sI https://obunext.uz",
   users: () =>

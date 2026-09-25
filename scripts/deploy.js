@@ -17,15 +17,14 @@
  */
 import { execFileSync, execSync } from "node:child_process";
 import { existsSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
-import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { connect, exec, REMOTE_DIR, APP_CONTAINER } from "./ssh.js";
+import { connect, exec, localEnv, REMOTE_DIR, APP_CONTAINER } from "./ssh.js";
 
 const root = path.join(path.dirname(fileURLToPath(import.meta.url)), "..");
 const args = new Set(process.argv.slice(2));
-const PORT = process.env.PORT || 3015;
-const IMAGE = process.env.DEPLOY_IMAGE || "instagram-bot";
+const PORT = localEnv.PORT || 3015;
+const IMAGE = localEnv.DEPLOY_IMAGE || "instagram-bot";
 
 const git = (...a) => execFileSync("git", a, { cwd: root, encoding: "utf8" }).trim();
 
@@ -52,10 +51,14 @@ async function main() {
     .filter((f) => f && existsSync(path.join(root, f)) && !f.startsWith("test/") && !f.startsWith(".github/"));
   const version = { commit, dirty, at: new Date().toISOString() };
   writeFileSync(path.join(root, "VERSION.json"), JSON.stringify(version));
-  const listFile = path.join(os.tmpdir(), `obunext-files-${Date.now()}.txt`);
+  // Nisbiy yo'llar (cwd = loyiha): Git Bash'dagi GNU tar "C:\..." ni masofaviy host deb tushunadi
+  const stamp = Date.now();
+  const listName = `.release-files-${stamp}.txt`;
+  const bundleName = `.release-${commit}-${stamp}.tar.gz`;
+  const listFile = path.join(root, listName);
+  const bundle = path.join(root, bundleName);
   writeFileSync(listFile, [...files, "VERSION.json"].join("\n"));
-  const bundle = path.join(os.tmpdir(), `obunext-${commit}-${Date.now()}.tar.gz`);
-  execFileSync("tar", ["-czf", bundle, "-C", root, "-T", listFile]);
+  execFileSync("tar", ["-czf", bundleName, "-T", listName], { cwd: root });
   unlinkSync(listFile);
   unlinkSync(path.join(root, "VERSION.json"));
   console.log(`  ${files.length} ta fayl, ${(readFileSync(bundle).length / 1024).toFixed(0)} KB`);

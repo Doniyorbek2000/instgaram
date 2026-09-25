@@ -6,6 +6,7 @@ node_modules/
 data/
 backups/
 .release/
+.release-*
 VERSION.json
 coverage/
 .claude/
