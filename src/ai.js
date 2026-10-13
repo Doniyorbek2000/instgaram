@@ -104,6 +104,9 @@ export async function askGemini(apiKey, systemPrompt, history, text, media, opts
     contents,
     generationConfig: {
       maxOutputTokens: opts.maxOutputTokens || 400,
+      // Gemini 3.x "fikrlash" tokenlari maxOutputTokens ichidan sarflanadi — sukut bo'yicha
+      // 400 dan oshib ketib, javob yarmida kesilardi (finishReason: MAX_TOKENS). "minimal" buni to'xtatadi.
+      thinkingConfig: { thinkingLevel: "minimal" },
       ...(opts.json ? { responseMimeType: "application/json" } : {}),
       ...(opts.temperature !== undefined ? { temperature: opts.temperature } : {}),
     },
