@@ -361,19 +361,27 @@ export function showTyping(tenant, igsid) {
 
 /**
  * Media konteyner yaratadi (nashr qilishning 1-bosqichi).
- * type: "image" | "reel". Javob: { id } yoki { error }.
+ * type: "image" | "reel" | "story". Javob: { id } yoki { error }.
  */
 export function createMediaContainer(tenant, { type, mediaUrl, caption = "" }) {
   const igUserId = tenant?.meta?.igUserId;
   const token = igToken(tenant);
   if (!igUserId || !token) return Promise.resolve({ error: { message: "Instagram ulanmagan" } });
 
+  // Story'da caption yo'q; rasm yoki video ekanini fayl kengaytmasidan bilamiz
+  const storyMedia = isVideoUrl(mediaUrl) ? { video_url: mediaUrl } : { image_url: mediaUrl };
   const payload =
     type === "reel"
       ? { media_type: "REELS", video_url: mediaUrl, caption }
-      : { image_url: mediaUrl, caption };
+      : type === "story"
+        ? { media_type: "STORIES", ...storyMedia }
+        : { image_url: mediaUrl, caption };
 
   return igGraphPost(`${igUserId}/media`, payload, token);
+}
+
+export function isVideoUrl(url) {
+  return /\.(mp4|mov)(\?|#|$)/i.test(String(url || ""));
 }
 
 /** Konteyner holatini tekshiradi (video/reel qayta ishlanishini kutish uchun). */

@@ -6,11 +6,14 @@ import { Router } from "express";
 import { requireAuth } from "../auth.js";
 import { persist } from "../db.js";
 import { page, esc } from "./layout.js";
+import { getReportsBotUsername } from "../reportsBot.js";
 
 export const schedulerRouter = Router();
+const POST_TYPES = ["image", "reel", "carousel", "story"];
 
 schedulerRouter.get("/scheduler", requireAuth, (req, res) => {
   const u = req.user;
+  const botUsername = getReportsBotUsername();
   const posts = u.scheduledPosts || [];
   const saved = req.query.saved;
 
@@ -36,7 +39,7 @@ schedulerRouter.get("/scheduler", requireAuth, (req, res) => {
                         ? `<span class="status-tag" style="background:rgba(139,92,246,0.2); color:#c4b5fd">🔄 Nashr qilinmoqda...</span>`
                         : `<span class="status-tag" style="background:rgba(234,179,8,0.2); color:#facc15">⏳ Kutilmoqda</span>`
                 }
-                <form method="post" action="/scheduler/delete" style="margin:0" onsubmit="return confirm('Postni o\'chirishga ishonchingiz komilmi?')">
+                <form method="post" action="/scheduler/delete" style="margin:0" onsubmit="return confirm('Postni o‘chirishga ishonchingiz komilmi?')">
                   <input type="hidden" name="id" value="${esc(p.id)}">
                   <button type="submit" class="secondary" style="padding:4px 8px; font-size:12px; margin:0; color:#f87171">🗑️</button>
                 </form>
@@ -65,7 +68,7 @@ schedulerRouter.get("/scheduler", requireAuth, (req, res) => {
       <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px">
         <div>
           <h2>📅 Instagram Post & Reels Scheduler Studio</h2>
-          <p class="hint">Rasm, Reels va Karusellarni belgilangan vaqtda avtomatik joylash.</p>
+          <p class="hint">Rasm, Reels, Karusel va Story larni belgilangan vaqtda avtomatik joylash.</p>
         </div>
       </div>
 
@@ -75,8 +78,10 @@ schedulerRouter.get("/scheduler", requireAuth, (req, res) => {
         <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; margin-top:10px">
           <div style="font-size:12.5px; color:#cbd5e1"><b>📷 Rasm formati:</b> Direct HTTPS URL (JPG, PNG). 1080x1080px.</div>
           <div style="font-size:12.5px; color:#cbd5e1"><b>🎬 Reels formati:</b> MP4 video URL (9:16 vertikal, max 60s).</div>
+          <div style="font-size:12.5px; color:#cbd5e1"><b>📱 Story formati:</b> JPG rasm yoki MP4 video (9:16, max 60s). Tavsif chiqmaydi.</div>
           <div style="font-size:12.5px; color:#cbd5e1"><b>⏰ Prime Time:</b> Eng yaxshi vaqtlar: 12:30, 19:00, 21:30.</div>
         </div>
+        ${botUsername ? `<div style="font-size:12.5px; color:#cbd5e1; margin-top:10px"><b>✈️ Telegram'dan:</b> <a href="https://t.me/${esc(botUsername)}" target="_blank" rel="noopener">@${esc(botUsername)}</a> ga rasm yoki video yuboring — bot Post / Reels / Story qilib darhol joylaydi.</div>` : ""}
       </div>
 
       <div class="grid split-form">
@@ -92,10 +97,13 @@ schedulerRouter.get("/scheduler", requireAuth, (req, res) => {
               <option value="image">🖼️ Rasm (Image)</option>
               <option value="reel">🎬 Reels / Video</option>
               <option value="carousel">🎠 Karusel (Carousel — 2-10 ta rasm)</option>
+              <option value="story">📱 Story (rasm yoki video)</option>
             </select>
 
             <div id="singleMediaField">
-              <label>Media fayl manzili (HTTPS URL)</label>
+              <label>Media fayl (yuklang yoki HTTPS URL kiriting)</label>
+              <input type="file" accept="image/jpeg,video/mp4,video/quicktime" onchange="window.uploadScheduleMedia(this)">
+              <div id="scheduleUploadStatus" class="hint" style="font-size:12px"></div>
               <input type="url" name="mediaUrl" id="mediaUrlInput" placeholder="https://example.com/photo.jpg" required>
             </div>
 
@@ -130,6 +138,19 @@ schedulerRouter.get("/scheduler", requireAuth, (req, res) => {
               singleInput.required = true;
             }
           };
+          window.uploadScheduleMedia = function(input) {
+            const file = input.files[0];
+            const status = document.getElementById('scheduleUploadStatus');
+            if (!file) return;
+            const fd = new FormData();
+            fd.append('file', file);
+            status.textContent = 'Yuklanmoqda…';
+            fetch('/media/upload', { method: 'POST', body: fd }).then(function(r) { return r.json(); }).then(function(d) {
+              if (!d.ok) { status.textContent = '⚠️ ' + d.error; return; }
+              document.getElementById('mediaUrlInput').value = d.item.url;
+              status.textContent = '✅ Yuklandi';
+            }).catch(function() { status.textContent = '⚠️ Tarmoq xatosi'; });
+          };
           window.prepScheduleSubmit = function(form) {
             if (form.type.value === 'carousel') {
               const lines = document.getElementById('mediaUrlsInput').value
@@ -153,7 +174,7 @@ schedulerRouter.get("/scheduler", requireAuth, (req, res) => {
 schedulerRouter.post("/scheduler/add", requireAuth, (req, res) => {
   const u = req.user;
   const { type, mediaUrl, mediaUrls, publishAt, caption } = req.body || {};
-  if (!publishAt) return res.redirect("/scheduler");
+  if (!publishAt || !POST_TYPES.includes(type || "image")) return res.redirect("/scheduler");
 
   let parsedMediaUrls = [];
   if (type === "carousel") {

@@ -18,6 +18,8 @@
  *         ✏️ Almashtirish / 🗑 Tozalash amallarini taklif qiladi (haqiqatan
  *         tenant.businessInfo'ni o'zgartiradi — saytdagi AI Studio bilan bir xil maydon)
  *      🏢 Holat — obuna, AI o'qitilganmi, qaysi kanallar ulanganini ko'rsatadi
+ *      📸 Joylash — rasm/video yuborilsa, Post / Reels / Story tanlatib Instagram'ga
+ *         joylaydi (saytdagi /scheduler bilan bir xil scheduledPosts navbati)
  *   5. Har kuni (server ~09:00 da) checkAndSendDailyReports() avtomatik hisobot yuboradi
  */
 
@@ -25,6 +27,13 @@ import { Router } from "express";
 import { listUsers, persist } from "./db.js";
 import { statsSummary } from "./engagement.js";
 import { statusInfo } from "./subscription.js";
+import { saveUpload } from "./mediaStore.js";
+import { publishDuePosts } from "./postPublisher.js";
+
+// Bot API getFile faqat 20 MB gacha faylni yuklab berishga ruxsat beradi
+const TG_DOWNLOAD_LIMIT = 20 * 1024 * 1024;
+// Instagram faqat JPEG rasm va MP4/MOV video qabul qiladi
+const POSTABLE_MIME = ["image/jpeg", "video/mp4", "video/quicktime"];
 
 const TOKEN = process.env.REPORTS_BOT_TOKEN || "";
 export const reportsBotAvailable = Boolean(TOKEN);
@@ -113,6 +122,20 @@ const TXT = {
     trainSaved: (len) => `✅ Saqlandi! Endi AI bilimlar bazasi ${len} belgidan iborat. Sayt orqali ham ko'rish/tahrirlash mumkin: /account`,
     statusText: (b, sub, u, infoLen) =>
       `🏢 *${b}*\n\n💳 Obuna: ${sub.label}\n🤖 AI o'qitilgan: ${infoLen > 0 ? `✅ ha (${infoLen} belgi)` : "❌ yo'q"}\n\n🔌 Ulangan kanallar:\n📷 Instagram: ${u.meta?.igAccessToken || u.meta?.pageAccessToken ? "✅" : "❌"}\n📘 Facebook: ${u.meta?.pageAccessToken ? "✅" : "❌"}\n💚 WhatsApp: ${u.meta?.whatsappToken ? "✅" : "❌"}`,
+    btnPost: "📸 Joylash",
+    postHint: "📸 Rasm yoki video yuboring (izoh qo'shsangiz — post tavsifi bo'ladi). Keyin Post / Reels / Story tanlaysiz. Video 20 MB gacha.",
+    postAsk: "Instagram'ga qanday joylaymiz?",
+    btnFeed: "🖼 Post",
+    btnReel: "🎬 Reels",
+    btnStory: "📱 Story",
+    btnCancel: "❌ Bekor",
+    postNoIg: "Instagram ulanmagan. Avval saytda Instagram'ni ulang.",
+    postTooBig: "Fayl 20 MB dan katta — Telegram bot orqali olib bo'lmaydi. Saytdagi /scheduler sahifasidan yuklang.",
+    postBadFile: "Faqat JPG rasm yoki MP4/MOV video joylash mumkin.",
+    postExpired: "Fayl topilmadi — iltimos, qayta yuboring.",
+    postQueued: "⏳ Instagram'ga yuborildi. Video bo'lsa qayta ishlash bir necha daqiqa oladi — tayyor bo'lgach xabar beraman.",
+    postDone: (type) => `✅ Instagram'ga joylandi (${type}).`,
+    postFailed: (err) => `❌ Joylab bo'lmadi: ${err}`,
   },
   ru: {
     chooseLang: "Здравствуйте! 👋 Obunext Бот отчётов. Выберите язык:",
@@ -141,6 +164,20 @@ const TXT = {
     trainSaved: (len) => `✅ Сохранено! Теперь база знаний AI — ${len} символов. Также можно посмотреть/изменить на сайте: /account`,
     statusText: (b, sub, u, infoLen) =>
       `🏢 *${b}*\n\n💳 Подписка: ${sub.label}\n🤖 AI обучен: ${infoLen > 0 ? `✅ да (${infoLen} симв.)` : "❌ нет"}\n\n🔌 Подключённые каналы:\n📷 Instagram: ${u.meta?.igAccessToken || u.meta?.pageAccessToken ? "✅" : "❌"}\n📘 Facebook: ${u.meta?.pageAccessToken ? "✅" : "❌"}\n💚 WhatsApp: ${u.meta?.whatsappToken ? "✅" : "❌"}`,
+    btnPost: "📸 Опубликовать",
+    postHint: "📸 Отправьте фото или видео (подпись станет описанием поста). Затем выберите Пост / Reels / Story. Видео до 20 МБ.",
+    postAsk: "Как опубликовать в Instagram?",
+    btnFeed: "🖼 Пост",
+    btnReel: "🎬 Reels",
+    btnStory: "📱 Story",
+    btnCancel: "❌ Отмена",
+    postNoIg: "Instagram не подключён. Сначала подключите его на сайте.",
+    postTooBig: "Файл больше 20 МБ — бот Telegram не может его получить. Загрузите на сайте: /scheduler.",
+    postBadFile: "Можно публиковать только фото JPG или видео MP4/MOV.",
+    postExpired: "Файл не найден — отправьте его ещё раз.",
+    postQueued: "⏳ Отправлено в Instagram. Обработка видео занимает несколько минут — сообщу, когда будет готово.",
+    postDone: (type) => `✅ Опубликовано в Instagram (${type}).`,
+    postFailed: (err) => `❌ Не удалось опубликовать: ${err}`,
   },
   en: {
     chooseLang: "Hello! 👋 Obunext Reports Bot. Choose your language:",
@@ -169,6 +206,20 @@ const TXT = {
     trainSaved: (len) => `✅ Saved! The AI knowledge base is now ${len} characters. You can also view/edit it on the site: /account`,
     statusText: (b, sub, u, infoLen) =>
       `🏢 *${b}*\n\n💳 Subscription: ${sub.label}\n🤖 AI trained: ${infoLen > 0 ? `✅ yes (${infoLen} chars)` : "❌ no"}\n\n🔌 Connected channels:\n📷 Instagram: ${u.meta?.igAccessToken || u.meta?.pageAccessToken ? "✅" : "❌"}\n📘 Facebook: ${u.meta?.pageAccessToken ? "✅" : "❌"}\n💚 WhatsApp: ${u.meta?.whatsappToken ? "✅" : "❌"}`,
+    btnPost: "📸 Publish",
+    postHint: "📸 Send a photo or video (its caption becomes the post caption). Then choose Post / Reels / Story. Videos up to 20 MB.",
+    postAsk: "How should it go on Instagram?",
+    btnFeed: "🖼 Post",
+    btnReel: "🎬 Reels",
+    btnStory: "📱 Story",
+    btnCancel: "❌ Cancel",
+    postNoIg: "Instagram isn't connected. Connect it on the site first.",
+    postTooBig: "The file is over 20 MB — the Telegram bot can't fetch it. Upload it on the site: /scheduler.",
+    postBadFile: "Only JPG photos or MP4/MOV videos can be published.",
+    postExpired: "File not found — please send it again.",
+    postQueued: "⏳ Sent to Instagram. Video processing takes a few minutes — I'll message you when it's live.",
+    postDone: (type) => `✅ Published on Instagram (${type}).`,
+    postFailed: (err) => `❌ Couldn't publish: ${err}`,
   },
 };
 
@@ -210,9 +261,97 @@ function contactKeyboard(lang) {
 function menuKeyboard(lang) {
   const t = TXT[lang] || TXT.uz;
   return {
-    keyboard: [[{ text: t.btnReport }, { text: t.btnTrain }, { text: t.btnStatus }]],
+    keyboard: [[{ text: t.btnReport }, { text: t.btnTrain }, { text: t.btnStatus }], [{ text: t.btnPost }]],
     resize_keyboard: true,
   };
+}
+
+/** Xabardagi joylanadigan fayl: { fileId, size, mime } yoki null. */
+export function incomingMedia(message) {
+  if (message.photo?.length) {
+    const p = message.photo[message.photo.length - 1]; // eng katta o'lcham
+    return { fileId: p.file_id, size: p.file_size || 0, mime: "image/jpeg" };
+  }
+  const f = message.video || message.document;
+  if (f?.file_id) return { fileId: f.file_id, size: f.file_size || 0, mime: f.mime_type || "" };
+  return null;
+}
+
+async function downloadTelegramFile(fileId) {
+  const info = await callReportsBotApi("getFile", { file_id: fileId });
+  const filePath = info?.result?.file_path;
+  if (!filePath) return null;
+  const res = await fetch(`https://api.telegram.org/file/bot${TOKEN}/${filePath}`, { signal: AbortSignal.timeout(60000) });
+  return res.ok ? Buffer.from(await res.arrayBuffer()) : null;
+}
+
+function postTypeKeyboard(lang, isVideo) {
+  const t = TXT[lang] || TXT.uz;
+  const main = isVideo ? { text: t.btnReel, callback_data: "post:reel" } : { text: t.btnFeed, callback_data: "post:image" };
+  return { inline_keyboard: [[main, { text: t.btnStory, callback_data: "post:story" }], [{ text: t.btnCancel, callback_data: "post:cancel" }]] };
+}
+
+/** Rasm/video kelganda: faylni saqlab, Post/Reels/Story tanlatadi. */
+async function handleIncomingMedia(chatId, user, lang, media, caption) {
+  const t = TXT[lang] || TXT.uz;
+  const say = (text) => callReportsBotApi("sendMessage", { chat_id: chatId, text, reply_markup: menuKeyboard(lang) });
+  if (!user.meta?.igUserId) return say(t.postNoIg);
+  if (!POSTABLE_MIME.includes(media.mime)) return say(t.postBadFile);
+  if (media.size > TG_DOWNLOAD_LIMIT) return say(t.postTooBig);
+
+  const buf = await downloadTelegramFile(media.fileId);
+  if (!buf) return say(t.postFailed("Telegram faylni bermadi"));
+  const item = saveUpload(user, buf, media.mime, "telegram");
+  if (item.error) return say(t.postFailed(item.error));
+
+  // shortcut: tanlov xotirada turadi — server qayta ishga tushsa fayl qayta yuboriladi
+  sessions.set(chatId, { step: "post", lang, url: item.url, isVideo: item.type === "video", caption: String(caption || "") });
+  await callReportsBotApi("sendMessage", { chat_id: chatId, text: t.postAsk, reply_markup: postTypeKeyboard(lang, item.type === "video") });
+}
+
+/** Post/Reels/Story tugmasi bosilganda: navbatga qo'yib darhol joylashni boshlaydi. */
+async function handlePostChoice(chatId, user, lang, choice) {
+  const t = TXT[lang] || TXT.uz;
+  const session = sessions.get(chatId);
+  sessions.delete(chatId);
+  if (choice === "cancel") {
+    await callReportsBotApi("sendMessage", { chat_id: chatId, text: t.trainCancelled, reply_markup: menuKeyboard(lang) });
+    return;
+  }
+  if (session?.step !== "post" || !["image", "reel", "story"].includes(choice)) {
+    await callReportsBotApi("sendMessage", { chat_id: chatId, text: t.postExpired, reply_markup: menuKeyboard(lang) });
+    return;
+  }
+
+  const now = new Date().toISOString();
+  user.scheduledPosts = [
+    {
+      id: `post_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+      type: choice,
+      mediaUrl: session.url,
+      mediaUrls: [],
+      publishAt: now,
+      caption: session.caption,
+      status: "pending",
+      createdAt: now,
+      source: "telegram",
+    },
+    ...(user.scheduledPosts || []),
+  ];
+  await persist(user);
+  await callReportsBotApi("sendMessage", { chat_id: chatId, text: t.postQueued, reply_markup: menuKeyboard(lang) });
+  await publishDuePosts(user);
+}
+
+const POST_TYPE_LABEL = { image: "Post", reel: "Reels", story: "Story", carousel: "Carousel" };
+
+/** postPublisher Telegram'dan kelgan post natijasini shu yerga yuboradi. */
+export async function notifyPostResult(user, post) {
+  const chatId = user.settings?.reportsTelegramChatId;
+  if (!TOKEN || !chatId) return;
+  const t = TXT[user.settings?.reportsLang] || TXT.uz;
+  const text = post.status === "published" ? t.postDone(POST_TYPE_LABEL[post.type] || post.type) : t.postFailed(post.error || "noma'lum xato");
+  await callReportsBotApi("sendMessage", { chat_id: chatId, text });
 }
 
 /** "AI'ni o'qitish" bosilganda ko'rsatiladigan inline amallar: qo'shish/almashtirish/tozalash/orqaga. */
@@ -290,6 +429,12 @@ async function handleReportsBotUpdate(update) {
       return;
     }
 
+    if (chatId && data.startsWith("post:")) {
+      const linkedUser = await findUserByReportsChatId(chatId);
+      if (linkedUser) await handlePostChoice(chatId, linkedUser, linkedUser.settings?.reportsLang || "uz", data.slice("post:".length));
+      return;
+    }
+
     if (chatId && data.startsWith("train:")) {
       const linkedUser = await findUserByReportsChatId(chatId);
       if (!linkedUser) return;
@@ -355,6 +500,17 @@ async function handleReportsBotUpdate(update) {
     const t = TXT[lang];
     const text = String(message.text || "").trim();
     const session = sessions.get(chatId);
+
+    // 3. Rasm/video — Instagram'ga joylash
+    const media = incomingMedia(message);
+    if (media) {
+      await handleIncomingMedia(chatId, linkedUser, lang, media, message.caption);
+      return;
+    }
+    if (text === t.btnPost) {
+      await callReportsBotApi("sendMessage", { chat_id: chatId, text: t.postHint, reply_markup: menuKeyboard(lang) });
+      return;
+    }
 
     // 3a. "AI'ni o'qitish" — Qo'shish yoki Almashtirish rejimida turibdi
     if (session?.step === "training_add" || session?.step === "training_replace") {

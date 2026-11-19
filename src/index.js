@@ -568,10 +568,10 @@ function startScheduler() {
   setTimeout(hourly, 5 * 60 * 1000);
   setInterval(hourly, 60 * 60 * 1000);
 
-  // Rejalashtirilgan Instagram postlari — vaqtga aniq mos kelishi uchun har 5 daqiqada
+  // Rejalashtirilgan Instagram postlari — vaqtga aniq mos kelishi va Reels tez chiqishi uchun har daqiqada
   setInterval(() => {
     checkAndPublishScheduledPosts().catch((err) => console.error("[PostPublisher] xato:", err.message));
-  }, 5 * 60 * 1000);
+  }, 60 * 1000);
 }
 
 // Server to'xtatilganda bazani saqlab, tozalab chiqamiz

@@ -19,6 +19,7 @@
 
 import { listUsers, persist } from "./db.js";
 import { createMediaContainer, createCarouselContainer, getContainerStatus, publishContainer } from "./services/instagram.js";
+import { notifyPostResult } from "./reportsBot.js";
 
 // Video/reel qayta ishlanishi shu vaqtdan ortiq davom etsa — "vaqt tugadi" deb belgilanadi
 const PROCESSING_TIMEOUT_MS = 30 * 60 * 1000;
@@ -32,6 +33,9 @@ async function startPublishing(user, post) {
     return;
   }
 
+  // await'dan oldin belgilaymiz: parallel chaqiruv (interval + Telegram bot) shu postni
+  // yana "pending" deb ko'rib, ikkinchi marta joylab yubormasin
+  post.status = "creating";
   const result =
     post.type === "carousel"
       ? await createCarouselContainer(user, { mediaUrls: post.mediaUrls || [], caption: post.caption })
@@ -78,33 +82,39 @@ async function checkProcessing(user, post, now) {
   // IN_PROGRESS — hozircha kutamiz, keyingi turda qayta tekshiramiz
 }
 
+/** Bitta foydalanuvchining muddati kelgan/jarayondagi postlarini ko'rib chiqadi. */
+export async function publishDuePosts(user, now = Date.now()) {
+  let changed = false;
+  for (const post of user.scheduledPosts || []) {
+    if (post.status === "pending" && new Date(post.publishAt).getTime() <= now) {
+      await startPublishing(user, post);
+      changed = true;
+    }
+    // Rasm konteyneri odatda darhol tayyor — keyingi turni kutmasdan tekshiramiz
+    if (post.status === "processing") {
+      await checkProcessing(user, post, now);
+      if (post.status !== "processing") changed = true;
+    }
+    if (post.source === "telegram" && (post.status === "published" || post.status === "failed") && !post.notified) {
+      post.notified = true;
+      changed = true;
+      notifyPostResult(user, post).catch((err) => console.error("[PostPublisher] bildirishnoma xatosi:", err.message));
+    }
+  }
+
+  if (changed) {
+    try {
+      await persist(user);
+    } catch (err) {
+      console.error("[PostPublisher] persist xatosi:", err.message);
+    }
+  }
+}
+
 /** Har chaqiruvda barcha foydalanuvchilarning muddati kelgan/jarayondagi postlarini ko'rib chiqadi. */
 export async function checkAndPublishScheduledPosts() {
-  const users = await listUsers();
   const now = Date.now();
-
-  for (const user of users) {
-    const posts = user.scheduledPosts || [];
-    if (!posts.length) continue;
-
-    let changed = false;
-    for (const post of posts) {
-      if (post.status === "pending" && new Date(post.publishAt).getTime() <= now) {
-        await startPublishing(user, post);
-        changed = true;
-      } else if (post.status === "processing") {
-        const before = post.status;
-        await checkProcessing(user, post, now);
-        if (post.status !== before) changed = true;
-      }
-    }
-
-    if (changed) {
-      try {
-        await persist(user);
-      } catch (err) {
-        console.error("[PostPublisher] persist xatosi:", err.message);
-      }
-    }
+  for (const user of await listUsers()) {
+    if (user.scheduledPosts?.length) await publishDuePosts(user, now);
   }
 }
