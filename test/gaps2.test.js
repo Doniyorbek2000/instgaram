@@ -13,7 +13,7 @@ const shop = await import("../src/shop.js");
 const gt = await import("../src/growthTools.js");
 const msg = await import("../src/messaging.js");
 const push = await import("../src/push.js");
-const { processMessage } = await import("../src/respond.js");
+const { processMessage, UZ_PHONE_RE } = await import("../src/respond.js");
 const { getContactMeta, setFields } = await import("../src/contacts.js");
 
 const { user: t } = await register("gaps2@test.uz", "parol123", "Guli Shop");
@@ -130,6 +130,28 @@ test("do'kon: katalog, buyurtma, Payme/Click havolalari, holat va savat eslatmas
   assert.strictEqual(k.reply, null);
   const none = await processMessage(t, "telegram", "700", { payload: "SHOP:BUY:yoq" });
   assert.match(none.reply, /mavjud emas/);
+});
+
+test("lid: telefon regexi faqat O'zbekiston raqamini ushlaydi", () => {
+  for (const ok of ["+998901234567", "998 90 123 45 67", "90 123 45 67", "(93) 123-45-67", "raqamim 901234567 yozing"]) {
+    assert.ok(UZ_PHONE_RE.test(ok), ok);
+  }
+  for (const bad of ["buyurtma 123456789", "8600123456789012", "kod 4512345678", "12 dona"]) {
+    assert.ok(!UZ_PHONE_RE.test(bad), bad);
+  }
+});
+
+test("lid: 'to'lov/karta' so'zi bildirishnomasi chatga 6 soatda bir marta, yangi raqam esa darhol", async () => {
+  const key = "tg:880";
+  await processMessage(t, "telegram", "880", { text: "karta orqali to'lov qilsam bo'ladimi" });
+  const first = getContactMeta(t, key).lastHotLeadAt;
+  assert.ok(first, "birinchi niyat xabari bildiriladi");
+  getContactMeta(t, key).lastHotLeadAt = first - 1000; // vaqt o'tganini aniq ko'rish uchun
+  await processMessage(t, "telegram", "880", { text: "to'lov kartaga bo'ladimi?" });
+  assert.strictEqual(getContactMeta(t, key).lastHotLeadAt, first - 1000, "6 soat ichida qayta bildirilmaydi");
+  await processMessage(t, "telegram", "880", { text: "raqamim +998901112233" });
+  assert.ok(getContactMeta(t, key).lastHotLeadAt > first - 1000, "yangi kontakt darhol bildiriladi");
+  assert.ok(t.leads.some((l) => l.key === key && l.contact === "+998901112233"));
 });
 
 test("flow: katalog bloki va to'lov havolasi amali", async () => {

@@ -442,6 +442,8 @@ export function diffColumns(user, snap = {}) {
 
 // Bir biznes uchun yozuvlar ketma-ket bajariladi (tartib buzilmasin)
 const writeChains = new Map();
+const queuedWrites = new Map(); // id -> hali boshlanmagan yozuv
+
 
 /**
  * Biznesni saqlaydi. `patch` — keshdagi obyektning o'zi (persist) yoki qisman
@@ -476,8 +478,17 @@ export async function updateUser(id, patch) {
     snapshots.set(id, snap);
     return user;
   };
+  // Navbatda hali boshlanmagan yozuv bo'lsa — unga qo'shilamiz: u ishga tushganda diff
+  // obyektning eng so'nggi holatidan olinadi. Bitta xabarda persist() bir necha marta
+  // chaqiriladi; har biri barcha JSONB ustunlarni qayta JSON.stringify qilmasin.
+  const waiting = queuedWrites.get(id);
+  if (waiting) return waiting;
   const prev = writeChains.get(id) || Promise.resolve();
-  const next = prev.catch(() => {}).then(run);
+  const next = prev.catch(() => {}).then(() => {
+    queuedWrites.delete(id);
+    return run();
+  });
+  queuedWrites.set(id, next);
   writeChains.set(id, next);
   try {
     return await next;
@@ -495,12 +506,14 @@ export async function findUserByPlatformId(kind, platformId) {
   const id = String(platformId || "");
   if (!id) return null;
   if (allLoaded) {
-    return cachedUsers().find((u) => {
+    // Har webhookda chaqiriladi — cachedUsers() kabi saralamaymiz, to'g'ridan-to'g'ri skan.
+    // shortcut: O(n) skan, minglab bizneslarda ID -> user Map indeksiga o'tish kerak
+    for (const u of cache.values()) {
       const m = u.meta || {};
-      if (kind === "ig" || kind === "page") return m.igUserId === id || m.pageId === id;
-      if (kind === "whatsapp") return m.whatsappPhoneNumberId === id || m.whatsappPhoneId === id;
-      return false;
-    }) || null;
+      if ((kind === "ig" || kind === "page") && (m.igUserId === id || m.pageId === id)) return u;
+      if (kind === "whatsapp" && (m.whatsappPhoneNumberId === id || m.whatsappPhoneId === id)) return u;
+    }
+    return null;
   }
   let q;
   if (kind === "ig" || kind === "page") q = `SELECT * FROM users WHERE meta->>'igUserId' = $1 OR meta->>'pageId' = $1`;

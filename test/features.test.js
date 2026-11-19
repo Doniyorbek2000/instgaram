@@ -76,6 +76,14 @@ test("creditReferral: mavjud bo'lmagan/bo'sh kod hech narsa qilmaydi", async () 
   assert.strictEqual(await sub.creditReferral("qwertyui", newcomer), false);
 });
 
+test("creditReferral: qisqa (8 belgidan kam) kod hech kimga bonus bermaydi", async () => {
+  const referrer = await newUser("shortref@x.uz");
+  const newcomer = await newUser("shortref2@x.uz");
+  assert.strictEqual(await sub.creditReferral(referrer.id.slice(0, 1), newcomer), false);
+  assert.strictEqual(await sub.creditReferral(referrer.id.slice(0, 7), newcomer), false);
+  assert.ok(!referrer.growth?.referrals?.length);
+});
+
 // ==== Tarif narxlari (admin o'zgartirsa getPlans() ham yangilanishi kerak) ====
 
 test("admin narxni o'zgartirsa getPlans() yangi narxni qaytaradi", async () => {

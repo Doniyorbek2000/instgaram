@@ -148,6 +148,7 @@ export function deactivate(user) {
 }
 
 const REFERRAL_BONUS_DAYS = 3;
+const REFERRAL_CODE_LEN = 8;
 
 /**
  * Referal havolasi orqali ro'yxatdan o'tilganda chaqiriladi — taklif qiluvchini
@@ -156,12 +157,16 @@ const REFERRAL_BONUS_DAYS = 3;
  * Taklif qiluvchi topilib, mukofot berilgan bo'lsa `true` qaytaradi.
  */
 export async function creditReferral(refCode, newUser) {
-  const code = String(refCode || "").trim();
-  if (!code || !newUser?.id) return false;
+  const code = String(refCode || "").trim().toLowerCase();
+  // Kod = ID'ning 8 belgisi (growth_ui.js). Qisqa kod ("a") ko'p biznesga mos kelib,
+  // bonus tasodifiy birinchisiga ketardi — to'liq uzunlik va yagona moslik shart.
+  if (code.length < REFERRAL_CODE_LEN || !newUser?.id) return false;
 
   const users = await listUsers();
-  const referrer = users.find((u) => u.id.startsWith(code) && u.id !== newUser.id);
-  if (!referrer) return false;
+  const matches = users.filter((u) => u.id.startsWith(code));
+  if (matches.length !== 1) return false;
+  const referrer = matches[0];
+  if (referrer.id === newUser.id) return false;
 
   referrer.growth ||= {};
   referrer.growth.referrals ||= [];

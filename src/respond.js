@@ -14,6 +14,10 @@ import { getContactMeta } from "./contacts.js";
 import { isBotLoop } from "./botLoop.js";
 
 const OFF_REPLY_EVERY_MS = 6 * 60 * 60 * 1000;
+const HOT_LEAD_EVERY_MS = 6 * 60 * 60 * 1000;
+// O'zbekiston raqami: +998/998 bilan yoki 9 xonali, operator/shahar kodi bilan boshlanadi.
+// Uzunroq raqam ichidan (buyurtma/karta raqami) kesib olinmaydi.
+export const UZ_PHONE_RE = /(?<![\d+])(?:\+?998[\s-]?)?\(?(?:20|33|50|55|71|77|88|90|91|93|94|95|97|98|99)\)?[\s-]?\d{3}[\s-]?\d{2}[\s-]?\d{2}(?!\d)/;
 import { fireEvent } from "./integrations.js";
 import { chanShort } from "./outbound.js";
 import {
@@ -240,14 +244,14 @@ export async function processMessage(tenant, channel, chatKey, { text = "", medi
   const lowerText = text.toLowerCase();
   const isBuyIntent = ["sotib", "olmoqchi", "zakaz", "buyurtma", "karta", "to'lov", "rekvizit", "dastavka", "olaman"].some((k) => lowerText.includes(k));
 
-  // Telefon raqami tekshiruvi (+998901234567, 90 123 45 67, etc.)
-  const phoneMatch = text.match(/(?:\+?998|8)?[\s-]?\(?\d{2}\)?[\s-]?\d{3}[\s-]?\d{2}[\s-]?\d{2}/);
+  const phoneMatch = text.match(UZ_PHONE_RE);
   const emailMatch = text.match(/[\w.-]+@[\w.-]+\.[a-z]{2,}/i);
 
   if (phoneMatch || emailMatch || isBuyIntent) {
     tenant.leads ||= [];
     const leadContact = phoneMatch ? phoneMatch[0].trim() : (emailMatch ? emailMatch[0].trim() : "");
-    if (leadContact && !tenant.leads.some((l) => l.key === fullKey && l.contact === leadContact)) {
+    const isNewLead = Boolean(leadContact) && !tenant.leads.some((l) => l.key === fullKey && l.contact === leadContact);
+    if (isNewLead) {
       tenant.leads.unshift({
         id: `lead_${Date.now()}`,
         key: fullKey,
@@ -265,7 +269,13 @@ export async function processMessage(tenant, channel, chatKey, { text = "", medi
         name: tenant.contactMeta?.[fullKey]?.fields?.name || "", note: text.slice(0, 500),
       });
     }
-    notifyHotLead(tenant, channel, fullKey, text + (leadContact ? `\n📞 Kontakt: ${leadContact}` : "")).catch(() => {});
+    // Yangi kontakt — darhol; faqat "to'lov/karta" kabi so'z — shu chat uchun HOT_LEAD_EVERY_MS'da bir marta
+    const meta = getContactMeta(tenant, fullKey);
+    if (isNewLead || Date.now() - (meta.lastHotLeadAt || 0) > HOT_LEAD_EVERY_MS) {
+      meta.lastHotLeadAt = Date.now();
+      persist(tenant);
+      notifyHotLead(tenant, channel, fullKey, text + (leadContact ? `\n📞 Kontakt: ${leadContact}` : "")).catch(() => {});
+    }
   }
 
   // 7b. "katalog" deb yozsa — mahsulotlar karuseli (katalog to'ldirilgan bo'lsa)
