@@ -24,6 +24,7 @@
  */
 
 import { Router } from "express";
+import crypto from "node:crypto";
 import { listUsers, persist } from "./db.js";
 import { statsSummary } from "./engagement.js";
 import { statusInfo } from "./subscription.js";
@@ -391,6 +392,48 @@ async function sendTrainMenu(chatId, user, lang) {
   });
 }
 
+const LINK_CODE_TTL_MS = 60 * 60 * 1000;
+
+/**
+ * Saytdagi "Botni ochish" havolasi: t.me/<bot>?start=<kod>. Kod bir martalik va 1 soat
+ * amal qiladi — u akkauntga to'liq kirish beradi (bilim bazasi, Instagram'ga joylash),
+ * shuning uchun faqat egasining o'z sahifasida ko'rsatiladi.
+ */
+export function reportsLinkUrl(user) {
+  if (!cachedBotUsername) return "";
+  user.settings ||= {};
+  const cur = user.settings.reportsLinkCode;
+  if (!cur?.code || Date.parse(cur.exp) - Date.now() < 10 * 60 * 1000) {
+    user.settings.reportsLinkCode = { code: crypto.randomBytes(16).toString("hex"), exp: new Date(Date.now() + LINK_CODE_TTL_MS).toISOString() };
+    persist(user);
+  }
+  return `https://t.me/${cachedBotUsername}?start=${user.settings.reportsLinkCode.code}`;
+}
+
+export async function findUserByLinkCode(code) {
+  const users = await listUsers();
+  const user = users.find((u) => u.settings?.reportsLinkCode?.code === code);
+  return user && Date.parse(user.settings.reportsLinkCode.exp) > Date.now() ? user : null;
+}
+
+/** Chat'ni akkauntga bog'laydi va darhol hisobot + menyu yuboradi. */
+async function linkChat(user, chatId, lang) {
+  user.settings ||= {};
+  user.settings.reportsTelegramChatId = chatId;
+  user.settings.reportsLang = lang;
+  user.settings.reportsLastSentDate = new Date().toISOString().slice(0, 10);
+  delete user.settings.reportsLinkCode;
+  await persist(user);
+
+  sessions.delete(chatId);
+  await callReportsBotApi("sendMessage", {
+    chat_id: chatId,
+    text: TXT[lang].linked(user.businessName || "Obunext") + buildReportText(user, lang),
+    parse_mode: "Markdown",
+    reply_markup: menuKeyboard(lang),
+  });
+}
+
 export const reportsBotRouter = Router();
 
 reportsBotRouter.post("/telegram-reports/webhook", async (req, res) => {
@@ -467,7 +510,17 @@ async function handleReportsBotUpdate(update) {
   if (!message || !message.chat?.id) return;
   const chatId = String(message.chat.id);
 
-  // 2. Telefon raqami yuborilganda (contact share)
+  // 2a. Saytdagi "Botni ochish" havolasi: /start <bir martalik kod> — telefonsiz bog'lash
+  const startCode = String(message.text || "").match(/^\/start ([A-Za-z0-9_-]{16,64})$/)?.[1];
+  if (startCode) {
+    const user = await findUserByLinkCode(startCode);
+    if (user) {
+      await linkChat(user, chatId, user.settings?.reportsLang || "uz");
+      return;
+    }
+  }
+
+  // 2b. Telefon raqami yuborilganda (contact share)
   if (message.contact?.phone_number) {
     const session = sessions.get(chatId);
     const lang = session?.lang || "uz";
@@ -476,20 +529,7 @@ async function handleReportsBotUpdate(update) {
       await callReportsBotApi("sendMessage", { chat_id: chatId, text: TXT[lang].notFound, reply_markup: { remove_keyboard: true } });
       return;
     }
-    user.settings ||= {};
-    user.settings.reportsTelegramChatId = chatId;
-    user.settings.reportsLang = lang;
-    user.settings.reportsLastSentDate = new Date().toISOString().slice(0, 10);
-    await persist(user);
-
-    sessions.delete(chatId);
-    const t = TXT[lang];
-    await callReportsBotApi("sendMessage", {
-      chat_id: chatId,
-      text: t.linked(user.businessName || "Obunext") + buildReportText(user, lang),
-      parse_mode: "Markdown",
-      reply_markup: menuKeyboard(lang),
-    });
+    await linkChat(user, chatId, lang);
     return;
   }
 

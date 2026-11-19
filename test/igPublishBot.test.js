@@ -16,19 +16,22 @@ globalThis.fetch = async (url, opts = {}) => {
   if (u.includes("api.telegram.org")) {
     const body = JSON.parse(opts.body || "{}");
     if (u.endsWith("/getFile")) return reply({ ok: true, result: { file_path: "photos/p.jpg" } });
+    if (u.endsWith("/getMe")) return reply({ ok: true, result: { username: "testbot" } });
     tgSent.push(body);
     return reply({ ok: true, result: {} });
   }
   if (u.includes("graph.instagram.com")) {
     graphCalls.push({ url: u, body: opts.body ? JSON.parse(opts.body) : null });
     if (u.includes("/media_publish")) return reply({ id: "PUBLISHED_1" });
+    if (String(opts.body || "").includes("bad.jpg")) return { ok: false, status: 400, json: async () => ({ error: { message: "Only photo or video can be accepted as media type." } }) };
     if (u.includes("/media")) return reply({ id: "CONTAINER_1" });
     return reply({ status_code: "FINISHED" });
   }
   return realFetch(url, opts);
 };
 
-const { reportsBotRouter, incomingMedia } = await import("../src/reportsBot.js");
+const { reportsBotRouter, incomingMedia, reportsLinkUrl, setupReportsBotWebhook } = await import("../src/reportsBot.js");
+const { checkAndPublishScheduledPosts } = await import("../src/postPublisher.js");
 const { createMediaContainer } = await import("../src/services/instagram.js");
 const { register } = await import("../src/auth.js");
 const { updateUser, findUserByEmail } = await import("../src/db.js");
@@ -82,4 +85,49 @@ test("Telegram: rasm yuborish -> Story tanlash -> Instagram'ga joylanadi va nati
   assert.strictEqual(p.status, "published");
   assert.strictEqual(graphCalls.filter((c) => c.url.includes("/media_publish")).length, 1, "bir marta joylanadi");
   assert.match(tgSent.at(-1).text, /joylandi \(Story\)/);
+});
+
+test("Instagram rad etsa, haqiqiy sabab postda saqlanadi", async () => {
+  const { user } = await register("tgerr@x.uz", "parol123", "Err Biz");
+  await updateUser(user.id, {
+    meta: { ...(user.meta || {}), igUserId: "42", igAccessToken: "tok" },
+    scheduledPosts: [{ id: "p1", type: "image", mediaUrl: "https://x.uz/u/bad.jpg", caption: "", publishAt: new Date(Date.now() - 1000).toISOString(), status: "pending" }],
+  });
+  await checkAndPublishScheduledPosts();
+  const fresh = await findUserByEmail("tgerr@x.uz");
+  assert.strictEqual(fresh.scheduledPosts[0].status, "failed");
+  assert.match(fresh.scheduledPosts[0].error, /Only photo or video/);
+});
+
+test("saytdagi havola (/start kod) telefonsiz bog'laydi, kod bir martalik", async () => {
+  process.env.BASE_URL = "https://test.obunext.uz";
+  await setupReportsBotWebhook();
+  const { user } = await register("tglink@x.uz", "parol123", "Link Biz");
+  const url = reportsLinkUrl(user);
+  const code = url.match(/start=([a-f0-9]+)$/)?.[1];
+  assert.ok(url.startsWith("https://t.me/testbot?start=") && code, url);
+  assert.strictEqual(reportsLinkUrl(user), url, "muddati ko'p qolgan kod qayta ishlatiladi");
+
+  const app = express();
+  app.use(express.json());
+  app.use(reportsBotRouter);
+  const server = app.listen(0);
+  const base = `http://localhost:${server.address().port}`;
+  const send = async (chatId, text) => {
+    await realFetch(`${base}/telegram-reports/webhook`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ message: { chat: { id: chatId }, text } }) });
+    await new Promise((r) => setTimeout(r, 60));
+  };
+  try {
+    await send(4242, `/start ${code}`);
+    let fresh = await findUserByEmail("tglink@x.uz");
+    assert.strictEqual(fresh.settings.reportsTelegramChatId, "4242");
+    assert.match(tgSent.at(-1).text, /Link Biz akkauntiga bog'landingiz/);
+
+    // Ikkinchi odam xuddi shu kod bilan bog'lana olmaydi
+    await send(5151, `/start ${code}`);
+    fresh = await findUserByEmail("tglink@x.uz");
+    assert.strictEqual(fresh.settings.reportsTelegramChatId, "4242");
+  } finally {
+    server.close();
+  }
 });

@@ -377,7 +377,7 @@ export function createMediaContainer(tenant, { type, mediaUrl, caption = "" }) {
         ? { media_type: "STORIES", ...storyMedia }
         : { image_url: mediaUrl, caption };
 
-  return igGraphPost(`${igUserId}/media`, payload, token);
+  return igGraphPost(`${igUserId}/media`, payload, token, { withError: true });
 }
 
 export function isVideoUrl(url) {
@@ -394,7 +394,7 @@ export function publishContainer(tenant, containerId) {
   const igUserId = tenant?.meta?.igUserId;
   const token = igToken(tenant);
   if (!igUserId || !token) return Promise.resolve({ error: { message: "Instagram ulanmagan" } });
-  return igGraphPost(`${igUserId}/media_publish`, { creation_id: containerId }, token);
+  return igGraphPost(`${igUserId}/media_publish`, { creation_id: containerId }, token, { withError: true });
 }
 
 /**
@@ -413,14 +413,14 @@ export async function createCarouselContainer(tenant, { mediaUrls, caption = "" 
 
   const childIds = [];
   for (const url of mediaUrls) {
-    const child = await igGraphPost(`${igUserId}/media`, { image_url: url, is_carousel_item: true }, token);
+    const child = await igGraphPost(`${igUserId}/media`, { image_url: url, is_carousel_item: true }, token, { withError: true });
     if (!child?.id) {
       return { error: { message: `Bola konteyner yaratilmadi (${url.slice(0, 60)}): ${child?.error?.message || "noma'lum xato"}` } };
     }
     childIds.push(child.id);
   }
 
-  return igGraphPost(`${igUserId}/media`, { media_type: "CAROUSEL", children: childIds, caption }, token);
+  return igGraphPost(`${igUserId}/media`, { media_type: "CAROUSEL", children: childIds, caption }, token, { withError: true });
 }
 
 /** Akkauntning so'nggi postlari — "Tasodifiy G'olib" uchun post tanlash ro'yxati. */

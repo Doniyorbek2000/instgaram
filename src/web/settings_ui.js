@@ -8,7 +8,7 @@ import { page, esc } from "./layout.js";
 import { brandIcon } from "./icons.js";
 import { persist } from "../db.js";
 import { changePassword } from "../auth.js";
-import { reportsBotAvailable, getReportsBotUsername } from "../reportsBot.js";
+import { reportsBotAvailable, getReportsBotUsername, reportsLinkUrl } from "../reportsBot.js";
 
 export const settingsRouter = Router();
 
@@ -122,7 +122,8 @@ settingsRouter.get("/settings", requireAuth, (req, res) => {
           ${u.settings.reportsTelegramChatId
             ? `<div class="ok" style="margin-top:14px">✅ Bot bilan bog'langansiz — botda "🎓 AI'ni o'qitish" va "🏢 Holat" tugmalarini ham sinab ko'ring.</div>`
             : getReportsBotUsername()
-              ? `<a href="https://t.me/${esc(getReportsBotUsername())}" target="_blank" class="btn secondary" style="width:100%; margin-top:14px; text-decoration:none">${brandIcon("telegram", { size: 16 })} Botni ochish</a>`
+              ? `<a href="${esc(reportsLinkUrl(u))}" target="_blank" rel="noopener" class="btn" style="width:100%; margin-top:14px; text-decoration:none">${brandIcon("telegram", { size: 16 })} Botni ochish va bog'lash</a>
+                 <p class="hint" style="font-size:12px; margin:6px 0 0">Tugmani bosib botda <b>Start</b> ni bosing — akkaunt avtomatik bog'lanadi (telefon shart emas). Havola 1 soat amal qiladi, uni boshqalarga bermang.</p>`
               : ""}
         </div>
         ` : ""}

@@ -33,7 +33,7 @@ async function doGet(urlFor, path, params = {}, token = "") {
  * eksponensial kutish bilan qayta uriniladi (2s, 4s). Xato bo'lsa null.
  * Bitta xabar xato bo'lsa butun server yiqilmasligi kerak.
  */
-async function doPost(urlFor, path, body, accessToken, retries) {
+async function doPost(urlFor, path, body, accessToken, retries, withError = false) {
   if (!accessToken) {
     console.error(`Graph API [${path}]: access token yo'q — o'tkazib yuborildi`);
     return null;
@@ -57,7 +57,7 @@ async function doPost(urlFor, path, body, accessToken, retries) {
         continue;
       }
       console.error(`Graph API [${path}] tarmoq xatosi:`, err.message);
-      return null;
+      return withError ? { error: { message: err.message } } : null;
     }
 
     const data = await res.json().catch(() => ({}));
@@ -77,7 +77,7 @@ async function doPost(urlFor, path, body, accessToken, retries) {
       continue;
     }
     console.error(`Graph API xatosi [${path}] (${res.status}):`, JSON.stringify(data).slice(0, 300));
-    return null;
+    return withError ? { error: data.error || { message: `HTTP ${res.status}` } } : null;
   }
 }
 
@@ -88,8 +88,9 @@ export const graphPost = (path, body, token, { retries = 2 } = {}) =>
 
 // Instagram Graph (graph.instagram.com) — Instagram Login uchun
 export const igGraphGet = (path, params, token) => doGet(igGraphUrl, path, params, token);
-export const igGraphPost = (path, body, token, { retries = 2 } = {}) =>
-  doPost(igGraphUrl, path, body, token, retries);
+// withError: xatoda null o'rniga { error } — sababni foydalanuvchiga ko'rsatish uchun
+export const igGraphPost = (path, body, token, { retries = 2, withError = false } = {}) =>
+  doPost(igGraphUrl, path, body, token, retries, withError);
 
 
 /** Instagram Graph DELETE (masalan, salomlashuv tugmalarini o'chirish). Xatoda { error }. */
