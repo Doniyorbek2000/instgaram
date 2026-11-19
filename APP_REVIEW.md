@@ -10,13 +10,19 @@ berilgan akkauntlar ulana oladi).
 Meta panel → **Use cases** → **Manage messaging & content on Instagram** → **Customize**
 → **Permissions and features** → har bir ruxsat yonidagi **"Request advanced access"**.
 
-So'raladigan uchta ruxsat:
+Meta'dagi qoralama arizada (Review → App Review) oltita band bor:
 
 | Ruxsat | Nima uchun kerak |
 |---|---|
 | `instagram_business_basic` | Ulangan akkauntning ID va username'ini olish |
 | `instagram_business_manage_messages` | Direct xabarlarni olish va javob yuborish |
 | `instagram_business_manage_comments` | Kommentlarga javob berish va shaxsiy javob yuborish |
+| `instagram_business_content_publish` | Post, Reels, Karusel va Story joylash (/scheduler va Telegram bot) |
+| `instagram_business_manage_insights` | /growth → "Statistika": reach va profile_views |
+| Human Agent (feature) | Operator 24 soatdan keyin ham 7 kungacha javob bera olishi |
+
+Ariza **Business verification** tugamaguncha yuborilmaydi (2026-11-19 holati: "ADM AI" —
+*In review*).
 
 Meta har biri uchun 3 narsa so'raydi: **tushuntirish matni**, **screencast** (ekran yozuvi)
 va **test ko'rsatmalari**. Quyida hammasi tayyor.
@@ -94,6 +100,51 @@ This mirrors what the owner would do manually, only on comments left on the busi
 posts. We never comment on other accounts' content.
 ```
 
+### instagram_business_content_publish
+
+```
+Business owners plan their Instagram content in our "Post Scheduler" (https://obunext.uz/scheduler).
+The owner uploads a JPEG photo or an MP4 video (or pastes a link to one), chooses the format —
+feed photo, Reels, carousel (2-10 photos) or Story — writes the caption and picks a date and time.
+
+At that time we publish it to the owner's own connected account:
+1. POST /{ig-user-id}/media creates the media container (media_type REELS, STORIES or
+   CAROUSEL with child containers, or image_url for a photo).
+2. GET /{container-id}?fields=status_code until the video is processed (FINISHED).
+3. POST /{ig-user-id}/media_publish publishes it. The result (published or Instagram's error
+   message) is shown next to the post in the scheduler.
+
+The owner can also send a photo or video to our Telegram bot for business owners and tap
+"Post", "Reels" or "Story"; it goes through the same steps. Content is published only after
+the owner chooses it — we never create or publish content on our own, and only to the
+account the owner connected.
+```
+
+### instagram_business_manage_insights
+
+```
+The "Statistika" (Statistics) tab of our Growth page (https://obunext.uz/growth) shows the
+business owner how their own connected account is doing, next to the number of messages our
+assistant handled. We call GET /{ig-user-id}/insights with metric=reach,profile_views,
+period=day for the last 7 days and display the totals and a daily chart.
+
+We read insights only for the account the owner connected, show them only to that owner and
+their staff, and do not share or sell them.
+```
+
+### Human Agent
+
+```
+Our AI assistant answers routine questions. When a customer asks for a person, or the owner
+takes over a conversation, the bot stops replying in that chat and the owner is notified.
+The owner or their staff then answer the customer themselves from our inbox.
+
+Customers often write in the evening and staff reply the next working day, sometimes after
+the 24-hour window. For these replies — and only for messages typed by a human in our inbox —
+we send with messaging_type=MESSAGE_TAG and tag=HUMAN_AGENT, within 7 days of the customer's
+last message. Automated, AI-generated and bulk messages never use this tag.
+```
+
 ---
 
 ## 2. Screencast — nimani yozib olish kerak
@@ -115,6 +166,13 @@ Ketma-ketlik (2-4 daqiqa):
 9. Xuddi shu tarzda **kommentga** javob berilishini ko'rsatish (post ostiga komment
    yozing → bot javob bersin)
 10. Dashboardda **statistika** va **operator chaqirish** bo'limini ko'rsatish
+11. **Human Agent**: Inbox'da shu suhbatni oching, "operator" rejimiga o'tib qo'lda javob
+    yozing — mijoz telefonida javob kelganini ko'rsating
+12. **content_publish**: `/scheduler` → JPG yuklash → "Story" yoki "Rasm" → vaqtni hozirga
+    qo'yib saqlash → 1-2 daqiqada "✅ Joylandi" chiqishi → Instagram profilida post/story
+    ko'rinsin. Reels uchun MP4 bilan ham bir marta qiling
+13. **manage_insights**: `/growth` → "📊 Statistika" tabi — reach va profile_views raqamlari
+    ko'rinsin
 
 Muhim: 5-qadam (ruxsat oynasi) va 8-qadam (bot javobi) — Meta eng ko'p e'tibor beradigan
 joylar. Ular kesilib qolmasin.
@@ -145,6 +203,13 @@ Steps:
    shown in the dashboard.
 7. To test comments: leave a comment under any post of the connected account. The bot
    replies publicly and sends a private reply with the answer.
+8. Publishing: open https://obunext.uz/scheduler, upload a JPEG photo, choose "Story" (or
+   "Rasm" for a feed photo), set the time to now and click "Rejalashtirish". Within about a
+   minute the post shows "✅ Joylandi" and appears on the connected Instagram account.
+9. Insights: open https://obunext.uz/growth and the "📊 Statistika" tab to see reach and
+   profile views of the connected account.
+10. Human Agent: in https://obunext.uz/inbox open the conversation from step 5 and reply
+   manually; this reply is sent by a person, not the AI.
 
 Note: the assistant replies in the language of the incoming message (Uzbek, Russian or
 English). Our interface is in Uzbek because our customers are businesses in Uzbekistan.
