@@ -66,6 +66,8 @@ test("validateFlow: xatolar va ogohlantirishlar topiladi", () => {
   assert.ok(warnings.some((w) => w.nodeId === "a" && /ulanmagan/.test(w.msg)));
   assert.ok(warnings.some((w) => w.nodeId === "b" && /yo'l yo'q/.test(w.msg)));
   assert.ok(!warnings.some((w) => w.nodeId === "n"), "izoh bloki tekshirilmaydi");
+  const demo = sanitizeFlow({ ...good, nodes: [{ id: "a", type: "message", text: "Sovg'a", buttons: [{ id: "b1", title: "Ochish", url: "https://example.uz/sovga" }] }] });
+  assert.ok(validateFlow(demo, []).warnings.some((w) => /namuna havola/.test(w.msg)), "shablondagi namuna havola ogohlantiriladi");
   assert.deepStrictEqual(validateFlow(sanitizeFlow({}), []).errors.map((e) => e.msg), ["Flow bo'sh — kamida bitta blok qo'shing"]);
 });
 
@@ -193,7 +195,8 @@ test("MCP: xatoli flow yoqilmaydi, get_flow versiyasiz", async () => {
 test("validateFlow: START noto'g'ri blokda bo'lsa — tuzatish taklifi", async () => {
   const { buildTemplate } = await import("../src/flowTemplates.js");
   const f = buildTemplate("plus_gate");
-  assert.deepStrictEqual(validateFlow(f, []).warnings, []);
+  // Shablondagi namuna havola (example.uz) — egasi o'zinikiga almashtirishi kerak, boshqa ogohlantirish yo'q
+  assert.deepStrictEqual(validateFlow(f, []).warnings.filter((x) => !/namuna havola/.test(x.msg)), []);
   f.start = "m2";
   const w = validateFlow(f, []).warnings;
   assert.deepStrictEqual(w[0].fix, { start: "m1" });

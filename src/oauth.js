@@ -29,8 +29,9 @@ const SCOPES = [
   ...String(process.env.IG_EXTRA_SCOPES || "").split(",").map((s) => s.trim()).filter((s) => /^instagram_business_[a-z_]+$/.test(s)),
 ].filter((s, i, a) => a.indexOf(s) === i).join(",");
 
-// Webhookda kerak bo'ladigan maydonlar
-const SUBSCRIBE_FIELDS = "messages,comments,live_comments,messaging_postbacks";
+// Webhookda kerak bo'ladigan maydonlar. messaging_referral — suhbat allaqachon bor mijoz
+// ig.me/m/<user>?ref=... havolasini bosganda (referal flow triggeri) keladi.
+export const SUBSCRIBE_FIELDS = "messages,comments,live_comments,messaging_postbacks,messaging_referral";
 
 /** Foydalanuvchini Instagram ruxsat oynasiga yo'naltirish uchun URL */
 export function authUrl(state) {

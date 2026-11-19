@@ -35,9 +35,11 @@ test("bir qoidada vergul bilan bir nechta kalit so'z ishlaydi", async () => {
 test("o'zbekcha apostrof variantlari bir xil qabul qilinadi", async () => {
   const t = await newTenant("apos@x.uz");
   rules.addRule(t, { type: "keyword_dm", keyword: "sovg'a", matchType: "contains", privateReply: "Mana" });
-  for (const text of ["sovg'a", "sovg‘a bering", "SOVG’A", "sovg`a"]) {
+  for (const text of ["sovg'a", "sovg‘a bering", "SOVG’A", "sovg`a", "sovga", "Sovga bering"]) {
     assert.ok(rules.findKeywordRule(t, text), text);
   }
+  assert.ok(rules.matchesRule({ keyword: "sovg'a", matchType: "exact" }, "sovga"));
+  assert.ok(!rules.matchesRule({ keyword: "sovg'a", matchType: "contains" }, "sov"));
 });
 
 test("matchType 'any' har qanday kommentga ishlaydi, lekin aniq qoida ustun", async () => {

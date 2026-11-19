@@ -1467,7 +1467,7 @@
   // Simulyator: flow'ni brauzerda qadam-baqadam o'tkazadi. Hech narsa yuborilmaydi,
   // teg/ball o'zgarmaydi; shartlarning natijasini sinovchi o'zi tanlaydi.
   function simStart() {
-    sim = { vars: { name: "Aziza", first_name: "Aziza", username: "aziza_test", business: meta.business || "", phone: "", points: "0" }, log: [], wait: null, cur: null, steps: 0 };
+    sim = { vars: { name: "Aziza", first_name: "Aziza", username: "aziza_test", business: meta.business || "", ig_profile: meta.igProfile || "", phone: "", points: "0" }, log: [], wait: null, cur: null, steps: 0 };
     if (!flow.start || !flow.nodes[flow.start]) simPush("sys", "⛔ START bloki yo'q");
     else simRun(flow.start);
   }

@@ -7,6 +7,8 @@
  * yangilaymiz; yangilab bo'lmasa egasiga Telegram/Push orqali ogohlantirish ketadi.
  */
 import { listUsers, persist } from "./db.js";
+import { igGraphUrl } from "./config.js";
+import { SUBSCRIBE_FIELDS } from "./oauth.js";
 
 const DAY = 86400000;
 const REFRESH_EVERY_MS = 7 * DAY;
@@ -39,6 +41,9 @@ export async function refreshIgToken(tenant, { fetchFn = fetch, now = Date.now()
     meta.igTokenRefreshedAt = new Date(now).toISOString();
     meta.igTokenError = "";
     await persist(tenant);
+    // Webhook maydonlari ro'yxati kengaysa, eski ulanishlar ham yangisiga o'tsin (POST idempotent)
+    const subQs = new URLSearchParams({ subscribed_fields: SUBSCRIBE_FIELDS });
+    await fetchFn(`${igGraphUrl("me/subscribed_apps")}?${subQs}`, { method: "POST", headers: { Authorization: `Bearer ${meta.igAccessToken}` } }).catch(() => {});
     return { ok: true };
   }
   const error = String(data.error?.message || "Token yangilanmadi").slice(0, 300);

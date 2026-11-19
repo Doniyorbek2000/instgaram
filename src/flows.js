@@ -1113,6 +1113,7 @@ export function validateFlow(flow, allFlows = []) {
       if (!String(n.text || "").trim() && !n.media && !(n.buttons || []).length) errors.push({ nodeId: n.id, msg: `${label(n)}: xabar bo'sh` });
       (n.buttons || []).forEach((b) => {
         if (!b.url && !b.next) warnings.push({ nodeId: n.id, msg: `${label(n)}: "${b.title}" tugmasi hech qayerga ulanmagan (bosilsa flow tugaydi)` });
+        if (/^https?:\/\/(www\.)?example\.[a-z]+(\/|$)/i.test(b.url || "")) warnings.push({ nodeId: n.id, msg: `${label(n)}: "${b.title}" tugmasida namuna havola (${b.url}) — o'zingiznikiga almashtiring` });
       });
       if ((n.buttons || []).filter((b) => b.url).length > 3) warnings.push({ nodeId: n.id, msg: `${label(n)}: Instagram 3 tadan ortiq havola tugmasini ko'rsatmaydi` });
     }

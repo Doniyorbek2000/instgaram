@@ -139,7 +139,10 @@ export function matchesRule(rule, text) {
       }
       continue;
     }
-    if ((rule.matchType === "contains" || !rule.matchType) && t.includes(kw)) return true;
+    // Ko'pchilik apostrofsiz yozadi ("sovga") — kalit so'z "sovg'a" bo'lsa ham mos kelsin
+    const bareKw = kw.replace(/'/g, "");
+    if (rule.matchType === "exact" && t.replace(/'/g, "") === bareKw) return true;
+    if ((rule.matchType === "contains" || !rule.matchType) && (t.includes(kw) || t.replace(/'/g, "").includes(bareKw))) return true;
   }
   return false;
 }

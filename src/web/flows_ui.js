@@ -333,6 +333,7 @@ flowsRouter.get("/flows/:id", requireAuth, async (req, res) => {
     ai: await aiAvailable(u),
     validation: validateFlow(flow, ensureFlows(u).list),
     business: u.businessName || "",
+    igProfile: u.meta?.igUsername ? `instagram.com/${u.meta.igUsername}` : "",
   };
 
   res.send(

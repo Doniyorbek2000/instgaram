@@ -62,10 +62,13 @@ test("Instagram token: muddati kelganda yangilanadi, xatoda egasi ogohlantirilad
   assert.strictEqual(needsRefresh({ igAccessToken: "a", igTokenRefreshedAt: new Date(now - 3600000).toISOString() }, now), false, "24 soatdan yosh");
   assert.strictEqual(needsRefresh({ igAccessToken: "a", igTokenRefreshedAt: new Date(now - 8 * DAY).toISOString(), igTokenExpiresAt: new Date(now + 52 * DAY).toISOString() }, now), true);
   const t = { id: user.id, meta: { igAccessToken: "OLD" } };
-  let calledUrl = "";
-  const r = await refreshIgToken(t, { fetchFn: async (url) => { calledUrl = url; return new Response(JSON.stringify({ access_token: "NEW", expires_in: 5184000 })); } });
+  const calls = [];
+  const r = await refreshIgToken(t, { fetchFn: async (url, opts) => { calls.push({ url, opts }); return new Response(JSON.stringify({ access_token: "NEW", expires_in: 5184000 })); } });
   assert.ok(r.ok);
-  assert.match(calledUrl, /grant_type=ig_refresh_token/);
+  assert.match(calls[0].url, /grant_type=ig_refresh_token/);
+  // Yangilangach webhook maydonlariga qayta obuna (messaging_referral ham) — yangi token bilan
+  assert.match(calls[1].url, /me\/subscribed_apps\?subscribed_fields=.*messaging_referral/);
+  assert.strictEqual(calls[1].opts.headers.Authorization, "Bearer NEW");
   assert.strictEqual(t.meta.igAccessToken, "NEW");
   assert.ok(Date.parse(t.meta.igTokenExpiresAt) > now + 59 * DAY);
 
