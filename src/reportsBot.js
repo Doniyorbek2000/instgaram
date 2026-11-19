@@ -37,6 +37,8 @@ const TG_DOWNLOAD_LIMIT = 20 * 1024 * 1024;
 const POSTABLE_MIME = ["image/jpeg", "video/mp4", "video/quicktime"];
 
 const TOKEN = process.env.REPORTS_BOT_TOKEN || "";
+// Bot matnlarida "/settings" Telegram buyrug'iga aylanib qoladi — to'liq havola beramiz
+const SITE = (process.env.BASE_URL || "https://obunext.uz").replace(/\/$/, "");
 export const reportsBotAvailable = Boolean(TOKEN);
 
 // Kunlik hisobot yuboriladigan server soati (0-23)
@@ -100,7 +102,7 @@ const TXT = {
     chooseLang: "Salom! 👋 Obunext Hisobot Boti. Tilni tanlang:",
     askPhone: "Rahmat! Endi saytdagi akkauntingizga bog'lash uchun telefon raqamingizni yuboring 👇",
     contactBtn: "📱 Raqamni yuborish",
-    notFound: "Bu raqam saytdagi hech bir akkauntga bog'lanmagan. Avval /settings sahifasida shu raqamni kiriting, so'ng qayta urinib ko'ring.",
+    notFound: `Bu raqam saytdagi hech bir akkauntga bog'lanmagan. Avval ${SITE}/settings sahifasida shu raqamni kiriting, so'ng qayta urinib ko'ring.`,
     linked: (b) => `✅ ${b} akkauntiga bog'landingiz! Bundan buyon shu botda kunlik hisobotingizni ko'rasiz va quyidagi tugmalar orqali akkauntingizni boshqarishingiz mumkin.\n\n`,
     report: (s, hot) => `📊 *Hisobot*\n\n💬 Jami xabarlar: ${s.messages}\n👥 Noyob mijozlar: ${s.customers}\n🛒 Xarid so'rovlari: ${s.orders}\n\n📷 Instagram: ${s.channels.instagram || 0} | 📘 Facebook: ${s.channels.facebook || 0} | 💚 WhatsApp: ${s.channels.whatsapp || 0}${hot.length ? `\n\n🔥 So'nggi qiziqqan mijozlar:\n${hot.map((l) => `• ${l.contact} — ${l.lastMessage || ""}`).join("\n")}` : ""}`,
     btnReport: "📊 Hisobot",
@@ -120,9 +122,10 @@ const TXT = {
     clearConfirm: "🗑 Rostdan ham butun bilimlar bazasini o'chirmoqchimisiz? Bu amalni qaytarib bo'lmaydi.",
     cleared: "🗑 Bilimlar bazasi tozalandi.",
     trainCancelled: "Bekor qilindi.",
-    trainSaved: (len) => `✅ Saqlandi! Endi AI bilimlar bazasi ${len} belgidan iborat. Sayt orqali ham ko'rish/tahrirlash mumkin: /account`,
+    trainSaved: (len) => `✅ Saqlandi! Endi AI bilimlar bazasi ${len} belgidan iborat. Sayt orqali ham ko'rish/tahrirlash mumkin: ${SITE}/account`,
     statusText: (b, sub, u, infoLen) =>
       `🏢 *${b}*\n\n💳 Obuna: ${sub.label}\n🤖 AI o'qitilgan: ${infoLen > 0 ? `✅ ha (${infoLen} belgi)` : "❌ yo'q"}\n\n🔌 Ulangan kanallar:\n📷 Instagram: ${u.meta?.igAccessToken || u.meta?.pageAccessToken ? "✅" : "❌"}\n📘 Facebook: ${u.meta?.pageAccessToken ? "✅" : "❌"}\n💚 WhatsApp: ${u.meta?.whatsappToken ? "✅" : "❌"}`,
+    notOwnContact: "Faqat o'zingizning raqamingizni pastdagi \"📱 Raqamni yuborish\" tugmasi orqali yuboring.",
     btnPost: "📸 Joylash",
     postHint: "📸 Rasm yoki video yuboring (izoh qo'shsangiz — post tavsifi bo'ladi). Keyin Post / Reels / Story tanlaysiz. Video 20 MB gacha.",
     postAsk: "Instagram'ga qanday joylaymiz?",
@@ -131,7 +134,7 @@ const TXT = {
     btnStory: "📱 Story",
     btnCancel: "❌ Bekor",
     postNoIg: "Instagram ulanmagan. Avval saytda Instagram'ni ulang.",
-    postTooBig: "Fayl 20 MB dan katta — Telegram bot orqali olib bo'lmaydi. Saytdagi /scheduler sahifasidan yuklang.",
+    postTooBig: `Fayl 20 MB dan katta — Telegram bot orqali olib bo'lmaydi. Saytdagi ${SITE}/scheduler sahifasidan yuklang.`,
     postBadFile: "Faqat JPG rasm yoki MP4/MOV video joylash mumkin.",
     postExpired: "Fayl topilmadi — iltimos, qayta yuboring.",
     postQueued: "⏳ Instagram'ga yuborildi. Video bo'lsa qayta ishlash bir necha daqiqa oladi — tayyor bo'lgach xabar beraman.",
@@ -142,7 +145,7 @@ const TXT = {
     chooseLang: "Здравствуйте! 👋 Obunext Бот отчётов. Выберите язык:",
     askPhone: "Спасибо! Теперь отправьте номер телефона, чтобы привязать аккаунт на сайте 👇",
     contactBtn: "📱 Отправить номер",
-    notFound: "Этот номер не привязан ни к одному аккаунту на сайте. Сначала введите его на странице /settings и повторите попытку.",
+    notFound: `Этот номер не привязан ни к одному аккаунту на сайте. Сначала введите его на странице ${SITE}/settings и повторите попытку.`,
     linked: (b) => `✅ Вы привязаны к аккаунту ${b}! Теперь ежедневный отчёт будет приходить в этот бот, а кнопки ниже позволят управлять аккаунтом.\n\n`,
     report: (s, hot) => `📊 *Отчёт*\n\n💬 Всего сообщений: ${s.messages}\n👥 Уникальных клиентов: ${s.customers}\n🛒 Запросов на покупку: ${s.orders}\n\n📷 Instagram: ${s.channels.instagram || 0} | 📘 Facebook: ${s.channels.facebook || 0} | 💚 WhatsApp: ${s.channels.whatsapp || 0}${hot.length ? `\n\n🔥 Недавно заинтересованные клиенты:\n${hot.map((l) => `• ${l.contact} — ${l.lastMessage || ""}`).join("\n")}` : ""}`,
     btnReport: "📊 Отчёт",
@@ -162,9 +165,10 @@ const TXT = {
     clearConfirm: "🗑 Вы точно хотите удалить всю базу знаний? Это действие нельзя отменить.",
     cleared: "🗑 База знаний очищена.",
     trainCancelled: "Отменено.",
-    trainSaved: (len) => `✅ Сохранено! Теперь база знаний AI — ${len} символов. Также можно посмотреть/изменить на сайте: /account`,
+    trainSaved: (len) => `✅ Сохранено! Теперь база знаний AI — ${len} символов. Также можно посмотреть/изменить на сайте: ${SITE}/account`,
     statusText: (b, sub, u, infoLen) =>
       `🏢 *${b}*\n\n💳 Подписка: ${sub.label}\n🤖 AI обучен: ${infoLen > 0 ? `✅ да (${infoLen} симв.)` : "❌ нет"}\n\n🔌 Подключённые каналы:\n📷 Instagram: ${u.meta?.igAccessToken || u.meta?.pageAccessToken ? "✅" : "❌"}\n📘 Facebook: ${u.meta?.pageAccessToken ? "✅" : "❌"}\n💚 WhatsApp: ${u.meta?.whatsappToken ? "✅" : "❌"}`,
+    notOwnContact: "Отправьте только свой номер — кнопкой \"📱 Отправить номер\" ниже.",
     btnPost: "📸 Опубликовать",
     postHint: "📸 Отправьте фото или видео (подпись станет описанием поста). Затем выберите Пост / Reels / Story. Видео до 20 МБ.",
     postAsk: "Как опубликовать в Instagram?",
@@ -173,7 +177,7 @@ const TXT = {
     btnStory: "📱 Story",
     btnCancel: "❌ Отмена",
     postNoIg: "Instagram не подключён. Сначала подключите его на сайте.",
-    postTooBig: "Файл больше 20 МБ — бот Telegram не может его получить. Загрузите на сайте: /scheduler.",
+    postTooBig: `Файл больше 20 МБ — бот Telegram не может его получить. Загрузите на сайте: ${SITE}/scheduler.`,
     postBadFile: "Можно публиковать только фото JPG или видео MP4/MOV.",
     postExpired: "Файл не найден — отправьте его ещё раз.",
     postQueued: "⏳ Отправлено в Instagram. Обработка видео занимает несколько минут — сообщу, когда будет готово.",
@@ -184,7 +188,7 @@ const TXT = {
     chooseLang: "Hello! 👋 Obunext Reports Bot. Choose your language:",
     askPhone: "Thanks! Now send your phone number to link your website account 👇",
     contactBtn: "📱 Send phone number",
-    notFound: "This number isn't linked to any account on the site. Add it on the /settings page first, then try again.",
+    notFound: `This number isn't linked to any account on the site. Add it on the ${SITE}/settings page first, then try again.`,
     linked: (b) => `✅ Linked to ${b}! From now on your daily report will arrive in this bot, and the buttons below let you manage your account.\n\n`,
     report: (s, hot) => `📊 *Report*\n\n💬 Total messages: ${s.messages}\n👥 Unique customers: ${s.customers}\n🛒 Purchase inquiries: ${s.orders}\n\n📷 Instagram: ${s.channels.instagram || 0} | 📘 Facebook: ${s.channels.facebook || 0} | 💚 WhatsApp: ${s.channels.whatsapp || 0}${hot.length ? `\n\n🔥 Recently interested customers:\n${hot.map((l) => `• ${l.contact} — ${l.lastMessage || ""}`).join("\n")}` : ""}`,
     btnReport: "📊 Report",
@@ -204,9 +208,10 @@ const TXT = {
     clearConfirm: "🗑 Are you sure you want to delete the entire knowledge base? This cannot be undone.",
     cleared: "🗑 Knowledge base cleared.",
     trainCancelled: "Cancelled.",
-    trainSaved: (len) => `✅ Saved! The AI knowledge base is now ${len} characters. You can also view/edit it on the site: /account`,
+    trainSaved: (len) => `✅ Saved! The AI knowledge base is now ${len} characters. You can also view/edit it on the site: ${SITE}/account`,
     statusText: (b, sub, u, infoLen) =>
       `🏢 *${b}*\n\n💳 Subscription: ${sub.label}\n🤖 AI trained: ${infoLen > 0 ? `✅ yes (${infoLen} chars)` : "❌ no"}\n\n🔌 Connected channels:\n📷 Instagram: ${u.meta?.igAccessToken || u.meta?.pageAccessToken ? "✅" : "❌"}\n📘 Facebook: ${u.meta?.pageAccessToken ? "✅" : "❌"}\n💚 WhatsApp: ${u.meta?.whatsappToken ? "✅" : "❌"}`,
+    notOwnContact: "Send only your own number, using the \"📱 Send phone number\" button below.",
     btnPost: "📸 Publish",
     postHint: "📸 Send a photo or video (its caption becomes the post caption). Then choose Post / Reels / Story. Videos up to 20 MB.",
     postAsk: "How should it go on Instagram?",
@@ -215,7 +220,7 @@ const TXT = {
     btnStory: "📱 Story",
     btnCancel: "❌ Cancel",
     postNoIg: "Instagram isn't connected. Connect it on the site first.",
-    postTooBig: "The file is over 20 MB — the Telegram bot can't fetch it. Upload it on the site: /scheduler.",
+    postTooBig: `The file is over 20 MB — the Telegram bot can't fetch it. Upload it on the site: ${SITE}/scheduler.`,
     postBadFile: "Only JPG photos or MP4/MOV videos can be published.",
     postExpired: "File not found — please send it again.",
     postQueued: "⏳ Sent to Instagram. Video processing takes a few minutes — I'll message you when it's live.",
@@ -524,6 +529,11 @@ async function handleReportsBotUpdate(update) {
   if (message.contact?.phone_number) {
     const session = sessions.get(chatId);
     const lang = session?.lang || "uz";
+    // Boshqa odamning kontakt kartasini yuborib, uning akkauntiga ulanib olishning oldini olamiz
+    if (!message.from?.id || String(message.contact.user_id || "") !== String(message.from.id)) {
+      await callReportsBotApi("sendMessage", { chat_id: chatId, text: TXT[lang].notOwnContact, reply_markup: contactKeyboard(lang) });
+      return;
+    }
     const user = await findUserByPhone(message.contact.phone_number);
     if (!user) {
       await callReportsBotApi("sendMessage", { chat_id: chatId, text: TXT[lang].notFound, reply_markup: { remove_keyboard: true } });

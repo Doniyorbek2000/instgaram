@@ -93,7 +93,12 @@ test("Telegram bot orqali: bog'lash -> AI'ni o'qitish menyusi -> Qo'shish -> bus
     await new Promise((r) => setTimeout(r, 30));
   }
 
-  await post({ message: { chat: { id: chatId }, contact: { phone_number: "+998907778899" } } });
+  // Boshqa odamning kontakt kartasi (user_id boshqa) — bog'lanmaydi
+  await post({ message: { chat: { id: chatId }, from: { id: chatId }, contact: { phone_number: "+998907778899", user_id: 999 } } });
+  assert.match(sentMessages.at(-1).text, /o'zingizning raqamingizni/);
+  assert.strictEqual((await findUserByEmail("tgbotflow@x.uz")).settings.reportsTelegramChatId || "", "");
+
+  await post({ message: { chat: { id: chatId }, from: { id: chatId }, contact: { phone_number: "+998907778899", user_id: chatId } } });
   assert.deepStrictEqual(
     sentMessages.at(-1).reply_markup?.keyboard?.[0]?.map((b) => b.text),
     ["📊 Hisobot", "🎓 AI'ni o'qitish", "🏢 Holat"]
