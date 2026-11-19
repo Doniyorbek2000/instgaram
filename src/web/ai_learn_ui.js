@@ -188,6 +188,29 @@ Write in Uzbek (Latin script); keep product names as written. Return ONLY JSON: 
   }
 });
 
+const POLISH_MAX_INPUT = 15000;
+const POLISH_SYSTEM = `You clean up notes that a small business owner in Uzbekistan typed quickly for their customer-support chatbot's knowledge base.
+- Fix spelling, grammar and punctuation; write in Uzbek Latin script (keep Russian/English product names as written).
+- Organize into short sections with emoji headings in CAPS (e.g. "📌 BIZNES HAQIDA:", "🛍️ MAHSULOTLAR VA NARXLAR:", "ℹ️ ALOQA VA SHARTLAR:", "❓ KO'P SO'RALADIGAN SAVOLLAR:") and "- " bullet lines.
+- Keep EVERY fact, number, price, phone and address exactly; never invent or guess anything that is not in the notes.
+- If the notes contain instructions for the bot (what to say or not say), keep them under "⚠️ MUHIM (AI uchun):".
+- Return only the finished text: no introduction, no markdown code fences.`;
+
+aiLearnRouter.post("/ai-learn/polish", requireAuth, async (req, res) => {
+  const text = String(req.body?.text || "").trim();
+  if (!text) return res.status(400).json({ ok: false, error: "Matn yozing" });
+  if (text.length > POLISH_MAX_INPUT) return res.status(400).json({ ok: false, error: `Matn juda uzun (${POLISH_MAX_INPUT} belgidan oshmasin)` });
+  try {
+    const out = await generateText(req.user, POLISH_SYSTEM, `Business name: ${req.user.businessName || "-"}\n\nNOTES:\n${text}`, { maxOutputTokens: 4000, temperature: 0.2 });
+    // Model ba'zan lotin so'z ichiga arab harfini qo'shib yuboradi ("kVت") — tozalaymiz
+    const polished = String(out || "").replace(/^```\w*\s*/, "").replace(/```\s*$/, "").replace(/[؀-ۿ]/g, "").trim();
+    if (!polished) return res.status(502).json({ ok: false, error: "AI javob bermadi, qaytadan urinib ko'ring" });
+    res.json({ ok: true, text: polished });
+  } catch (err) {
+    res.status(502).json({ ok: false, error: err.message });
+  }
+});
+
 aiLearnRouter.post("/ai-learn/apply", requireAuth, (req, res) => {
   const u = req.user;
   const knowledge = String(req.body?.knowledge || "").trim();

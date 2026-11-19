@@ -1352,6 +1352,59 @@ Biz "Fuqarolar Murojaat Markazi" jamoat tashkilotimiz.
 
         <textarea name="businessInfo" id="bizInfo" rows="12" style="margin-top:8px; font-family:monospace; font-size:13.5px" placeholder="Bu yerga mahsulotlaringiz, narxlar, manzil, yetkazib berish va tez-tez beriladigan savollarga javoblarni kiriting...">${esc(u.businessInfo || "")}</textarea>
 
+        <!-- Erkin yozilgan matnni AI tartiblaydi (name yo'q — formaga qo'shilib yuborilmaydi) -->
+        <div style="background:#0f172a; padding:14px 16px; border-radius:10px; border:1px solid rgba(56,189,248,0.3); margin-top:14px">
+          <b style="color:#38bdf8; font-size:14.5px">✍️ Erkin yozing — AI tartiblab beradi</b>
+          <p class="hint" style="margin:2px 0 8px; font-size:12px">Imlo xatolari bilan, aralash-quralash yozsangiz ham bo'ladi. AI xatolarni tuzatadi va bo'limlarga ajratadi. Siz yozmagan narsani qo'shmaydi.</p>
+          <textarea id="kbDraft" rows="5" placeholder="masalan: narxi 10 kvt 45 mln subsidiya 12 foiz manzil chust tel 99 750 12 11 yetkazib berish bepul..."></textarea>
+          <button type="button" id="kbPolishBtn" class="btn" onclick="window.polishKnowledge()" style="margin-top:8px">✨ AI bilan to'g'rilash</button>
+          <span id="kbPolishStatus" class="hint" style="margin-left:8px; font-size:12px"></span>
+          <div id="kbPolishedBox" style="display:none; margin-top:10px">
+            <label style="margin:0">Natija (kerak bo'lsa tahrirlang):</label>
+            <textarea id="kbPolished" rows="10" style="margin-top:6px; font-family:monospace; font-size:13px"></textarea>
+            <div style="display:flex; gap:8px; flex-wrap:wrap; margin-top:8px">
+              <button type="button" class="btn" onclick="window.addPolishedToKb()">➕ Bilimlar bazasiga qo'shish</button>
+              <button type="button" class="btn secondary" onclick="window.copyPolished(this)">📋 Nusxalash</button>
+            </div>
+          </div>
+        </div>
+        <script>
+          window.polishKnowledge = function() {
+            const draft = document.getElementById('kbDraft').value.trim();
+            const status = document.getElementById('kbPolishStatus');
+            const btn = document.getElementById('kbPolishBtn');
+            if (!draft) { status.textContent = 'Avval matn yozing'; return; }
+            btn.disabled = true;
+            status.textContent = '⏳ AI tartiblamoqda...';
+            fetch('/ai-learn/polish', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text: draft }) })
+              .then(function(r) { return r.json(); })
+              .then(function(d) {
+                if (!d.ok) { status.textContent = '⚠️ ' + d.error; return; }
+                document.getElementById('kbPolished').value = d.text;
+                document.getElementById('kbPolishedBox').style.display = 'block';
+                status.textContent = '✅ Tayyor';
+              })
+              .catch(function() { status.textContent = '⚠️ Tarmoq xatosi'; })
+              .finally(function() { btn.disabled = false; });
+          };
+          window.addPolishedToKb = function() {
+            const text = document.getElementById('kbPolished').value.trim();
+            const kb = document.getElementById('bizInfo');
+            if (!text) return;
+            kb.value = kb.value.trim() ? kb.value.trim() + '\\n\\n' + text : text;
+            document.getElementById('kbPolishedBox').style.display = 'none';
+            document.getElementById('kbDraft').value = '';
+            document.getElementById('kbPolishStatus').textContent = '✅ Qo‘shildi — pastdagi "Saqlash" tugmasini bosing';
+            kb.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          };
+          window.copyPolished = function(btn) {
+            const el = document.getElementById('kbPolished');
+            el.select();
+            (navigator.clipboard ? navigator.clipboard.writeText(el.value) : Promise.resolve(document.execCommand('copy')))
+              .then(function() { btn.textContent = '✅ Nusxalandi'; });
+          };
+        </script>
+
         <!-- Obunext Reasoning Mode Toggle -->
         <div style="background:#0f172a; padding:14px 16px; border-radius:10px; border:1px solid rgba(124,58,237,0.3); margin-top:14px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px">
           <div>
