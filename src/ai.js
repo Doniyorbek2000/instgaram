@@ -255,7 +255,6 @@ const FALLBACK_TEXT = {
     price: (b) => `Assalomu alaykum! ${b} narxlari va xizmatlari bo'yicha batafsil ma'lumot beramiz. 📋 Qaysi xizmatimiz yoki mahsulotimiz qiziqtiryapti?`,
     address: () => `Assalomu alaykum! Manzilimiz va ish soatlarimiz bo'yicha ma'lumot beramiz. 📍 Qaysi hududdansiz?`,
     who: (b) => `Assalomu alaykum! Men ${b} brendining Obunext intellektual yordamchisiman. 🤖 Sizga qanday yordam bera olamiz?`,
-    kb: (b, info) => `Assalomu alaykum! ${b} bo'yicha ma'lumot:\n\n${info}\n\nQo'shimcha savollaringiz bo'lsa, bemalol so'rang! 😊`,
     fallback: (b) => `Assalomu alaykum! 👋 ${b}ga xush kelibsiz! Xabaringiz qabul qilindi, sizga qanday yordam bera olamiz?`,
   },
   ru: {
@@ -263,7 +262,6 @@ const FALLBACK_TEXT = {
     price: (b) => `Здравствуйте! Расскажем подробнее о ценах и услугах ${b}. 📋 Какой товар или услуга вас интересует?`,
     address: () => `Здравствуйте! Расскажем про адрес и часы работы. 📍 Из какого вы региона?`,
     who: (b) => `Здравствуйте! Я интеллектуальный ассистент Obunext бренда ${b}. 🤖 Чем могу помочь?`,
-    kb: (b, info) => `Здравствуйте! Информация о ${b}:\n\n${info}\n\nЕсли есть ещё вопросы — пишите! 😊`,
     fallback: (b) => `Здравствуйте! 👋 Добро пожаловать в ${b}! Ваше сообщение получено, чем можем помочь?`,
   },
   en: {
@@ -271,7 +269,6 @@ const FALLBACK_TEXT = {
     price: (b) => `Hello! We'd be happy to share pricing and service details for ${b}. 📋 Which product or service are you interested in?`,
     address: () => `Hello! Here's our address and working hours. 📍 Which area are you in?`,
     who: (b) => `Hello! I'm the Obunext assistant for ${b}. 🤖 How can I help you?`,
-    kb: (b, info) => `Hello! Here's some information about ${b}:\n\n${info}\n\nFeel free to ask if you have more questions! 😊`,
     fallback: (b) => `Hello! 👋 Welcome to ${b}! We've received your message — how can we help?`,
   },
 };
@@ -297,21 +294,8 @@ export function smartFallbackReply(tenant, text) {
     return T.who(businessName);
   }
 
-  // Tadbirkorning o'zi kiritgan haqiqiy bilimlar bazasidan javob qidiramiz
-  if (tenant.businessInfo && tenant.businessInfo.length > 20) {
-    const relevant = findRelevantChunks(tenant.businessInfo, text, 3);
-    if (relevant && relevant.trim() && !relevant.includes("kiritilmagan")) {
-      const cleanReply = relevant
-        .split("\n")
-        .filter((l) => !l.startsWith("---") && !l.startsWith("#"))
-        .join("\n")
-        .trim();
-      if (cleanReply) {
-        return T.kb(businessName, cleanReply);
-      }
-    }
-  }
-
+  // Bilimlar bazasi matnini xom holda yubormaymiz: unda AI uchun ichki ko'rsatmalar
+  // ("narxini o'zing aytma" kabi) bo'ladi va mijozga bir necha xabar bo'lib to'kiladi.
   return T.fallback(businessName);
 }
 

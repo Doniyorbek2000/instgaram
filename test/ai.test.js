@@ -113,6 +113,13 @@ test("smartFallbackReply o'zbekcha savolga o'zbekcha javob beradi", () => {
   assert.match(reply, /Assalomu/);
 });
 
+test("smartFallbackReply bilimlar bazasini (ichki ko'rsatmalar bilan) mijozga to'kmaydi", () => {
+  const tenant = { businessName: "T GROUP", businessInfo: "Quyosh panellari o'rnatamiz.\n## Muhim\nBoshqa kW narxini o'zing aytma." };
+  const reply = smartFallbackReply(tenant, "Yaxshimisiz quyosh panel");
+  assert.doesNotMatch(reply, /aytma|Quyosh panellari/);
+  assert.match(reply, /T GROUP/);
+});
+
 // ==== askGemini: javob tezligi tuzatishlari (production'da 19-22 soniyalik ====
 // javob vaqtlari kuzatilgandan keyin qo'shildi) ====
 {

@@ -1069,7 +1069,7 @@ Biz "Fuqarolar Murojaat Markazi" jamoat tashkilotimiz.
         if (title) {
           const textarea = document.getElementById('bizInfo');
           if (textarea) {
-            const header = (textarea.value.trim() ? "\n\n" : "") + "--- " + title.trim() + " ---\n";
+            const header = (textarea.value.trim() ? "\\n\\n" : "") + "--- " + title.trim() + " ---\\n";
             textarea.value = (textarea.value.trim() + header).trim();
             textarea.focus();
           }
@@ -1088,7 +1088,7 @@ Biz "Fuqarolar Murojaat Markazi" jamoat tashkilotimiz.
         const txt = txtEl.value;
         if (pBox.style.display === 'none') {
           pBox.style.display = 'block';
-          pBox.innerHTML = '<b style="color:#a78bfa">👁️ Bilimlar Bazasi Ko\'rinishi:</b><pre style="white-space:pre-wrap; margin-top:8px; color:#cbd5e1; font-family:sans-serif; font-size:13px; background:#0f172a; padding:14px; border-radius:8px; border:1px solid rgba(255,255,255,0.08)">' + (txt.replace(/</g, "&lt;").replace(/>/g, "&gt;") || "Hali bilimlar kiritilmagan.") + '</pre>';
+          pBox.innerHTML = '<b style="color:#a78bfa">👁️ Bilimlar Bazasi Ko‘rinishi:</b><pre style="white-space:pre-wrap; margin-top:8px; color:#cbd5e1; font-family:sans-serif; font-size:13px; background:#0f172a; padding:14px; border-radius:8px; border:1px solid rgba(255,255,255,0.08)">' + (txt.replace(/</g, "&lt;").replace(/>/g, "&gt;") || "Hali bilimlar kiritilmagan.") + '</pre>';
         } else {
           pBox.style.display = 'none';
         }
@@ -1106,7 +1106,7 @@ Biz "Fuqarolar Murojaat Markazi" jamoat tashkilotimiz.
           return;
         }
 
-        const cleanHandle = handle.replace(/https?:\/\/(www\.)?instagram\.com\//, '').replace(/\/.*$/, '').replace(/^@/, '');
+        const cleanHandle = handle.replace(/https?:\\/\\/(www\\.)?instagram\\.com\\//, '').replace(/\\/.*$/, '').replace(/^@/, '');
         
         // Button visual active state change
         if (btn) {
@@ -1566,11 +1566,11 @@ Biz "Fuqarolar Murojaat Markazi" jamoat tashkilotimiz.
           }
 
           const textarea = document.getElementById('bizInfo');
-          const header = "\n\n--- 📄 [HUJJAT: " + data.filename + "] ---\n";
-          textarea.value = (textarea.value.trim() + header + data.text.replace(/\r\n/g, "\n")).trim();
+          const header = "\\n\\n--- 📄 [HUJJAT: " + data.filename + "] ---\\n";
+          textarea.value = (textarea.value.trim() + header + data.text.replace(/\\r\\n/g, "\\n")).trim();
 
           statusEl.style.color = "#34d399";
-          statusEl.innerText = '✅ "' + data.filename + '" fayli matni bilimlar bazasiga muvaffaqiyatli qo\'shildi! Pastdagi "Saqlash" tugmasini bosing.';
+          statusEl.innerText = '✅ "' + data.filename + '" fayli matni bilimlar bazasiga muvaffaqiyatli qo‘shildi! Pastdagi "Saqlash" tugmasini bosing.';
         } catch (err) {
           statusEl.style.color = "#f87171";
           statusEl.innerText = "Faylni yuklashda xato yuz berdi: " + err.message;
