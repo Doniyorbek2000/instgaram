@@ -59,3 +59,38 @@ test("/ai-learn/polish: erkin matnni AI orqali tartiblaydi, bo'sh matnni rad eta
     server.close();
   }
 });
+
+test("/ai-learn/transcribe: ovozni Gemini'ga yuborib matn qaytaradi, ovozsiz so'rovni rad etadi", async () => {
+  const express = (await import("express")).default;
+  const { aiLearnRouter } = await import("../src/web/ai_learn_ui.js");
+  const { register } = await import("../src/auth.js");
+  const { user } = await register("voice@test.uz", "parol123", "Voice Shop");
+  user.geminiApiKey = "test-key-own";
+
+  const real = globalThis.fetch;
+  let sentPart = null;
+  globalThis.fetch = async (url, opts) => {
+    if (!String(url).includes("generativelanguage")) return real(url, opts);
+    sentPart = JSON.parse(opts.body).contents.at(-1).parts[0];
+    return new Response(JSON.stringify({ candidates: [{ content: { parts: [{ text: " narxi 45 mln " }] } }], usageMetadata: { promptTokenCount: 10, candidatesTokenCount: 5 } }), { status: 200 });
+  };
+  const app = express();
+  app.use(express.json());
+  app.use((req, _res, next) => { req.user = user; next(); });
+  app.use(aiLearnRouter);
+  const server = app.listen(0);
+  const base = `http://127.0.0.1:${server.address().port}`;
+  const post = (type, body) => real(`${base}/ai-learn/transcribe`, { method: "POST", headers: { "Content-Type": type }, body }).then(async (r) => ({ status: r.status, ...(await r.json()) }));
+  try {
+    assert.strictEqual((await post("text/plain", "salom")).status, 400);
+    assert.strictEqual((await post("audio/webm", new Uint8Array(0))).status, 400);
+
+    const ok = await post("audio/webm;codecs=opus", new Uint8Array([1, 2, 3]));
+    assert.strictEqual(ok.ok, true);
+    assert.strictEqual(ok.text, "narxi 45 mln");
+    assert.deepStrictEqual(sentPart.inline_data, { mime_type: "audio/webm", data: Buffer.from([1, 2, 3]).toString("base64") });
+  } finally {
+    globalThis.fetch = real;
+    server.close();
+  }
+});

@@ -25,7 +25,7 @@ const EMBEDDABLE = /^\/(w\/|l\/|g\/|p\/)/;
 export function securityHeaders(req, res, next) {
   res.setHeader("X-Content-Type-Options", "nosniff");
   res.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");
-  res.setHeader("Permissions-Policy", "camera=(), microphone=(), geolocation=(), payment=(), usb=()");
+  res.setHeader("Permissions-Policy", "camera=(), microphone=(self), geolocation=(), payment=(), usb=()");
   res.setHeader("Cross-Origin-Opener-Policy", "same-origin-allow-popups");
   if (!EMBEDDABLE.test(req.path)) {
     res.setHeader("X-Frame-Options", "SAMEORIGIN");

@@ -422,14 +422,14 @@ export async function aiAvailable(tenant) {
  * Suhbat tarixiga yozilmaydi. json: true bo'lsa model JSON qaytaradi va u parse qilinadi.
  * Xatoda Error otadi — chaqiruvchi foydalanuvchiga tushunarli xabar ko'rsatadi.
  */
-export async function generateText(tenant, systemPrompt, prompt, { maxOutputTokens = 2048, json = false, temperature } = {}) {
+export async function generateText(tenant, systemPrompt, prompt, { maxOutputTokens = 2048, json = false, temperature, media = [] } = {}) {
   const key = await resolveGeminiKey(tenant);
   if (!key) throw new Error("AI kaliti sozlanmagan. Admin paneldan Gemini kalitini kiriting.");
   if (!canUseAi(tenant)) {
     throw new Error(aiQuota(tenant).hasAi ? "AI kreditlari tugadi — Obuna & Tariflar sahifasida kredit paketi oling." : NO_AI_PLAN_MSG);
   }
   const meter = {};
-  const out = await askGemini(key, systemPrompt, [], prompt, [], { maxOutputTokens, json, temperature, timeoutMs: 30000, meter });
+  const out = await askGemini(key, systemPrompt, [], prompt, media, { maxOutputTokens, json, temperature, timeoutMs: 30000, meter });
   // Faqat muvaffaqiyatli javob uchun; uzun natija (masalan 6 000 tokenli tahlil) ko'proq kredit
   consumeAi(tenant, Math.max(1, Math.ceil(creditsFor(meter.inTok, meter.outTok) - 0.05)));
   recordAiCost(tenant, { kind: "text", model: meter.model, inTok: meter.inTok, outTok: meter.outTok, ownKey: Boolean(tenant.geminiApiKey) });
