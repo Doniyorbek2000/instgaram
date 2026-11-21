@@ -8,14 +8,24 @@
  */
 import { Router } from "express";
 import crypto from "node:crypto";
+import multer from "multer";
 import { requireAuth } from "../auth.js";
 import { page, esc } from "./layout.js";
 import { persist } from "../db.js";
 import { generateText, aiBlockReason } from "../ai.js";
 import { ensureFlows } from "../flows.js";
 import { buildTemplate } from "../flowTemplates.js";
+import { saveUpload } from "../mediaStore.js";
+import { renderSlideshow } from "../videoMaker.js";
+import { synthesize, ttsAvailable } from "../tts.js";
+import { publishDuePosts } from "../postPublisher.js";
 
 export const contentRouter = Router();
+
+const MAX_FRAMES = 12;
+const frameUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 4 * 1024 * 1024, files: MAX_FRAMES } });
+// Server render paytida qayta ishga tushsa holat "rendering"da qolib ketmasin
+const RENDER_STALE_MS = 10 * 60 * 1000;
 
 const MAX_ITEMS = 60;
 
@@ -125,7 +135,8 @@ contentRouter.get("/content", requireAuth, async (req, res) => {
         </div>
       </div>
       <script type="application/json" id="csItems">${JSON.stringify(items).replace(/</g, "\\u003c")}</script>
-      <script type="application/json" id="csBrand">${JSON.stringify({ name: u.businessName || "", handle: u.meta?.igUsername || "" }).replace(/</g, "\\u003c")}</script>
+      <script type="application/json" id="csBrand">${JSON.stringify({ name: u.businessName || "", handle: u.meta?.igUsername || "", igConnected: Boolean(u.meta?.igUserId) }).replace(/</g, "\\u003c")}</script>
+      <script type="application/json" id="csMedia">${JSON.stringify((u.mediaLibrary || []).filter((m) => m.type === "image").map((m) => ({ file: m.file, name: m.name }))).replace(/</g, "\\u003c")}</script>
       <script src="/assets/content-studio.js"></script>`,
       { user: u, active: "content" }
     )
@@ -177,6 +188,92 @@ contentRouter.post("/content/:id/delete", requireAuth, (req, res) => {
   u.content.items = (u.content.items || []).filter((it) => it.id !== req.params.id);
   persist(u);
   res.redirect("/content");
+});
+
+const findReels = (u, id) => (u.content?.items || []).find((it) => it.id === id && it.tool === "reels");
+const isJpeg = (buf) => buf?.length > 3 && buf[0] === 0xff && buf[1] === 0xd8 && buf[2] === 0xff;
+
+/** Video holati — eskirgan "rendering" (server qayta ishga tushgan) xato deb ko'rsatiladi. */
+function videoState(item) {
+  const v = item.video;
+  if (v?.status === "rendering" && Date.now() - new Date(v.at).getTime() > RENDER_STALE_MS) {
+    return { status: "failed", error: "Video yasash to'xtab qoldi — qaytadan urinib ko'ring" };
+  }
+  return v || { status: "none" };
+}
+
+/** Ssenariy + brauzer chizgan kadrlar (1080×1920 JPEG) → fonda MP4 yasaladi va mediatekaga saqlanadi. */
+contentRouter.post("/content/:id/video", requireAuth, (req, res) => {
+  frameUpload.array("frames", MAX_FRAMES)(req, res, (err) => {
+    if (err) return res.status(400).json({ ok: false, error: err.code === "LIMIT_FILE_SIZE" ? "Kadr juda katta" : "Kadrlarni yuklab bo'lmadi" });
+    const u = req.user;
+    const item = findReels(u, req.params.id);
+    if (!item) return res.status(404).json({ ok: false, error: "Ssenariy topilmadi" });
+    if (videoState(item).status === "rendering") return res.status(409).json({ ok: false, error: "Video allaqachon yasalmoqda" });
+    const frames = (req.files || []).map((f) => f.buffer);
+    if (!frames.length || !frames.every(isJpeg)) return res.status(400).json({ ok: false, error: "Kadrlar JPEG bo'lishi kerak" });
+    let durations = [];
+    try {
+      durations = JSON.parse(req.body?.durations || "[]");
+    } catch {
+      durations = [];
+    }
+    if (!Array.isArray(durations)) durations = [];
+
+    item.video = { status: "rendering", at: new Date().toISOString() };
+    persist(u);
+    res.json({ ok: true, status: "rendering" });
+
+    (async () => {
+      const voiceText = (item.data?.scenes || []).map((s) => String(s.voice || "").trim()).filter(Boolean).join(" ");
+      const audio = ttsAvailable && voiceText ? await synthesize(voiceText) : null;
+      const mp4 = await renderSlideshow({ frames, durations, audio });
+      const saved = saveUpload(u, mp4, "video/mp4", `Reels — ${item.title}.mp4`);
+      if (saved.error) throw new Error(saved.error);
+      item.video = { status: "ready", url: saved.url, file: saved.file, voice: Boolean(audio), at: new Date().toISOString() };
+    })()
+      .catch((e) => {
+        console.error("[Reels video]", e.message);
+        item.video = { status: "failed", error: e.message, at: new Date().toISOString() };
+      })
+      .finally(() => persist(u));
+  });
+});
+
+contentRouter.get("/content/:id/video", requireAuth, (req, res) => {
+  const item = findReels(req.user, req.params.id);
+  if (!item) return res.status(404).json({ ok: false, error: "Ssenariy topilmadi" });
+  res.json({ ok: true, video: videoState(item) });
+});
+
+/** Tayyor videoni Reels sifatida joylaydi: publishAt bo'sh — hozir, aks holda rejalashtiriladi. */
+contentRouter.post("/content/:id/publish", requireAuth, async (req, res) => {
+  const u = req.user;
+  const item = findReels(u, req.params.id);
+  if (!item) return res.status(404).json({ ok: false, error: "Ssenariy topilmadi" });
+  if (item.video?.status !== "ready") return res.status(400).json({ ok: false, error: "Avval videoni yasang" });
+  if (!u.meta?.igUserId) return res.status(400).json({ ok: false, error: "Instagram ulanmagan — Integratsiyalar sahifasida ulang" });
+  const when = req.body?.publishAt ? new Date(req.body.publishAt) : new Date();
+  if (Number.isNaN(when.getTime())) return res.status(400).json({ ok: false, error: "Vaqt noto'g'ri" });
+  const tags = (item.data?.hashtags || []).map((h) => `#${String(h).replace(/^#/, "").replace(/\s+/g, "")}`).join(" ");
+  const caption = String(req.body?.caption ?? [item.data?.caption, tags].filter(Boolean).join("\n\n")).slice(0, 2200);
+  const now = new Date().toISOString();
+  const post = {
+    id: `post_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+    type: "reel",
+    mediaUrl: item.video.url,
+    mediaUrls: [],
+    publishAt: when.toISOString(),
+    caption,
+    status: "pending",
+    createdAt: now,
+    source: "content",
+  };
+  u.scheduledPosts = [post, ...(u.scheduledPosts || [])];
+  await persist(u);
+  if (when.getTime() <= Date.now()) await publishDuePosts(u);
+  if (post.status === "failed") return res.status(502).json({ ok: false, error: post.error });
+  res.json({ ok: true, status: post.status, scheduled: when.getTime() > Date.now() });
 });
 
 /** Reels'dagi komment kalit so'zidan tayyor "komment → obuna → sovg'a" flow yaratadi. */
