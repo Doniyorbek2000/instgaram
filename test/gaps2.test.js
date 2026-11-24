@@ -91,6 +91,21 @@ test("AI amallari: blok ajratiladi, kontakt/teg/lid yoziladi, rozilik talabi", a
   t.settings.ai.actions = true;
 });
 
+test("AI qayta yozishni o'zi rejalashtiradi (2–22 soat), mijoz yozsa bekor bo'ladi", async () => {
+  const before = Date.now();
+  const done = await ai.executeAiActions(t, "ig:60", { followup: { hours: 48, text: "Salom! Ko'ylak bo'yicha qaror qildingizmi?", reason: "o'ylab ko'raman dedi" } }, { channel: "instagram" });
+  assert.ok(done.includes("followup"));
+  const job = t.followUps.find((j) => j.key === "ig:60" && j.kind === "ai");
+  assert.ok(job.dueAt - before <= 22 * 3600e3 + 5000 && job.dueAt - before >= 22 * 3600e3 - 5000, "48 soat → 22 soatga qisqartiriladi (24 soatlik oyna)");
+  assert.strictEqual(job.data.reason, "o'ylab ko'raman dedi");
+  assert.match(getContactMeta(t, "ig:60").fields.ai_followup, /o'ylab ko'raman dedi/);
+  assert.ok(!(await ai.executeAiActions(t, "ig:61", { followup: { hours: 0, text: "x" } })).includes("followup"), "soat yo'q — rejalashtirilmaydi");
+
+  await processMessage(t, "instagram", "60", { text: "ha, olaman" });
+  assert.ok(!t.followUps.some((j) => j.key === "ig:60" && j.kind === "ai"));
+  assert.match(getContactMeta(t, "ig:60").fields.ai_followup, /bekor/);
+});
+
 test("do'kon: katalog, buyurtma, Payme/Click havolalari, holat va savat eslatmasi", async () => {
   const s = shop.ensureShop(t);
   s.settings.payme.merchantId = "5f9a1b2c3d4e5f6a7b8c9d0e";
