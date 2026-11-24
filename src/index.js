@@ -31,6 +31,7 @@ import { contentRouter } from "./web/content_ui.js";
 import { mediaRouter } from "./web/media_ui.js";
 import { aiLearnRouter } from "./web/ai_learn_ui.js";
 import { aiSettingsRouter } from "./web/ai_settings_ui.js";
+import { phoneRouter, zadarmaHookRouter } from "./web/phone_ui.js";
 import { mcpHandler } from "./mcp.js";
 import { loadPlatformSettings } from "./credits.js";
 import { teamContext } from "./team.js";
@@ -136,6 +137,8 @@ app.use((req, res, next) => {
 app.use(adminRouter);
 // Meta deauthorize / data deletion callback'lari (imzolangan so'rov, sessiyasiz)
 app.use(metaCallbacksRouter);
+// Zadarma qo'ng'iroq webhook'i (tashqi POST, sessiyasiz — CSRF'dan oldin)
+app.use(zadarmaHookRouter);
 app.use(csrfGuard);
 app.use(attachUser);
 // Jamoa a'zosi egasining ish maydonida bo'lsa — req.user almashtiriladi va roli tekshiriladi
@@ -247,6 +250,7 @@ app.use(contentRouter);
 app.use(mediaRouter);
 app.use(aiLearnRouter);
 app.use(aiSettingsRouter);
+app.use(phoneRouter);
 app.use(telegramRouter);
 app.use(reportsBotRouter);
 
