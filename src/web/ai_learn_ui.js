@@ -7,7 +7,7 @@
  * va yozish uslubi ajratib olinadi → egasi ko'rib, tahrirlab, bilim bazasiga
  * qo'shadi. Uslub (tone of voice) AI tizim ko'rsatmasiga qo'shiladi.
  */
-import { Router } from "express";
+import express, { Router } from "express";
 import { requireAuth } from "../auth.js";
 import { page, esc } from "./layout.js";
 import { persist } from "../db.js";
@@ -206,6 +206,27 @@ aiLearnRouter.post("/ai-learn/polish", requireAuth, async (req, res) => {
     const polished = String(out || "").replace(/^```\w*\s*/, "").replace(/```\s*$/, "").replace(/[؀-ۿ]/g, "").trim();
     if (!polished) return res.status(502).json({ ok: false, error: "AI javob bermadi, qaytadan urinib ko'ring" });
     res.json({ ok: true, text: polished });
+  } catch (err) {
+    res.status(502).json({ ok: false, error: err.message });
+  }
+});
+
+// Ovozli eslatma → matn (keyin brauzer uni /ai-learn/polish ga yuboradi)
+const TRANSCRIBE_MAX_BYTES = 10 * 1024 * 1024;
+const TRANSCRIBE_SYSTEM = `Transcribe the business owner's voice note word for word, in the language spoken (Uzbek in Latin script; keep Russian/English words as said).
+- Write numbers, prices and phone numbers as digits.
+- Output only the transcript: no comments, no headings. If there is no speech, output nothing.`;
+
+aiLearnRouter.post("/ai-learn/transcribe", requireAuth, express.raw({ type: "audio/*", limit: TRANSCRIBE_MAX_BYTES }), async (req, res) => {
+  const mimeType = String(req.get("content-type") || "").split(";")[0].trim().toLowerCase();
+  if (!mimeType.startsWith("audio/") || !Buffer.isBuffer(req.body) || !req.body.length) {
+    return res.status(400).json({ ok: false, error: "Ovoz yozuvi topilmadi" });
+  }
+  try {
+    const out = await generateText(req.user, TRANSCRIBE_SYSTEM, "", { maxOutputTokens: 4000, temperature: 0, media: [{ mimeType, data: req.body.toString("base64") }] });
+    const text = String(out || "").replace(/[؀-ۿ]/g, "").trim();
+    if (!text) return res.status(422).json({ ok: false, error: "Ovozda gap eshitilmadi, qaytadan yozib ko'ring" });
+    res.json({ ok: true, text });
   } catch (err) {
     res.status(502).json({ ok: false, error: err.message });
   }

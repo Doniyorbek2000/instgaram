@@ -23,7 +23,7 @@ import { safeFetch } from "./netguard.js";
 const TIMEOUT_MS = 8000;
 
 export const CRM_TYPES = { "": "Ulanmagan", amocrm: "amoCRM / Kommo", bitrix24: "Bitrix24" };
-const AUTO_DEFAULTS = { forms: true, leads: true, ai: true, orders: true };
+const AUTO_DEFAULTS = { forms: true, leads: true, ai: true, orders: true, calls: true };
 
 export function crmSettings(tenant) {
   const integ = ensureIntegrations(tenant);

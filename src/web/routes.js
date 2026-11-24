@@ -1355,9 +1355,10 @@ Biz "Fuqarolar Murojaat Markazi" jamoat tashkilotimiz.
         <!-- Erkin yozilgan matnni AI tartiblaydi (name yo'q — formaga qo'shilib yuborilmaydi) -->
         <div style="background:#0f172a; padding:14px 16px; border-radius:10px; border:1px solid rgba(56,189,248,0.3); margin-top:14px">
           <b style="color:#38bdf8; font-size:14.5px">✍️ Erkin yozing — AI tartiblab beradi</b>
-          <p class="hint" style="margin:2px 0 8px; font-size:12px">Imlo xatolari bilan, aralash-quralash yozsangiz ham bo'ladi. AI xatolarni tuzatadi va bo'limlarga ajratadi. Siz yozmagan narsani qo'shmaydi.</p>
+          <p class="hint" style="margin:2px 0 8px; font-size:12px">Imlo xatolari bilan, aralash-quralash yozsangiz ham bo'ladi. AI xatolarni tuzatadi va bo'limlarga ajratadi. Siz yozmagan narsani qo'shmaydi. Yozish o'rniga 🎙️ tugmasini bosib <b>ovozda gapirib</b> bersangiz ham bo'ladi — AI matnga aylantiradi va darhol tartiblaydi.</p>
           <textarea id="kbDraft" rows="5" placeholder="masalan: narxi 10 kvt 45 mln subsidiya 12 foiz manzil chust tel 99 750 12 11 yetkazib berish bepul..."></textarea>
           <button type="button" id="kbPolishBtn" class="btn" onclick="window.polishKnowledge()" style="margin-top:8px">✨ AI bilan to'g'rilash</button>
+          <button type="button" id="kbVoiceBtn" class="btn secondary" onclick="window.toggleKbVoice()" style="margin-top:8px">🎙️ Ovoz bilan aytish</button>
           <span id="kbPolishStatus" class="hint" style="margin-left:8px; font-size:12px"></span>
           <div id="kbPolishedBox" style="display:none; margin-top:10px">
             <label style="margin:0">Natija (kerak bo'lsa tahrirlang):</label>
@@ -1387,6 +1388,57 @@ Biz "Fuqarolar Murojaat Markazi" jamoat tashkilotimiz.
               .catch(function() { status.textContent = '⚠️ Tarmoq xatosi'; })
               .finally(function() { btn.disabled = false; });
           };
+          // Ovozli eslatma: yozib olinadi → /ai-learn/transcribe matnga aylantiradi → darhol polishKnowledge()
+          (function() {
+            var MAX_MS = 5 * 60 * 1000; // 5 daqiqa — server 10 MB gacha qabul qiladi
+            var rec = null, chunks = [], timer = null, startedAt = 0, tick = null;
+            var btn = function() { return document.getElementById('kbVoiceBtn'); };
+            var status = function(t) { document.getElementById('kbPolishStatus').textContent = t; };
+            function send(blob) {
+              status('⏳ Ovoz matnga aylantirilmoqda...');
+              btn().disabled = true;
+              fetch('/ai-learn/transcribe', { method: 'POST', headers: { 'Content-Type': blob.type || 'audio/webm' }, body: blob })
+                .then(function(r) { return r.json().catch(function() { return { ok: false, error: 'Ovoz juda katta yoki server xatosi' }; }); })
+                .then(function(d) {
+                  if (!d.ok) { status('⚠️ ' + d.error); return; }
+                  var draft = document.getElementById('kbDraft');
+                  draft.value = draft.value.trim() ? draft.value.trim() + ' ' + d.text : d.text;
+                  window.polishKnowledge();
+                })
+                .catch(function() { status('⚠️ Tarmoq xatosi'); })
+                .finally(function() { btn().disabled = false; });
+            }
+            function stop() {
+              clearTimeout(timer); clearInterval(tick);
+              if (rec && rec.state !== 'inactive') rec.stop();
+            }
+            window.toggleKbVoice = function() {
+              if (rec && rec.state === 'recording') return stop();
+              if (!navigator.mediaDevices || !window.MediaRecorder) { status('⚠️ Brauzeringiz ovoz yozishni qo‘llamaydi'); return; }
+              navigator.mediaDevices.getUserMedia({ audio: true }).then(function(stream) {
+                chunks = [];
+                // Gemini rasmiy qo'llaydigan formatlar birinchi (mp4/AAC, ogg); bo'lmasa brauzer standarti (webm)
+                var mime = ['audio/mp4', 'audio/ogg;codecs=opus', 'audio/webm;codecs=opus'].filter(function(t) { return MediaRecorder.isTypeSupported(t); })[0];
+                rec = mime ? new MediaRecorder(stream, { mimeType: mime }) : new MediaRecorder(stream);
+                rec.ondataavailable = function(e) { if (e.data.size) chunks.push(e.data); };
+                rec.onstop = function() {
+                  stream.getTracks().forEach(function(t) { t.stop(); });
+                  btn().textContent = '🎙️ Ovoz bilan aytish';
+                  var blob = new Blob(chunks, { type: (rec.mimeType || 'audio/webm').split(';')[0] });
+                  if (blob.size) send(blob); else status('⚠️ Ovoz yozilmadi');
+                };
+                rec.start();
+                startedAt = Date.now();
+                btn().textContent = '⏹️ To‘xtatish';
+                status('🔴 Yozilmoqda... 0:00');
+                tick = setInterval(function() {
+                  var s = Math.floor((Date.now() - startedAt) / 1000);
+                  status('🔴 Yozilmoqda... ' + Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0'));
+                }, 1000);
+                timer = setTimeout(stop, MAX_MS);
+              }).catch(function() { status('⚠️ Mikrofonga ruxsat berilmadi'); });
+            };
+          })();
           window.addPolishedToKb = function() {
             const text = document.getElementById('kbPolished').value.trim();
             const kb = document.getElementById('bizInfo');

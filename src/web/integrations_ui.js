@@ -160,6 +160,7 @@ function crmCard(u, req) {
         ${autoRow("leads", "Mijoz chatda telefon/email qoldirganda")}
         ${autoRow("ai", "AI suhbatdan kontakt yig'ganda")}
         ${autoRow("orders", "Do'kondan buyurtma tushganda")}
+        ${autoRow("calls", "Telefon qo'ng'irog'i tugaganda (Zadarma)")}
         <p class="hint" style="font-size:12px">Bir mijoz uchun bitim bir marta ochiladi, keyingi ma'lumotlar unga izoh bo'lib qo'shiladi. Flow'da "📇 CRM'da lid ochish" amali ham bor.</p>
         <div style="display:flex; gap:8px; flex-wrap:wrap; margin-top:10px">
           <button class="btn" style="margin:0">💾 Saqlash</button>

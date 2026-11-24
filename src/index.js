@@ -31,12 +31,14 @@ import { contentRouter } from "./web/content_ui.js";
 import { mediaRouter } from "./web/media_ui.js";
 import { aiLearnRouter } from "./web/ai_learn_ui.js";
 import { aiSettingsRouter } from "./web/ai_settings_ui.js";
+import { phoneRouter, zadarmaHookRouter } from "./web/phone_ui.js";
 import { mcpHandler } from "./mcp.js";
 import { loadPlatformSettings } from "./credits.js";
 import { teamContext } from "./team.js";
 import { telegramRouter } from "./telegram.js";
 import { reportsBotRouter, reportsBotAvailable, setupReportsBotWebhook, checkAndSendDailyReports } from "./reportsBot.js";
 import { checkAndPublishScheduledPosts } from "./postPublisher.js";
+import { runAutoReels } from "./autoReels.js";
 import { runDueFollowUps } from "./followups.js";
 import { runDueBroadcasts } from "./broadcasts.js";
 import { refreshTelegramWebhooks } from "./telegram.js";
@@ -135,6 +137,8 @@ app.use((req, res, next) => {
 app.use(adminRouter);
 // Meta deauthorize / data deletion callback'lari (imzolangan so'rov, sessiyasiz)
 app.use(metaCallbacksRouter);
+// Zadarma qo'ng'iroq webhook'i (tashqi POST, sessiyasiz — CSRF'dan oldin)
+app.use(zadarmaHookRouter);
 app.use(csrfGuard);
 app.use(attachUser);
 // Jamoa a'zosi egasining ish maydonida bo'lsa — req.user almashtiriladi va roli tekshiriladi
@@ -246,6 +250,7 @@ app.use(contentRouter);
 app.use(mediaRouter);
 app.use(aiLearnRouter);
 app.use(aiSettingsRouter);
+app.use(phoneRouter);
 app.use(telegramRouter);
 app.use(reportsBotRouter);
 
@@ -572,6 +577,11 @@ function startScheduler() {
   setInterval(() => {
     checkAndPublishScheduledPosts().catch((err) => console.error("[PostPublisher] xato:", err.message));
   }, 60 * 1000);
+
+  // Avto-Reels: kuniga belgilangan vaqtlarda AI video yasab joylaydi
+  setInterval(() => {
+    runAutoReels().catch((err) => console.error("[Avto-Reels] xato:", err.message));
+  }, 5 * 60 * 1000);
 }
 
 // Server to'xtatilganda bazani saqlab, tozalab chiqamiz

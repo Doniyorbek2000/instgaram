@@ -7,6 +7,7 @@ import { requireAuth } from "../auth.js";
 import { persist } from "../db.js";
 import { page, esc } from "./layout.js";
 import { getReportsBotUsername } from "../reportsBot.js";
+import { DEFAULT_TIMES, MAX_TIMES, isTime } from "../autoReels.js";
 
 export const schedulerRouter = Router();
 const POST_TYPES = ["image", "reel", "carousel", "story"];
@@ -83,6 +84,8 @@ schedulerRouter.get("/scheduler", requireAuth, (req, res) => {
         </div>
         ${botUsername ? `<div style="font-size:12.5px; color:#cbd5e1; margin-top:10px"><b>✈️ Telegram'dan:</b> <a href="https://t.me/${esc(botUsername)}" target="_blank" rel="noopener">@${esc(botUsername)}</a> ga rasm yoki video yuboring — bot Post / Reels / Story qilib darhol joylaydi.</div>` : ""}
       </div>
+
+      ${autoReelsCard(u)}
 
       <div class="grid split-form">
         <div>
@@ -169,6 +172,43 @@ schedulerRouter.get("/scheduler", requireAuth, (req, res) => {
       { user: u, active: "scheduler" }
     )
   );
+});
+
+function autoReelsCard(u) {
+  const cfg = u.settings?.autoReels || {};
+  const times = cfg.times?.length ? cfg.times : DEFAULT_TIMES;
+  const last = u.autoReelsLast;
+  const lang = cfg.lang || "uz";
+  const opt = (v, label) => `<option value="${v}" ${v === lang ? "selected" : ""}>${label}</option>`;
+  return `
+      <div class="card" style="margin-bottom:20px; border:1px solid #7c3aed">
+        <h3 style="margin-top:0">🤖 Avto-Reels — har kuni AI video</h3>
+        <p class="hint">Belgilangan vaqtlarda AI biznesingiz haqida yangi Reels ssenariy yozadi, mediatekadagi rasmlaringiz (yoki rangli fon) ustiga matn qo'yib video yasaydi va Instagram'ga joylaydi. Har video AI kreditidan yechiladi.</p>
+        ${u.meta?.igUserId ? "" : `<div class="error">Instagram ulanmagan — avval Integratsiyalar sahifasida ulang.</div>`}
+        <form method="post" action="/scheduler/auto">
+          <label style="display:flex; gap:8px; align-items:center"><input type="checkbox" name="enabled" value="1" ${cfg.enabled ? "checked" : ""} style="width:auto"> Yoqilgan</label>
+          <label>Joylash vaqtlari (vergul bilan, ko'pi bilan ${MAX_TIMES} ta)</label>
+          <input name="times" value="${esc(times.join(", "))}" placeholder="10:00, 19:00">
+          <label>Til</label>
+          <select name="lang">${opt("uz", "O'zbekcha")}${opt("ru", "Ruscha")}${opt("en", "Inglizcha")}</select>
+          <button class="btn" style="margin-top:12px">💾 Saqlash</button>
+        </form>
+        ${last ? `<p class="hint" style="margin-top:10px">Oxirgi: ${esc(last.slot)} — ${last.status === "failed" ? `❌ ${esc(last.error)}` : `✅ ${esc(last.status)}`}</p>` : ""}
+      </div>`;
+}
+
+schedulerRouter.post("/scheduler/auto", requireAuth, (req, res) => {
+  const u = req.user;
+  const b = req.body || {};
+  const times = [...new Set(String(b.times || "").split(/[,\s]+/).map((t) => t.trim().padStart(5, "0")).filter(isTime))].sort().slice(0, MAX_TIMES);
+  u.settings ||= {};
+  u.settings.autoReels = {
+    enabled: b.enabled === "1",
+    times: times.length ? times : DEFAULT_TIMES,
+    lang: ["uz", "ru", "en"].includes(b.lang) ? b.lang : "uz",
+  };
+  persist(u);
+  res.redirect("/scheduler?saved=1");
 });
 
 schedulerRouter.post("/scheduler/add", requireAuth, (req, res) => {

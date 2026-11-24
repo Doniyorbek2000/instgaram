@@ -319,6 +319,7 @@ const NAV = [
   ]],
   ["Sozlamalar", [
     ["/ai-settings", "ai-settings", "spark", "AI javob sozlamalari"],
+    ["/phone", "phone", "mic", "Telefon AI"],
     ["/integrations", "integrations", "plug", "Integratsiyalar"],
     ["/team", "team", "team", "Jamoa"],
     ["/billing", "billing", "card", "Obuna & Tariflar"],

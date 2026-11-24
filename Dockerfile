@@ -3,6 +3,9 @@ FROM node:20-slim
 ENV NODE_ENV=production
 WORKDIR /app
 
+# ffmpeg — AI Kontent studiyada Reels video yasash uchun (src/videoMaker.js); shrift — avto-Reels kadrlaridagi matn uchun
+RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg fonts-dejavu-core && rm -rf /var/lib/apt/lists/*
+
 # Avval faqat bog'liqliklar — kesh uchun. package-lock.json bilan aniq mos kelmasa build to'xtaydi.
 COPY package*.json ./
 RUN npm ci --omit=dev && npm cache clean --force

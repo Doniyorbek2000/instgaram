@@ -1,0 +1,14 @@
+{
+  "detector": {
+    "ignoreRules": [],
+    "ignoreFiles": [],
+    "ignoreValues": [
+      {
+        "rule": "overused-font",
+        "value": "plus jakarta sans",
+        "createdAt": "2026-11-24T04:42:22.014Z",
+        "reason": "user confirmed: Plus Jakarta Sans is the Obunext brand font"
+      }
+    ]
+  }
+}
