@@ -10,7 +10,8 @@ import { runAutomations, rememberOptions, gateMessage, passesGate, resolvePayloa
 import { handleFlowInbound, findFlowTrigger, aiFlowCandidates, startFlow, logToInbox } from "./flows.js";
 import { renderTemplate } from "./templating.js";
 import { aiAllowed, offReply } from "./aiControl.js";
-import { getContactMeta } from "./contacts.js";
+import { getContactMeta, setFields } from "./contacts.js";
+import { cancelFollowUps } from "./followups.js";
 import { isBotLoop } from "./botLoop.js";
 
 const OFF_REPLY_EVERY_MS = 6 * 60 * 60 * 1000;
@@ -98,6 +99,8 @@ export async function processMessage(tenant, channel, chatKey, { text = "", medi
 
   // 2. Statistika va mijozlar tarixiga yozish
   recordMessage(tenant, channel, fullKey, shownText);
+  // Mijoz o'zi qaytib yozdi — AI rejalashtirgan "keyinroq yozaman" xabari endi kerak emas
+  if (cancelFollowUps(tenant, fullKey, { kind: "ai" })) setFields(tenant, fullKey, { ai_followup: "bekor: mijoz o'zi yozdi" });
   if (isNewContact) fireEvent(tenant, "new_contact", { contact: fullKey, channel, username: profile.username || "", name: profile.name || "" });
 
   // 3. Chat qo'lda rejimda bo'lsa (operator boshqarmoqda) — bot jim

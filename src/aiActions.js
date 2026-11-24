@@ -17,6 +17,9 @@ import { persist } from "./db.js";
 import { aiSettings } from "./aiControl.js";
 
 const BLOCK_RE = /\[\[ACTIONS\]\]([\s\S]*?)(?:\[\[\/ACTIONS\]\]|$)/i;
+// AI o'zi rejalashtiradigan qayta yozish: Meta'ning 24 soatlik oynasi ichida qolishi uchun ko'pi bilan 22 soat
+const FOLLOWUP_MIN_H = 2;
+const FOLLOWUP_MAX_H = 22;
 
 /** Tizim ko'rsatmasiga qo'shiladigan qism. */
 export function actionsPrompt(tenant, key) {
@@ -30,12 +33,13 @@ export function actionsPrompt(tenant, key) {
 
 # YASHIRIN AMALLAR (mijozga ko'rinmaydi)
 Agar mijoz ism, telefon, email, manzil bersa, buyurtma/yozilish istasa yoki jonli operator so'rasa — javobing OXIRIGA, yangi qatorda, aynan shu formatda JSON blok qo'sh:
-[[ACTIONS]]{"name":"","phone":"","email":"","address":"","tags":[],"lead":false,"handoff":false,"booking":{"service":"","date":"","time":""},"consent":false,"summary":""}[[/ACTIONS]]
+[[ACTIONS]]{"name":"","phone":"","email":"","address":"","tags":[],"lead":false,"handoff":false,"booking":{"service":"","date":"","time":""},"consent":false,"summary":"","followup":{"hours":0,"text":"","reason":""}}[[/ACTIONS]]
 - Faqat mijoz AYNAN aytgan qiymatlarni yoz, bo'shlarini tashlab ket; hech narsani o'ylab topma.
 - "lead": true — mijoz sotib olish/buyurtma/yozilish niyatini bildirsa va kontaktini qoldirsa.
 - "handoff": true — mijoz odam/operator bilan gaplashmoqchi bo'lsa yoki sen javob bera olmaydigan murakkab masala bo'lsa.
 - "tags": qisqa lotin harfli teglar, masalan "lid", "buyurtma", "narx" — 3 tagacha.
 - "summary": bir jumlada mijoz nima xohlayotgani (menejer uchun).
+- "followup": FAQAT mijoz qiziqib, lekin qaror qilmay to'xtasa ("o'ylab ko'raman", "keyinroq", "maoshdan keyin") va buyurtma bermagan bo'lsa — keyinroq o'zing yozishni rejalashtir: "hours" ${FOLLOWUP_MIN_H}-${FOLLOWUP_MAX_H}, "text" — shu suhbatni davom ettiruvchi 1-2 jumlali iliq xabar (bosimsiz, bazada yo'q chegirma o'ylab topmasdan), "reason" — menejer uchun nima sababdan qaytib yozilayotgani. Boshqa hollarda followup qo'shma.
 - Saqlash uchun hech narsa bo'lmasa blokni UMUMAN qo'shma.${consentRule}`;
 }
 
@@ -123,6 +127,20 @@ export async function executeAiActions(tenant, key, a, { channel = "" } = {}) {
       const { notifyHotLead } = await import("./notify.js");
       notifyHotLead(tenant, channel, key, `🤖 AI lid: ${fields.name || ""} ${contact}\n${fields.ai_summary || ""}`).catch(() => {});
       done.push("lead");
+    }
+  }
+
+  const fu = a.followup && typeof a.followup === "object" ? a.followup : null;
+  const fuText = clean(fu?.text, 500);
+  if (fuText && Number(fu.hours) > 0) {
+    const hours = Math.min(FOLLOWUP_MAX_H, Math.max(FOLLOWUP_MIN_H, Number(fu.hours)));
+    const reason = clean(fu.reason, 200) || "mijoz qaror qilmadi";
+    const { scheduleFollowUp } = await import("./followups.js");
+    const job = scheduleFollowUp(tenant, { key, kind: "ai", text: fuText, delayMin: hours * 60, data: { reason } });
+    if (job) {
+      const when = new Date(job.dueAt).toLocaleString("uz-UZ", { timeZone: tenant.settings?.timezone || "Asia/Tashkent" }).slice(0, 17);
+      setFields(tenant, key, { ai_followup: `${when}: ${reason}` });
+      done.push("followup");
     }
   }
 
