@@ -37,6 +37,7 @@ import { teamContext } from "./team.js";
 import { telegramRouter } from "./telegram.js";
 import { reportsBotRouter, reportsBotAvailable, setupReportsBotWebhook, checkAndSendDailyReports } from "./reportsBot.js";
 import { checkAndPublishScheduledPosts } from "./postPublisher.js";
+import { runAutoReels } from "./autoReels.js";
 import { runDueFollowUps } from "./followups.js";
 import { runDueBroadcasts } from "./broadcasts.js";
 import { refreshTelegramWebhooks } from "./telegram.js";
@@ -572,6 +573,11 @@ function startScheduler() {
   setInterval(() => {
     checkAndPublishScheduledPosts().catch((err) => console.error("[PostPublisher] xato:", err.message));
   }, 60 * 1000);
+
+  // Avto-Reels: kuniga belgilangan vaqtlarda AI video yasab joylaydi
+  setInterval(() => {
+    runAutoReels().catch((err) => console.error("[Avto-Reels] xato:", err.message));
+  }, 5 * 60 * 1000);
 }
 
 // Server to'xtatilganda bazani saqlab, tozalab chiqamiz

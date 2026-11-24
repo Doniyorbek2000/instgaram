@@ -72,6 +72,55 @@ export function buildArgs({ frameFiles, durations, audioFile, outFile }) {
   return args;
 }
 
+// Server o'zi chizadigan kadrlar (avto-Reels) uchun shrift: Docker'da fonts-dejavu-core, Windows'da Arial
+const FONT_FILE = process.env.REELS_FONT || (process.platform === "win32" ? "C:/Windows/Fonts/arialbd.ttf" : "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf");
+const FRAME_COLORS = ["0x4c1d95", "0x831843", "0x0f766e", "0x1e3a8a", "0x9a3412"];
+const LINE_CHARS = 20;
+const MAX_LINES = 6;
+
+/** Ekrandagi matnni qatorlarga bo'ladi (drawtext o'zi qator ko'chirmaydi). */
+export function wrapText(text, width = LINE_CHARS, maxLines = MAX_LINES) {
+  const lines = [];
+  for (const word of String(text || "").replace(/\s+/g, " ").trim().split(" ").filter(Boolean)) {
+    const last = lines[lines.length - 1];
+    if (last && (last + " " + word).length <= width) lines[lines.length - 1] = `${last} ${word}`;
+    else lines.push(word.slice(0, width * 2));
+  }
+  return lines.slice(0, maxLines).join("\n");
+}
+
+// Filtr qiymatidagi yo'l: "\" → "/", ":" ekranlanadi va qo'shtirnoqqa olinadi ('C\:/...') — ikki bosqichli ffmpeg ekranlash
+const filterPath = (p) => `'${p.replace(/\\/g, "/").replace(/:/g, "\\:")}'`;
+
+/** Bitta 1080×1920 kadr: fon (rasm yoki rang) + markazda matn. Argumentlar alohida — test qilish uchun. */
+export function frameArgs({ textFile, imageFile = null, colorIndex = 0, outFile }) {
+  const input = imageFile
+    ? ["-i", imageFile]
+    : ["-f", "lavfi", "-i", `color=c=${FRAME_COLORS[colorIndex % FRAME_COLORS.length]}:s=${W}x${H}`];
+  const bg = imageFile ? `scale=${W}:${H}:force_original_aspect_ratio=increase,crop=${W}:${H},eq=brightness=-0.12,` : "";
+  const text = `drawtext=fontfile=${filterPath(FONT_FILE)}:textfile=${filterPath(textFile)}:expansion=none:fontcolor=white:fontsize=76:line_spacing=20:x=(w-text_w)/2:y=(h-text_h)/2:box=1:boxcolor=black@0.45:boxborderw=40`;
+  return ["-y", "-loglevel", "error", ...input, "-vf", bg + text, "-frames:v", "1", "-q:v", "3", outFile];
+}
+
+/** scenes: [{ text, imageFile? }] → JPEG Buffer[] (renderSlideshow'ga beriladi). */
+export async function renderTextFrames(scenes) {
+  if (!(await ffmpegAvailable())) throw new Error("Serverda ffmpeg o'rnatilmagan — video yasab bo'lmaydi");
+  const dir = await mkdtemp(path.join(os.tmpdir(), "frames-"));
+  try {
+    const out = [];
+    for (const [i, s] of scenes.entries()) {
+      const textFile = path.join(dir, `t${i}.txt`);
+      const outFile = path.join(dir, `f${i}.jpg`);
+      await writeFile(textFile, wrapText(s.text) || " ");
+      await run("ffmpeg", frameArgs({ textFile, imageFile: s.imageFile, colorIndex: i, outFile }), 60000);
+      out.push(await readFile(outFile));
+    }
+    return out;
+  } finally {
+    rm(dir, { recursive: true, force: true }).catch(() => {});
+  }
+}
+
 async function audioDuration(file) {
   try {
     const out = await run("ffprobe", ["-v", "error", "-show_entries", "format=duration", "-of", "default=nw=1:nk=1", file], 15000);

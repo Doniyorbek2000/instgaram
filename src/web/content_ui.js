@@ -27,7 +27,7 @@ const frameUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize
 // Server render paytida qayta ishga tushsa holat "rendering"da qolib ketmasin
 const RENDER_STALE_MS = 10 * 60 * 1000;
 
-const MAX_ITEMS = 60;
+export const MAX_ITEMS = 60;
 
 export const TOOLS = {
   reels: {
@@ -61,7 +61,7 @@ const GOALS = { sales: "sotuvlar", followers: "obunachilar o'sishi", trust: "ish
 const TONES = { friendly: "do'stona", expert: "ekspert", fun: "hazil-mutoyiba", premium: "premium" };
 const LANGS = { uz: "Uzbek (Latin script)", ru: "Russian", en: "English" };
 
-function systemPrompt(u, lang, schema) {
+export function systemPrompt(u, lang, schema) {
   return `You are a top Instagram content strategist for small businesses in Uzbekistan.
 Business name: ${u.businessName || "-"}
 About the business: ${String(u.businessInfo || "").slice(0, 2500) || "-"}
@@ -255,9 +255,15 @@ contentRouter.post("/content/:id/publish", requireAuth, async (req, res) => {
   if (!u.meta?.igUserId) return res.status(400).json({ ok: false, error: "Instagram ulanmagan — Integratsiyalar sahifasida ulang" });
   const when = req.body?.publishAt ? new Date(req.body.publishAt) : new Date();
   if (Number.isNaN(when.getTime())) return res.status(400).json({ ok: false, error: "Vaqt noto'g'ri" });
+  const post = await queueReelPost(u, item, when, req.body?.caption);
+  if (post.status === "failed") return res.status(502).json({ ok: false, error: post.error });
+  res.json({ ok: true, status: post.status, scheduled: when.getTime() > Date.now() });
+});
+
+/** Tayyor Reels videosini nashr navbatiga qo'yadi; vaqti kelgan bo'lsa darhol joylashni boshlaydi. */
+export async function queueReelPost(u, item, when, captionOverride, source = "content") {
   const tags = (item.data?.hashtags || []).map((h) => `#${String(h).replace(/^#/, "").replace(/\s+/g, "")}`).join(" ");
-  const caption = String(req.body?.caption ?? [item.data?.caption, tags].filter(Boolean).join("\n\n")).slice(0, 2200);
-  const now = new Date().toISOString();
+  const caption = String(captionOverride ?? [item.data?.caption, tags].filter(Boolean).join("\n\n")).slice(0, 2200);
   const post = {
     id: `post_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
     type: "reel",
@@ -266,15 +272,14 @@ contentRouter.post("/content/:id/publish", requireAuth, async (req, res) => {
     publishAt: when.toISOString(),
     caption,
     status: "pending",
-    createdAt: now,
-    source: "content",
+    createdAt: new Date().toISOString(),
+    source,
   };
   u.scheduledPosts = [post, ...(u.scheduledPosts || [])];
   await persist(u);
   if (when.getTime() <= Date.now()) await publishDuePosts(u);
-  if (post.status === "failed") return res.status(502).json({ ok: false, error: post.error });
-  res.json({ ok: true, status: post.status, scheduled: when.getTime() > Date.now() });
-});
+  return post;
+}
 
 /** Reels'dagi komment kalit so'zidan tayyor "komment → obuna → sovg'a" flow yaratadi. */
 contentRouter.post("/content/:id/flow", requireAuth, (req, res) => {
